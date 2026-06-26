@@ -16,19 +16,45 @@ void main() {
     );
   });
 
-  test('main and lyrics windows are explicitly resizable and transparent', () {
-    final source = File('lib/main.dart').readAsStringSync();
-    final manager = File(
-      'lib/lyrics_window/lyrics_window_manager.dart',
-    ).readAsStringSync();
-    final shell = File('lib/desktop/desktop_app_shell.dart').readAsStringSync();
-    final runner = File('windows/runner/win32_window.cpp').readAsStringSync();
+  test(
+    'main window is resizable and lyrics window is a compact tool layer',
+    () {
+      final source = File('lib/main.dart').readAsStringSync();
+      final manager = File(
+        'lib/lyrics_window/lyrics_window_manager.dart',
+      ).readAsStringSync();
+      final shell = File(
+        'lib/desktop/desktop_app_shell.dart',
+      ).readAsStringSync();
+      final runner = File('windows/runner/win32_window.cpp').readAsStringSync();
 
-    expect(source, contains('setResizable(true)'));
-    expect(source, contains('setBackgroundColor(const Color(0x00000000))'));
-    expect(source, contains('isLyricsWindowArguments'));
-    expect(shell, contains('DragToResizeArea'));
-    expect(runner, contains('WS_THICKFRAME'));
-    expect(manager, contains('_controller!.show()'));
-  });
+      expect(source, contains('setResizable(true)'));
+      expect(source, contains('setResizable(false)'));
+      expect(source, contains('setBackgroundColor(const Color(0x00000000))'));
+      expect(source, contains('skipTaskbar: true'));
+      expect(source, isNot(contains('windowManager.focus();\n  });\n}')));
+      expect(source, contains('applyLyricsToolWindowStyle'));
+      expect(source, contains('isLyricsWindowArguments'));
+      expect(shell, contains('DragToResizeArea'));
+      expect(runner, contains('WS_THICKFRAME'));
+      expect(manager, contains('_controller!.show()'));
+    },
+  );
+
+  test(
+    'Windows runner can turn the lyrics window into a non-activating tool window',
+    () {
+      final runner = File(
+        'windows/runner/flutter_window.cpp',
+      ).readAsStringSync();
+
+      expect(runner, contains('imusic/lyrics_window_style'));
+      expect(runner, contains('applyLyricsToolWindowStyle'));
+      expect(runner, contains('WS_EX_TOOLWINDOW'));
+      expect(runner, contains('WS_EX_NOACTIVATE'));
+      expect(runner, contains('WS_EX_APPWINDOW'));
+      expect(runner, contains('SWP_NOACTIVATE'));
+      expect(runner, contains('HWND_TOPMOST'));
+    },
+  );
 }

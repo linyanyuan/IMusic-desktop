@@ -26,6 +26,7 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  RegisterLyricsWindowStyleChannel();
   // Register plugins for child windows created by desktop_multi_window
   DesktopMultiWindowSetWindowCreatedCallback([](void *controller) {
     auto *flutter_view_controller =
@@ -45,6 +46,32 @@ bool FlutterWindow::OnCreate() {
   flutter_controller_->ForceRedraw();
 
   return true;
+}
+
+void FlutterWindow::RegisterLyricsWindowStyleChannel() {
+  lyrics_window_style_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "imusic/lyrics_window_style",
+          &flutter::StandardMethodCodec::GetInstance());
+
+  lyrics_window_style_channel_->SetMethodCallHandler(
+      [window = GetHandle()](const auto& call, auto result) {
+        if (call.method_name() != "applyLyricsToolWindowStyle") {
+          result->NotImplemented();
+          return;
+        }
+
+        LONG_PTR ex_style = GetWindowLongPtr(window, GWL_EXSTYLE);
+        ex_style &= ~WS_EX_APPWINDOW;
+        ex_style |= WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
+        SetWindowLongPtr(window, GWL_EXSTYLE, ex_style);
+
+        SetWindowPos(window, HWND_TOPMOST, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE |
+                         SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+        result->Success(flutter::EncodableValue(true));
+      });
 }
 
 void FlutterWindow::OnDestroy() {

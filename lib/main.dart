@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
@@ -10,6 +11,8 @@ import 'services/library_service.dart';
 import 'services/music_service.dart';
 import 'lyrics_window/lyrics_window_app.dart';
 import 'lyrics_window/lyrics_window_args.dart';
+
+const _lyricsWindowStyleChannel = MethodChannel('imusic/lyrics_window_style');
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -101,26 +104,33 @@ String _bvidFromPlaybackId(String playbackId) {
 }
 
 /// Configure the lyrics child window: frameless, transparent background,
-/// always-on-top, small size.
+/// always-on-top, compact tool layer.
 Future<void> _configureLyricsWindow() async {
   const lyricsOptions = WindowOptions(
-    size: Size(600, 160),
-    minimumSize: Size(300, 80),
+    size: Size(760, 112),
+    minimumSize: Size(420, 72),
     center: true,
     backgroundColor: Color(0x00000000), // transparent
-    skipTaskbar: false,
+    skipTaskbar: true,
     titleBarStyle: TitleBarStyle.hidden,
     windowButtonVisibility: false,
   );
 
   windowManager.waitUntilReadyToShow(lyricsOptions, () async {
     await windowManager.setAsFrameless();
-    await windowManager.setResizable(true);
+    await windowManager.setResizable(false);
     await windowManager.setBackgroundColor(const Color(0x00000000));
     await windowManager.setHasShadow(false);
-    // Make the window always-on-top
+    await _applyLyricsToolWindowStyle();
     await windowManager.setAlwaysOnTop(true);
     await windowManager.show();
-    await windowManager.focus();
   });
+}
+
+Future<void> _applyLyricsToolWindowStyle() async {
+  try {
+    await _lyricsWindowStyleChannel.invokeMethod('applyLyricsToolWindowStyle');
+  } catch (_) {
+    // Non-Windows platforms or older runners can still show desktop lyrics.
+  }
 }

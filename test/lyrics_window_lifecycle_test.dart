@@ -20,6 +20,9 @@ void main() {
       expect(manager, contains('WindowController.getAll'));
       expect(manager, contains('onClosed'));
       expect(manager, contains('mainWindowId'));
+      expect(manager, contains("'width': 760"));
+      expect(manager, contains("'height': 112"));
+      expect(manager, contains("'title': ''"));
       expect(app, contains("case 'window_close':"));
       expect(app, contains('desktop-lyrics-window-favorite'));
       expect(app, contains("_sendAction('toggleFavorite')"));

@@ -63,9 +63,9 @@ class LyricsWindowManager {
   Future<void> _setWindowStyle() async {
     try {
       await _controller!.invokeMethod('window_setFrame', {
-        'frame': {'left': 100, 'top': 100, 'width': 600, 'height': 200},
+        'frame': {'left': 100, 'top': 100, 'width': 760, 'height': 112},
       });
-      await _controller!.invokeMethod('window_setTitle', {'title': '桌面歌词'});
+      await _controller!.invokeMethod('window_setTitle', {'title': ''});
       await _controller!.invokeMethod('window_setAlwaysOnTop', {
         'alwaysOnTop': true,
       });
