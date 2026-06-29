@@ -609,39 +609,6 @@ class _SettingsPlaceholder extends ConsumerWidget {
                   ],
                 ),
                 const SizedBox(height: 18),
-                _SettingsSection(
-                  title: '推荐',
-                  c: c,
-                  children: [
-                    _SettingsRow(
-                      title: 'AI 个性化推荐',
-                      description: '开启后会用最近播放生成首页推荐',
-                      c: c,
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: Transform.scale(
-                          scale: 0.9,
-                          child: Switch(
-                            key: const ValueKey(
-                              'settings-ai-recommendations-switch',
-                            ),
-                            value: settings.aiRecommendationsEnabled,
-                            activeThumbColor: c.accent,
-                            onChanged: (value) async {
-                              await notifier.setAiRecommendationsEnabled(value);
-                              ref.invalidate(
-                                homePersonalizedRecommendationsProvider,
-                              );
-                              ref.read(homeInitializedProvider.notifier).state =
-                                  false;
-                            },
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 18),
                 SettingsShortcutsSection(colors: c),
               ],
             ),
