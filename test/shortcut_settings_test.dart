@@ -106,4 +106,19 @@ void main() {
       isNull,
     );
   });
+
+  test('app settings persists cache cleanup preferences', () async {
+    SharedPreferences.setMockInitialValues({});
+    final notifier = AppSettingsNotifier();
+    await Future<void>.delayed(Duration.zero);
+
+    await notifier.setCacheAutoCleanupEnabled(false);
+    await notifier.setCacheRetentionDays(14);
+
+    final restored = AppSettingsNotifier();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(restored.state.cacheAutoCleanupEnabled, isFalse);
+    expect(restored.state.cacheRetentionDays, 14);
+  });
 }

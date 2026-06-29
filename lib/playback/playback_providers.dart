@@ -31,6 +31,9 @@ final playerVolumeProvider = StateProvider<double>((ref) => 1.0);
 /// Last non-zero volume used when toggling mute back off.
 final lastAudibleVolumeProvider = StateProvider<double>((ref) => 1.0);
 
+/// Incremented when keyboard volume controls should reveal the volume popup.
+final volumeFeedbackRequestProvider = StateProvider<int>((ref) => 0);
+
 /// Audio player instance provider
 final audioPlayerProvider = Provider<AudioPlayer>((ref) {
   final player = AudioPlayer();

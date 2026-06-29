@@ -477,6 +477,7 @@ class _VolumeControlState extends ConsumerState<_VolumeControl> {
   final LayerLink _layerLink = LayerLink();
   OverlayEntry? _overlayEntry;
   Timer? _hideTimer;
+  bool _hoveringControl = false;
 
   @override
   void dispose() {
@@ -491,9 +492,15 @@ class _VolumeControlState extends ConsumerState<_VolumeControl> {
     await setPlaybackVolume(ref, value);
   }
 
-  void _showPopup() {
+  void _showPopup({Duration? autoHideAfter}) {
     _hideTimer?.cancel();
-    if (_overlayEntry != null) return;
+    if (_overlayEntry != null) {
+      _overlayEntry?.markNeedsBuild();
+      if (autoHideAfter != null && !_hoveringControl) {
+        _hideTimer = Timer(autoHideAfter, _removePopup);
+      }
+      return;
+    }
 
     _overlayEntry = OverlayEntry(
       builder: (context) {
@@ -511,8 +518,14 @@ class _VolumeControlState extends ConsumerState<_VolumeControl> {
                 widthFactor: 1,
                 heightFactor: 1,
                 child: MouseRegion(
-                  onEnter: (_) => _hideTimer?.cancel(),
-                  onExit: (_) => _removePopup(),
+                  onEnter: (_) {
+                    _hoveringControl = true;
+                    _hideTimer?.cancel();
+                  },
+                  onExit: (_) {
+                    _hoveringControl = false;
+                    _removePopup();
+                  },
                   child: SizedBox(
                     width: 52,
                     height: 156,
@@ -570,6 +583,9 @@ class _VolumeControlState extends ConsumerState<_VolumeControl> {
     );
 
     Overlay.of(context).insert(_overlayEntry!);
+    if (autoHideAfter != null && !_hoveringControl) {
+      _hideTimer = Timer(autoHideAfter, _removePopup);
+    }
   }
 
   void _scheduleHide() {
@@ -586,6 +602,11 @@ class _VolumeControlState extends ConsumerState<_VolumeControl> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<int>(volumeFeedbackRequestProvider, (previous, next) {
+      if (previous == next || next == 0) return;
+      _showPopup(autoHideAfter: const Duration(milliseconds: 1200));
+    });
+
     final volume = ref.watch(playerVolumeProvider);
     final icon = volume <= 0.0
         ? Icons.volume_mute
@@ -596,8 +617,14 @@ class _VolumeControlState extends ConsumerState<_VolumeControl> {
     return CompositedTransformTarget(
       link: _layerLink,
       child: MouseRegion(
-        onEnter: (_) => _showPopup(),
-        onExit: (_) => _scheduleHide(),
+        onEnter: (_) {
+          _hoveringControl = true;
+          _showPopup();
+        },
+        onExit: (_) {
+          _hoveringControl = false;
+          _scheduleHide();
+        },
         child: SizedBox(
           key: const ValueKey('volume-button'),
           width: 40,

@@ -21,6 +21,7 @@ import 'package:deepvibe_desktop/desktop/widgets/desktop_right_rail.dart';
 import 'package:deepvibe_desktop/playback/playback_actions.dart';
 import 'package:deepvibe_desktop/playback/playback_providers.dart';
 import 'package:deepvibe_desktop/services/app_settings.dart';
+import 'package:deepvibe_desktop/services/audio_cache_service.dart';
 import 'package:deepvibe_desktop/services/auth_service.dart';
 import 'package:deepvibe_desktop/services/library_service.dart';
 import 'package:deepvibe_desktop/services/music_provider.dart';
@@ -278,6 +279,64 @@ void main() {
     expect(container.read(deskRouteProvider), DeskRoute.home);
   });
 
+  testWidgets('in-app shortcuts recover when the app is focused again', (
+    tester,
+  ) async {
+    final container = await _shellContainer(authenticated: false);
+    addTearDown(container.dispose);
+    await _pumpDesktopShell(tester, container);
+
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pump();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+    await tester.pump();
+
+    expect(container.read(deskRouteProvider), DeskRoute.focus);
+  });
+
+  testWidgets('global mute shortcut works while the app is focused', (
+    tester,
+  ) async {
+    final container = await _shellContainer(authenticated: false);
+    addTearDown(container.dispose);
+    container.read(playerVolumeProvider.notifier).state = 0.42;
+    container.read(lastAudibleVolumeProvider.notifier).state = 0.42;
+
+    await _pumpDesktopShell(tester, container);
+
+    await _sendControlAltShortcut(tester, LogicalKeyboardKey.keyM);
+    await tester.pump();
+
+    expect(container.read(playerVolumeProvider), 0.0);
+  });
+
+  testWidgets('volume shortcuts show feedback and update the mute icon', (
+    tester,
+  ) async {
+    final container = await _shellContainer(authenticated: false);
+    addTearDown(container.dispose);
+    container.read(playerVolumeProvider.notifier).state = 0.42;
+    container.read(lastAudibleVolumeProvider.notifier).state = 0.42;
+
+    await _pumpDesktopShell(tester, container);
+
+    expect(find.byKey(const ValueKey('volume-popup')), findsNothing);
+
+    await _sendControlAltShortcut(tester, LogicalKeyboardKey.keyM);
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('volume-popup')), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('volume-button')),
+        matching: find.byIcon(Icons.volume_mute),
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('settings page shows configurable keyboard shortcuts', (
     tester,
   ) async {
@@ -337,6 +396,78 @@ void main() {
 
     expect(find.text('当前队列为空'), findsOneWidget);
   });
+
+  testWidgets('search waits for enter before querying', (tester) async {
+    final provider = _SearchRecordingMusicProvider({
+      '周杰伦': [
+        {
+          'id': 'search-enter-1',
+          'title': 'Enter 搜索结果',
+          'artist': '歌手 A',
+          'source': 'Bilibili',
+          'duration': 210000,
+        },
+      ],
+    });
+    final container = ProviderContainer(
+      overrides: [
+        musicServiceProvider.overrideWithValue(
+          MusicService(provider: provider),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await _pumpSearchScreen(tester, container);
+
+    await tester.enterText(find.byType(TextField), '周杰伦');
+    await tester.pump();
+
+    expect(provider.queries, isEmpty);
+    expect(container.read(searchQueryProvider), isEmpty);
+    expect(find.text('Ctrl+F'), findsNothing);
+
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pumpAndSettle();
+
+    expect(provider.queries, ['周杰伦']);
+    expect(container.read(searchQueryProvider), '周杰伦');
+    expect(find.text('Enter 搜索结果'), findsOneWidget);
+  });
+
+  testWidgets('search button submits the current query', (tester) async {
+    final provider = _SearchRecordingMusicProvider({
+      '林俊杰': [
+        {
+          'id': 'search-button-1',
+          'title': '按钮搜索结果',
+          'artist': '歌手 B',
+          'source': 'Bilibili',
+          'duration': 180000,
+        },
+      ],
+    });
+    final container = ProviderContainer(
+      overrides: [
+        musicServiceProvider.overrideWithValue(
+          MusicService(provider: provider),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await _pumpSearchScreen(tester, container);
+
+    await tester.enterText(find.byType(TextField), '林俊杰');
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('search-submit-button')));
+    await tester.pumpAndSettle();
+
+    expect(provider.queries, ['林俊杰']);
+    expect(container.read(searchQueryProvider), '林俊杰');
+    expect(find.text('按钮搜索结果'), findsOneWidget);
+  });
+
   testWidgets('search results highlight the currently playing song', (
     tester,
   ) async {
@@ -506,6 +637,62 @@ void main() {
     final updated = container.read(libraryProvider).userPlaylists.single;
     final songs = updated['songs'] as List;
     expect(songs.single['id'], 'search-song-2');
+  });
+
+  testWidgets('search song context menu marks an existing playlist song', (
+    tester,
+  ) async {
+    final playlist = {
+      ..._localPlaylist,
+      'songs': [
+        {
+          'id': 'search-song-2',
+          'title': '右键歌曲',
+          'artist': '歌手 B',
+          'source': 'Bilibili',
+          'duration': '4:20',
+        },
+      ],
+      'songCount': 1,
+    };
+    final container = await _authenticatedShellContainer(
+      remoteLibrary: RemoteLibrary(
+        likedSongs: const [],
+        userPlaylists: [playlist],
+        themeMode: 'light',
+      ),
+    );
+    addTearDown(container.dispose);
+    container
+        .read(libraryProvider.notifier)
+        .setLibraryFromLogin(
+          RemoteLibrary(
+            likedSongs: const [],
+            userPlaylists: [playlist],
+            themeMode: 'light',
+          ),
+        );
+    container.read(searchQueryProvider.notifier).state = '测试';
+    container.read(searchResultsProvider.notifier).state = [
+      Song(
+        id: 'search-song-2',
+        title: '右键歌曲',
+        artist: '歌手 B',
+        source: 'Bilibili',
+        duration: '4:20',
+      ),
+    ];
+
+    await _pumpSearchScreen(tester, container);
+
+    await tester.tapAt(
+      tester.getCenter(find.byKey(const ValueKey('search-row-search-song-2'))),
+      buttons: kSecondaryMouseButton,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('已添加'), findsOneWidget);
+    expect(find.byIcon(Icons.check), findsOneWidget);
   });
 
   testWidgets('playlist detail back returns to the previous route', (
@@ -785,6 +972,41 @@ void main() {
     expect(find.text('路歌'), findsNothing);
   });
 
+  testWidgets('playlist detail context menu marks an existing playlist song', (
+    tester,
+  ) async {
+    final playlist = {..._localPlaylist, 'songCount': 1};
+    final container = await _authenticatedShellContainer(
+      remoteLibrary: RemoteLibrary(
+        likedSongs: const [],
+        userPlaylists: [playlist],
+        themeMode: 'light',
+      ),
+    );
+    addTearDown(container.dispose);
+    container
+        .read(libraryProvider.notifier)
+        .setLibraryFromLogin(
+          RemoteLibrary(
+            likedSongs: const [],
+            userPlaylists: [playlist],
+            themeMode: 'light',
+          ),
+        );
+    container.read(playlistDetailProvider.notifier).state = 'local-playlist-1';
+
+    await _pumpPlaylistDetailScreen(tester, container);
+
+    await tester.tapAt(
+      tester.getCenter(find.text('路歌')),
+      buttons: kSecondaryMouseButton,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('已添加'), findsOneWidget);
+    expect(find.byIcon(Icons.check), findsOneWidget);
+  });
+
   testWidgets('playlist detail batch removes selected local songs', (
     tester,
   ) async {
@@ -1044,6 +1266,98 @@ void main() {
     expect(container.read(currentSongProvider)?['id'], 'home-song-1');
   });
 
+  testWidgets(
+    'home renders playlists while recommendations are still loading',
+    (tester) async {
+      final container = ProviderContainer(
+        overrides: [
+          musicServiceProvider.overrideWithValue(
+            MusicService(
+              provider: const _FakeMusicProvider(
+                recommendedDelay: Duration(seconds: 2),
+                hotPlaylistsByOffset: {
+                  0: [
+                    {
+                      'id': 'bilibili:BVfastHome',
+                      'title': '快速歌单',
+                      'subtitle': '先显示的内容',
+                      'source': 'bilibili',
+                      'songCount': 9,
+                      'coverUrl': 'https://example.test/fast.jpg',
+                    },
+                  ],
+                },
+              ),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: AppTheme.light(),
+            home: const Scaffold(body: DesktopHomeScreen()),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.text('快速歌单'), findsOneWidget);
+      expect(find.text('推荐歌曲'), findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pump();
+    },
+  );
+
+  testWidgets('home load finishes after the screen is unmounted', (
+    tester,
+  ) async {
+    final container = ProviderContainer(
+      overrides: [
+        musicServiceProvider.overrideWithValue(
+          MusicService(
+            provider: const _FakeMusicProvider(
+              recommendedDelay: Duration(milliseconds: 100),
+              recommended: [
+                {
+                  'id': 'late-home-song',
+                  'title': '迟到的推荐',
+                  'artist': '歌手 A',
+                  'source': 'bilibili',
+                  'duration': 180000,
+                },
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: AppTheme.light(),
+          home: const Scaffold(body: DesktopHomeScreen()),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 150));
+
+    expect(container.read(homeRecommendedSongsLoadingProvider), isFalse);
+    expect(container.read(homeLoadingProvider), isFalse);
+    expect(container.read(homeRecommendedSongsProvider).single.title, '迟到的推荐');
+  });
+
   testWidgets('home keeps loaded playlists after remount', (tester) async {
     final container = ProviderContainer(
       overrides: [
@@ -1122,6 +1436,31 @@ void main() {
     expect(textScaler.scale(10), lessThanOrEqualTo(11));
   });
 
+  testWidgets('app theme uses the requested system font stack', (tester) async {
+    tester.view.physicalSize = const Size(1280, 720);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final container = await _shellContainer(authenticated: false);
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const DeepVibeApp(),
+      ),
+    );
+    await tester.pump();
+
+    final textStyle = Theme.of(
+      tester.element(find.byType(DesktopAppShell)),
+    ).textTheme.bodyMedium;
+
+    expect(textStyle?.fontFamily, '-apple-system');
+    expect(textStyle?.fontFamilyFallback, contains('BlinkM'));
+  });
+
   testWidgets('settings page exposes cache and lyrics controls', (
     tester,
   ) async {
@@ -1131,6 +1470,9 @@ void main() {
         defaultCacheDirectoryProvider.overrideWith(
           (ref) async => r'C:\Users\tester\AppData\Local\Temp',
         ),
+        audioCacheStatsProvider.overrideWith(
+          (ref) async => const AudioCacheStats(fileCount: 2, totalBytes: 1536),
+        ),
       ],
     );
     addTearDown(container.dispose);
@@ -1139,6 +1481,21 @@ void main() {
     await _pumpDesktopShell(tester, container);
 
     expect(find.text('缓存目录'), findsOneWidget);
+    expect(find.text('缓存管理'), findsOneWidget);
+    expect(find.text('1.5 KB'), findsOneWidget);
+    expect(find.text('2 个'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('settings-cache-auto-cleanup-switch')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('settings-cache-retention-menu')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('settings-cache-clear-button')),
+      findsOneWidget,
+    );
     expect(find.text('歌词字号'), findsOneWidget);
     expect(find.text('歌词颜色'), findsOneWidget);
     expect(
@@ -1161,6 +1518,54 @@ void main() {
       find.byKey(const ValueKey('settings-lyrics-color-green')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('settings cache retention days can be changed', (tester) async {
+    final container = await _shellContainer(
+      authenticated: false,
+      extraOverrides: [
+        audioCacheStatsProvider.overrideWith(
+          (ref) async => const AudioCacheStats(fileCount: 0, totalBytes: 0),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    container.read(deskRouteProvider.notifier).state = DeskRoute.settings;
+
+    await _pumpDesktopShell(tester, container);
+    await tester.tap(
+      find.byKey(const ValueKey('settings-cache-retention-menu')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('14 天').last);
+    await tester.pumpAndSettle();
+
+    expect(container.read(appSettingsProvider).cacheRetentionDays, 14);
+    expect(find.text('14 天'), findsWidgets);
+  });
+
+  testWidgets('settings content width adapts to window size', (tester) async {
+    tester.view.physicalSize = const Size(1100, 720);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final container = await _shellContainer(authenticated: false);
+    addTearDown(container.dispose);
+    container.read(deskRouteProvider.notifier).state = DeskRoute.settings;
+
+    await _pumpDesktopShell(tester, container, size: const Size(1100, 720));
+    final narrowWidth = tester
+        .getSize(find.byKey(const ValueKey('settings-adaptive-content')))
+        .width;
+
+    tester.view.physicalSize = const Size(1500, 720);
+    await tester.pumpAndSettle();
+    final wideWidth = tester
+        .getSize(find.byKey(const ValueKey('settings-adaptive-content')))
+        .width;
+
+    expect(wideWidth, greaterThan(narrowWidth));
   });
 
   testWidgets('settings cache directory button opens a folder picker', (
@@ -1264,6 +1669,36 @@ void main() {
       find.byKey(const ValueKey('profile-created-playlist-local-playlist-1')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('profile content width adapts to window size', (tester) async {
+    tester.view.physicalSize = const Size(1100, 720);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final container = await _authenticatedShellContainer(
+      remoteLibrary: RemoteLibrary(
+        likedSongs: [_likedSong],
+        userPlaylists: [_localPlaylist],
+        themeMode: 'light',
+      ),
+    );
+    addTearDown(container.dispose);
+    container.read(deskRouteProvider.notifier).state = DeskRoute.profile;
+
+    await _pumpDesktopShell(tester, container, size: const Size(1100, 720));
+    final narrowWidth = tester
+        .getSize(find.byKey(const ValueKey('profile-adaptive-content')))
+        .width;
+
+    tester.view.physicalSize = const Size(1500, 720);
+    await tester.pumpAndSettle();
+    final wideWidth = tester
+        .getSize(find.byKey(const ValueKey('profile-adaptive-content')))
+        .width;
+
+    expect(wideWidth, greaterThan(narrowWidth));
   });
 
   testWidgets('profile page opens liked music and created playlist', (
@@ -1868,12 +2303,14 @@ class _FakeMusicProvider implements MusicProvider {
     this.playlists = const {},
     this.hotPlaylistsByOffset = const {},
     this.lyricsById = const {},
+    this.recommendedDelay = Duration.zero,
   });
 
   final List<Map<String, dynamic>> recommended;
   final Map<String, Map<String, dynamic>> playlists;
   final Map<int, List<Map<String, dynamic>>> hotPlaylistsByOffset;
   final Map<String, String> lyricsById;
+  final Duration recommendedDelay;
 
   @override
   void rememberSongs(Iterable<Map<String, dynamic>> songs) {}
@@ -1883,7 +2320,12 @@ class _FakeMusicProvider implements MusicProvider {
       const [];
 
   @override
-  Future<List<Map<String, dynamic>>> getRecommendedSongs() async => recommended;
+  Future<List<Map<String, dynamic>>> getRecommendedSongs() async {
+    if (recommendedDelay > Duration.zero) {
+      await Future<void>.delayed(recommendedDelay);
+    }
+    return recommended;
+  }
 
   @override
   Future<List<Map<String, dynamic>>> getHotPlaylists({
@@ -1918,6 +2360,19 @@ class _FakeMusicProvider implements MusicProvider {
   @override
   Future<String> getLyrics(Map<String, dynamic> song) async {
     return lyricsById[song['id']?.toString()] ?? '';
+  }
+}
+
+class _SearchRecordingMusicProvider extends _FakeMusicProvider {
+  final Map<String, List<Map<String, dynamic>>> resultsByQuery;
+  final List<String> queries = [];
+
+  _SearchRecordingMusicProvider(this.resultsByQuery);
+
+  @override
+  Future<List<Map<String, dynamic>>> searchSongs(String query) async {
+    queries.add(query);
+    return resultsByQuery[query] ?? const [];
   }
 }
 
@@ -1983,9 +2438,10 @@ Future<ProviderContainer> _shellContainer({
 
 Future<void> _pumpDesktopShell(
   WidgetTester tester,
-  ProviderContainer container,
-) async {
-  tester.view.physicalSize = const Size(1280, 720);
+  ProviderContainer container, {
+  Size size = const Size(1280, 720),
+}) async {
+  tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
@@ -2000,6 +2456,17 @@ Future<void> _pumpDesktopShell(
     ),
   );
   await tester.pumpAndSettle();
+}
+
+Future<void> _sendControlAltShortcut(
+  WidgetTester tester,
+  LogicalKeyboardKey key,
+) async {
+  await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+  await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+  await tester.sendKeyEvent(key);
+  await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+  await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
 }
 
 class _FakeAuthService extends AuthService {

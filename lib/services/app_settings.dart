@@ -8,12 +8,16 @@ import 'shortcut_settings.dart';
 
 class AppSettings {
   final String cacheDirectory;
+  final bool cacheAutoCleanupEnabled;
+  final int cacheRetentionDays;
   final double lyricsFontSize;
   final int lyricsColorValue;
   final ShortcutSettings shortcutSettings;
 
   const AppSettings({
     this.cacheDirectory = '',
+    this.cacheAutoCleanupEnabled = true,
+    this.cacheRetentionDays = 7,
     this.lyricsFontSize = 22,
     this.lyricsColorValue = 0xFF1ED760,
     this.shortcutSettings = const ShortcutSettings(
@@ -23,12 +27,17 @@ class AppSettings {
 
   AppSettings copyWith({
     String? cacheDirectory,
+    bool? cacheAutoCleanupEnabled,
+    int? cacheRetentionDays,
     double? lyricsFontSize,
     int? lyricsColorValue,
     ShortcutSettings? shortcutSettings,
   }) {
     return AppSettings(
       cacheDirectory: cacheDirectory ?? this.cacheDirectory,
+      cacheAutoCleanupEnabled:
+          cacheAutoCleanupEnabled ?? this.cacheAutoCleanupEnabled,
+      cacheRetentionDays: cacheRetentionDays ?? this.cacheRetentionDays,
       lyricsFontSize: lyricsFontSize ?? this.lyricsFontSize,
       lyricsColorValue: lyricsColorValue ?? this.lyricsColorValue,
       shortcutSettings: shortcutSettings ?? this.shortcutSettings,
@@ -42,6 +51,9 @@ class AppSettingsNotifier extends StateNotifier<AppSettings> {
   }
 
   static const _cacheDirectoryKey = 'settings_cache_directory';
+  static const _cacheAutoCleanupEnabledKey =
+      'settings_cache_auto_cleanup_enabled';
+  static const _cacheRetentionDaysKey = 'settings_cache_retention_days';
   static const _lyricsFontSizeKey = 'settings_lyrics_font_size';
   static const _lyricsColorKey = 'settings_lyrics_color';
   static const _shortcutSettingsKey = 'settings_shortcuts';
@@ -50,6 +62,12 @@ class AppSettingsNotifier extends StateNotifier<AppSettings> {
     final prefs = await SharedPreferences.getInstance();
     state = AppSettings(
       cacheDirectory: prefs.getString(_cacheDirectoryKey) ?? '',
+      cacheAutoCleanupEnabled:
+          prefs.getBool(_cacheAutoCleanupEnabledKey) ??
+          const AppSettings().cacheAutoCleanupEnabled,
+      cacheRetentionDays:
+          prefs.getInt(_cacheRetentionDaysKey) ??
+          const AppSettings().cacheRetentionDays,
       lyricsFontSize:
           prefs.getDouble(_lyricsFontSizeKey) ??
           const AppSettings().lyricsFontSize,
@@ -81,6 +99,19 @@ class AppSettingsNotifier extends StateNotifier<AppSettings> {
 
   Future<void> useDefaultCacheDirectory() async {
     await setCacheDirectory('');
+  }
+
+  Future<void> setCacheAutoCleanupEnabled(bool value) async {
+    state = state.copyWith(cacheAutoCleanupEnabled: value);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_cacheAutoCleanupEnabledKey, value);
+  }
+
+  Future<void> setCacheRetentionDays(int value) async {
+    final normalized = value.clamp(1, 90).toInt();
+    state = state.copyWith(cacheRetentionDays: normalized);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_cacheRetentionDaysKey, normalized);
   }
 
   Future<void> setLyricsFontSize(double value) async {

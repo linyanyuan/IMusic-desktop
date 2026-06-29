@@ -2,9 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:window_manager/window_manager.dart';
 
 import '../../playback/playback_actions.dart';
 import '../../playback/playback_commands.dart';
+import '../../playback/playback_providers.dart';
 import '../../services/app_settings.dart';
 import '../../services/global_hotkeys.dart';
 import '../../services/shortcut_input.dart';
@@ -23,23 +25,40 @@ class DesktopShortcutController extends ConsumerStatefulWidget {
 }
 
 class _DesktopShortcutControllerState
-    extends ConsumerState<DesktopShortcutController> {
+    extends ConsumerState<DesktopShortcutController>
+    with WindowListener, WidgetsBindingObserver {
   final FocusNode _focusNode = FocusNode(debugLabel: 'desktop-shortcuts');
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    windowManager.addListener(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _focusNode.requestFocus();
+      _restoreShortcutFocus();
       _configureGlobalHotkeys(ref.read(appSettingsProvider).shortcutSettings);
     });
   }
 
   @override
   void dispose() {
+    windowManager.removeListener(this);
+    WidgetsBinding.instance.removeObserver(this);
     _focusNode.dispose();
     super.dispose();
+  }
+
+  @override
+  void onWindowFocus() {
+    _restoreShortcutFocus();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _restoreShortcutFocus();
+    }
   }
 
   @override
@@ -79,7 +98,10 @@ class _DesktopShortcutControllerState
   Map<ShortcutActivator, Intent> _shortcutMap(ShortcutSettings settings) {
     final result = <ShortcutActivator, Intent>{};
     for (final definition in shortcutDefinitions) {
-      if (definition.scope != ShortcutScope.inApp) continue;
+      if (definition.scope == ShortcutScope.global &&
+          !settings.globalHotkeysEnabled) {
+        continue;
+      }
       final shortcut = settings.shortcutFor(definition.action);
       if (shortcut == null) continue;
       result[SingleActivator(
@@ -102,6 +124,11 @@ class _DesktopShortcutControllerState
     return context.findAncestorWidgetOfExactType<EditableText>() != null;
   }
 
+  void _restoreShortcutFocus() {
+    if (!mounted || _focusNode.hasFocus || _isEditableFocus()) return;
+    _focusNode.requestFocus();
+  }
+
   void _handleShortcutAction(ShortcutAction action) {
     switch (action) {
       case ShortcutAction.playPauseInApp:
@@ -113,15 +140,23 @@ class _DesktopShortcutControllerState
         unawaited(playNextTrack(ref));
       case ShortcutAction.volumeUp:
         unawaited(stepPlaybackVolume(ref, playbackVolumeStep));
+        _requestVolumeFeedback();
       case ShortcutAction.volumeDown:
         unawaited(stepPlaybackVolume(ref, -playbackVolumeStep));
+        _requestVolumeFeedback();
       case ShortcutAction.mute:
         unawaited(togglePlaybackMute(ref));
+        _requestVolumeFeedback();
       case ShortcutAction.toggleDesktopLyrics:
         _toggleDesktopLyrics();
       case ShortcutAction.toggleFocusMode:
         toggleDeskFocusRoute(ref);
     }
+  }
+
+  void _requestVolumeFeedback() {
+    final notifier = ref.read(volumeFeedbackRequestProvider.notifier);
+    notifier.state += 1;
   }
 
   void _toggleDesktopLyrics() {

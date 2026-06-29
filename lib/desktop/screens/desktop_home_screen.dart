@@ -20,9 +20,14 @@ final homeRecommendedSongsProvider = StateProvider<List<Song>>(
   (ref) => const <Song>[],
 );
 final homeLoadingProvider = StateProvider<bool>((ref) => true);
+final homeHotPlaylistsLoadingProvider = StateProvider<bool>((ref) => false);
+final homeRecommendedSongsLoadingProvider = StateProvider<bool>((ref) => false);
 final homeLoadingMoreProvider = StateProvider<bool>((ref) => false);
 final homeLoadedCountProvider = StateProvider<int>((ref) => 0);
 final homeInitializedProvider = StateProvider<bool>((ref) => false);
+
+const _homeInitialDataTimeout = Duration(seconds: 5);
+const _homeLoadMoreTimeout = Duration(seconds: 6);
 
 class DesktopHomeScreen extends ConsumerStatefulWidget {
   const DesktopHomeScreen({super.key});
@@ -37,9 +42,10 @@ class _DesktopHomeScreenState extends ConsumerState<DesktopHomeScreen> {
   @override
   void initState() {
     super.initState();
-    if (!ref.read(homeInitializedProvider)) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || ref.read(homeInitializedProvider)) return;
       _loadInitialData();
-    }
+    });
   }
 
   @override
@@ -49,51 +55,89 @@ class _DesktopHomeScreenState extends ConsumerState<DesktopHomeScreen> {
   }
 
   Future<void> _loadInitialData() async {
-    final musicService = ref.read(musicServiceProvider);
-    ref.read(homeLoadingProvider.notifier).state = true;
+    final container = ProviderScope.containerOf(context, listen: false);
+    final musicService = container.read(musicServiceProvider);
+    container.read(homeInitializedProvider.notifier).state = true;
+    container.read(homeLoadingProvider.notifier).state = true;
+    container.read(homeHotPlaylistsLoadingProvider.notifier).state = true;
+    container.read(homeRecommendedSongsLoadingProvider.notifier).state = true;
 
+    print('[HomeScreen] 开始加载数据...');
+    _loadInitialHotPlaylists(container, musicService);
+    _loadInitialRecommendations(container, musicService);
+  }
+
+  Future<void> _loadInitialHotPlaylists(
+    ProviderContainer container,
+    MusicService musicService,
+  ) async {
     try {
-      print('[HomeScreen] 开始加载数据...');
-      final playlists = await musicService.getHotPlaylists(limit: 6, offset: 0);
-      print('[HomeScreen] 热门歌单: ${playlists.length} 个');
+      final playlists = await musicService
+          .getHotPlaylists(limit: 6, offset: 0)
+          .timeout(_homeInitialDataTimeout, onTimeout: () => const []);
 
-      final songs = await musicService.getRecommendedSongs();
-      print('[HomeScreen] 推荐歌曲: ${songs.length} 首');
-
-      ref.read(homeHotPlaylistsProvider.notifier).state = playlists
+      container.read(homeHotPlaylistsProvider.notifier).state = playlists
           .map(_mapPlaylist)
           .toList();
-      ref.read(homeRecommendedSongsProvider.notifier).state = songs
-          .take(8)
-          .toList();
-      ref.read(homeLoadedCountProvider.notifier).state = playlists.length;
-      ref.read(homeInitializedProvider.notifier).state = true;
-      ref.read(homeLoadingProvider.notifier).state = false;
-      print('[HomeScreen] 数据加载完成');
+      container.read(homeLoadedCountProvider.notifier).state = playlists.length;
+      print('[HomeScreen] 热门歌单: ${playlists.length} 个');
     } catch (e) {
-      print('[HomeScreen] 数据加载失败: $e');
-      ref.read(homeLoadingProvider.notifier).state = false;
+      print('[HomeScreen] 热门歌单加载失败: $e');
+    } finally {
+      container.read(homeHotPlaylistsLoadingProvider.notifier).state = false;
+      _syncHomeLoadingState(container);
     }
   }
 
-  Future<void> _loadMore() async {
-    if (ref.read(homeLoadingMoreProvider)) return;
+  Future<void> _loadInitialRecommendations(
+    ProviderContainer container,
+    MusicService musicService,
+  ) async {
+    try {
+      final songs = await musicService.getRecommendedSongs().timeout(
+        _homeInitialDataTimeout,
+        onTimeout: () => const [],
+      );
 
-    ref.read(homeLoadingMoreProvider.notifier).state = true;
-    final musicService = ref.read(musicServiceProvider);
-    final loadedCount = ref.read(homeLoadedCountProvider);
+      container.read(homeRecommendedSongsProvider.notifier).state = songs
+          .take(8)
+          .toList();
+      print('[HomeScreen] 推荐歌曲: ${songs.length} 首');
+    } catch (e) {
+      print('[HomeScreen] 推荐歌曲加载失败: $e');
+    } finally {
+      container.read(homeRecommendedSongsLoadingProvider.notifier).state =
+          false;
+      _syncHomeLoadingState(container);
+    }
+  }
+
+  void _syncHomeLoadingState(ProviderContainer container) {
+    final stillLoading =
+        container.read(homeHotPlaylistsLoadingProvider) ||
+        container.read(homeRecommendedSongsLoadingProvider);
+    container.read(homeLoadingProvider.notifier).state = stillLoading;
+    if (!stillLoading) print('[HomeScreen] 数据加载完成');
+  }
+
+  Future<void> _loadMore() async {
+    final container = ProviderScope.containerOf(context, listen: false);
+    if (container.read(homeLoadingMoreProvider)) return;
+
+    container.read(homeLoadingMoreProvider.notifier).state = true;
+    final musicService = container.read(musicServiceProvider);
+    final loadedCount = container.read(homeLoadedCountProvider);
 
     try {
-      final morePlaylists = await musicService.getHotPlaylists(
-        limit: 6,
-        offset: loadedCount,
-      );
-      final current = ref.read(homeHotPlaylistsProvider);
+      final morePlaylists = await musicService
+          .getHotPlaylists(limit: 6, offset: loadedCount)
+          .timeout(_homeLoadMoreTimeout, onTimeout: () => const []);
+      final current = container.read(homeHotPlaylistsProvider);
       final appended = [...current, ...morePlaylists.map(_mapPlaylist)];
-      ref.read(homeHotPlaylistsProvider.notifier).state = appended;
-      ref.read(homeLoadedCountProvider.notifier).state = appended.length;
+      container.read(homeHotPlaylistsProvider.notifier).state = appended;
+      container.read(homeLoadedCountProvider.notifier).state = appended.length;
     } finally {
-      ref.read(homeLoadingMoreProvider.notifier).state = false;
+      container.read(homeLoadingMoreProvider.notifier).state = false;
     }
   }
 
@@ -116,20 +160,12 @@ class _DesktopHomeScreenState extends ConsumerState<DesktopHomeScreen> {
         : DeepVibeColors.light;
     final currentSong = ref.watch(currentSongProvider);
     final hotPlaylists = ref.watch(homeHotPlaylistsProvider);
-    final loading = ref.watch(homeLoadingProvider);
+    final hotPlaylistsLoading = ref.watch(homeHotPlaylistsLoadingProvider);
+    final recommendedSongsLoading = ref.watch(
+      homeRecommendedSongsLoadingProvider,
+    );
     final loadingMore = ref.watch(homeLoadingMoreProvider);
     final recommendedSongs = ref.watch(homeRecommendedSongsProvider);
-
-    if (loading) {
-      return Container(
-        color: c.background,
-        child: Center(
-          child: CircularProgressIndicator(
-            valueColor: AlwaysStoppedAnimation(c.accent),
-          ),
-        ),
-      );
-    }
 
     return Container(
       color: c.background,
@@ -142,41 +178,84 @@ class _DesktopHomeScreenState extends ConsumerState<DesktopHomeScreen> {
           if (currentSong != null) const SizedBox(height: 32),
           _SectionHeader(c: c, title: '热门歌单'),
           const SizedBox(height: 16),
-          _HotPlaylistsGrid(
-            playlists: hotPlaylists,
-            c: c,
-            onTap: (pl) {
-              navigateDeskRoute(
-                ref,
-                DeskRoute.playlistDetail,
-                playlistId: pl.id,
-              );
-            },
-          ),
-          const SizedBox(height: 16),
-          Center(
-            child: loadingMore
-                ? SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation(c.accent),
+          if (hotPlaylistsLoading && hotPlaylists.isEmpty)
+            _HomeSectionLoading(c: c, message: '正在加载热门歌单')
+          else
+            _HotPlaylistsGrid(
+              playlists: hotPlaylists,
+              c: c,
+              onTap: (pl) {
+                navigateDeskRoute(
+                  ref,
+                  DeskRoute.playlistDetail,
+                  playlistId: pl.id,
+                );
+              },
+            ),
+          if (hotPlaylists.isNotEmpty || loadingMore) ...[
+            const SizedBox(height: 16),
+            Center(
+              child: loadingMore
+                  ? SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation(c.accent),
+                      ),
+                    )
+                  : TextButton(
+                      onPressed: _loadMore,
+                      child: Text(
+                        '加载更多',
+                        style: TextStyle(color: c.accent, fontSize: 13),
+                      ),
                     ),
-                  )
-                : TextButton(
-                    onPressed: _loadMore,
-                    child: Text(
-                      '加载更多',
-                      style: TextStyle(color: c.accent, fontSize: 13),
-                    ),
-                  ),
-          ),
+            ),
+          ],
           const SizedBox(height: 32),
           _SectionHeader(c: c, title: '推荐歌曲'),
           const SizedBox(height: 16),
-          _RecommendedSongsTable(c: c, songs: recommendedSongs),
+          _RecommendedSongsTable(
+            c: c,
+            songs: recommendedSongs,
+            loading: recommendedSongsLoading,
+          ),
           const SizedBox(height: 40),
+        ],
+      ),
+    );
+  }
+}
+
+class _HomeSectionLoading extends StatelessWidget {
+  final DeepVibeColors c;
+  final String message;
+
+  const _HomeSectionLoading({required this.c, required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 96,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: BorderRadius.circular(kCardRadius),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              valueColor: AlwaysStoppedAnimation(c.accent),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(message, style: TextStyle(color: c.textMuted, fontSize: 13)),
         ],
       ),
     );
@@ -424,10 +503,20 @@ class _PlaylistCardState extends State<_PlaylistCard> {
 class _RecommendedSongsTable extends ConsumerWidget {
   final DeepVibeColors c;
   final List<Song> songs;
-  const _RecommendedSongsTable({required this.c, required this.songs});
+  final bool loading;
+
+  const _RecommendedSongsTable({
+    required this.c,
+    required this.songs,
+    required this.loading,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (loading && songs.isEmpty) {
+      return _HomeSectionLoading(c: c, message: '正在加载推荐歌曲');
+    }
+
     if (songs.isEmpty) {
       return Container(
         padding: const EdgeInsets.all(40),

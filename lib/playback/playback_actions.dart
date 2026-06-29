@@ -1,13 +1,11 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:audioplayers/audioplayers.dart';
-import 'package:dio/dio.dart';
-import 'package:path_provider/path_provider.dart';
 import 'playback_providers.dart';
 import '../services/music_service.dart';
 import '../services/library_service.dart';
 import '../services/app_settings.dart';
+import '../services/audio_cache_service.dart';
 import '../core/models/song.dart';
 
 /// Request serial numbers to prevent old requests from overwriting new ones
@@ -129,33 +127,27 @@ Future<void> startSongPlayback(
     await player.stop();
 
     // Windows audioplayers doesn't support custom headers
-    // Download to temp file if headers are required
+    // Download to a stable local cache file if headers are required.
     String sourceUrl = playUrl.url;
     if (playUrl.headers.isNotEmpty) {
-      print('[PlaybackActions] 检测到需要 headers，下载到临时文件');
+      print('[PlaybackActions] 检测到需要 headers，准备本地缓存');
       try {
-        final configuredCacheDir = ref
-            .read(appSettingsProvider)
-            .cacheDirectory
-            .trim();
-        final tempDir = configuredCacheDir.isEmpty
-            ? await getTemporaryDirectory()
-            : await Directory(configuredCacheDir).create(recursive: true);
-        final fileName = 'audio_${DateTime.now().millisecondsSinceEpoch}.m4s';
-        final tempFile = File('${tempDir.path}/$fileName');
-
-        final dio = Dio();
-        await dio.download(
-          playUrl.url,
-          tempFile.path,
-          options: Options(headers: playUrl.headers),
+        final settings = ref.read(appSettingsProvider);
+        final cacheService = ref.read(audioCacheServiceProvider);
+        unawaited(cacheService.cleanupExpiredIfNeeded(settings));
+        final cacheResult = await cacheService.getOrDownload(
+          playUrl: playUrl,
+          cacheDirectory: settings.cacheDirectory,
         );
-
-        sourceUrl = tempFile.path;
-        print('[PlaybackActions] 下载完成: $sourceUrl');
+        sourceUrl = cacheResult.path;
+        print(
+          cacheResult.cacheHit
+              ? '[PlaybackActions] 命中音频缓存: $sourceUrl'
+              : '[PlaybackActions] 音频缓存完成: $sourceUrl',
+        );
       } catch (e) {
-        print('[PlaybackActions] 下载失败: $e');
-        throw Exception('下载音频失败: $e');
+        print('[PlaybackActions] 缓存准备失败: $e');
+        throw Exception('准备音频缓存失败: $e');
       }
     }
 

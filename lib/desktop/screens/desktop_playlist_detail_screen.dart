@@ -10,6 +10,7 @@ import '../../services/auth_service.dart';
 import '../../playback/playback_actions.dart';
 import '../../playback/playback_providers.dart';
 import '../desktop_app_shell.dart';
+import '../playlist_song_status.dart';
 import '../widgets/components/network_cover_image.dart';
 import '../widgets/animated_equalizer_icon.dart';
 
@@ -1042,15 +1043,45 @@ class _SongRowState extends ConsumerState<_SongRow> {
         else
           ...playlists.map((playlist) {
             final name = playlist['name']?.toString() ?? '未命名歌单';
+            final alreadyAdded = playlistContainsSong(playlist, widget.song);
             return PopupMenuItem(
-              onTap: () {
-                Future.delayed(Duration.zero, () {
-                  _addToPlaylist(playlist['id']?.toString() ?? '');
-                });
-              },
+              enabled: !alreadyAdded,
+              onTap: alreadyAdded
+                  ? null
+                  : () {
+                      Future.delayed(Duration.zero, () {
+                        _addToPlaylist(playlist['id']?.toString() ?? '');
+                      });
+                    },
               child: Padding(
                 padding: const EdgeInsets.only(left: 28),
-                child: Text(name, style: TextStyle(fontSize: 13)),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: widget.c.textPrimary,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                    if (alreadyAdded) ...[
+                      const SizedBox(width: 12),
+                      Icon(Icons.check, size: 14, color: widget.c.accent),
+                      const SizedBox(width: 4),
+                      Text(
+                        '已添加',
+                        style: TextStyle(
+                          color: widget.c.textMuted,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
             );
           }),

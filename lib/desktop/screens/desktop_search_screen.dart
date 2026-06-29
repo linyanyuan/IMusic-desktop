@@ -10,6 +10,7 @@ import '../../services/music_service.dart';
 import '../../playback/playback_actions.dart';
 import '../../playback/playback_providers.dart';
 import '../desktop_app_shell.dart';
+import '../playlist_song_status.dart';
 
 /// Search state providers
 final searchQueryProvider = StateProvider<String>((ref) => '');
@@ -99,7 +100,8 @@ class _DesktopSearchScreenState extends ConsumerState<DesktopSearchScreen> {
             controller: _controller,
             focusNode: _focusNode,
             c: c,
-            onChanged: _search,
+            loading: loading,
+            onSearch: () => _search(_controller.text),
           ),
           _Tabs(
             c: c,
@@ -134,13 +136,15 @@ class _SearchBar extends StatelessWidget {
   final TextEditingController controller;
   final FocusNode focusNode;
   final DeepVibeColors c;
-  final ValueChanged<String> onChanged;
+  final bool loading;
+  final VoidCallback onSearch;
 
   const _SearchBar({
     required this.controller,
     required this.focusNode,
     required this.c,
-    required this.onChanged,
+    required this.loading,
+    required this.onSearch,
   });
 
   @override
@@ -163,7 +167,8 @@ class _SearchBar extends StatelessWidget {
               child: TextField(
                 controller: controller,
                 focusNode: focusNode,
-                onChanged: onChanged,
+                textInputAction: TextInputAction.search,
+                onSubmitted: (_) => onSearch(),
                 style: TextStyle(color: c.textPrimary, fontSize: 15),
                 decoration: InputDecoration(
                   hintText: '搜索歌曲、歌单、艺人',
@@ -175,19 +180,39 @@ class _SearchBar extends StatelessWidget {
             ),
             Container(
               margin: const EdgeInsets.only(right: 12),
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-              decoration: BoxDecoration(
-                color: c.surfaceVariant,
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(color: c.border),
-              ),
-              child: Text(
-                'Ctrl+F',
-                style: TextStyle(
-                  color: c.textMuted,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                ),
+              child: TextButton.icon(
+                key: const ValueKey('search-submit-button'),
+                onPressed: loading ? null : onSearch,
+                icon: loading
+                    ? SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation(c.accent),
+                        ),
+                      )
+                    : const Icon(Icons.search, size: 16),
+                label: const Text('搜索'),
+                style:
+                    TextButton.styleFrom(
+                      foregroundColor: c.accent,
+                      disabledForegroundColor: c.textMuted,
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      minimumSize: const Size(0, 34),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                    ).copyWith(
+                      backgroundColor: WidgetStatePropertyAll(
+                        c.accent.withValues(alpha: 0.1),
+                      ),
+                    ),
               ),
             ),
           ],
@@ -687,15 +712,45 @@ class _SongRowState extends ConsumerState<_SongRow> {
         else
           ...playlists.map((playlist) {
             final name = playlist['name']?.toString() ?? '未命名歌单';
+            final alreadyAdded = playlistContainsSong(playlist, widget.song);
             return PopupMenuItem(
-              onTap: () {
-                Future.delayed(Duration.zero, () {
-                  _addToPlaylist(playlist['id']?.toString() ?? '');
-                });
-              },
+              enabled: !alreadyAdded,
+              onTap: alreadyAdded
+                  ? null
+                  : () {
+                      Future.delayed(Duration.zero, () {
+                        _addToPlaylist(playlist['id']?.toString() ?? '');
+                      });
+                    },
               child: Padding(
                 padding: const EdgeInsets.only(left: 28),
-                child: Text(name, style: const TextStyle(fontSize: 13)),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: widget.c.textPrimary,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                    if (alreadyAdded) ...[
+                      const SizedBox(width: 12),
+                      Icon(Icons.check, size: 14, color: widget.c.accent),
+                      const SizedBox(width: 4),
+                      Text(
+                        '已添加',
+                        style: TextStyle(
+                          color: widget.c.textMuted,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
             );
           }),

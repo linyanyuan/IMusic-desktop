@@ -14,6 +14,17 @@ const double kSongRowHeight = 40;
 const double kQueueRowHeight = 44;
 const double kSidebarWidth = 224;
 const double kRightRailWidth = 320;
+const String kAppFontFamily = '-apple-system';
+const List<String> kAppFontFamilyFallback = [
+  'BlinkM',
+  'BlinkMacSystemFont',
+  'Segoe UI',
+  'Microsoft YaHei UI',
+  'Microsoft YaHei',
+  'PingFang SC',
+  'Noto Sans CJK SC',
+  'sans-serif',
+];
 
 class DeepVibeColors {
   final Color background;
@@ -123,14 +134,16 @@ class AppTheme {
       colorScheme: scheme,
       scaffoldBackgroundColor: c.background,
       brightness: brightness,
-      fontFamily: null,
+      fontFamily: kAppFontFamily,
+      fontFamilyFallback: kAppFontFamilyFallback,
     );
 
     return base.copyWith(
       textTheme: base.textTheme.apply(
         bodyColor: c.textPrimary,
         displayColor: c.textPrimary,
-        fontFamily: null,
+        fontFamily: kAppFontFamily,
+        fontFamilyFallback: kAppFontFamilyFallback,
       ),
       splashFactory: NoSplash.splashFactory,
       highlightColor: Colors.transparent,
@@ -148,7 +161,12 @@ class AppTheme {
       iconTheme: base.iconTheme.copyWith(color: c.textSecondary, size: 18),
       dividerTheme: DividerThemeData(color: c.divider, thickness: 1, space: 0),
       tooltipTheme: base.tooltipTheme.copyWith(
-        textStyle: TextStyle(fontSize: 13, color: c.textPrimary),
+        textStyle: TextStyle(
+          fontSize: 13,
+          color: c.textPrimary,
+          fontFamily: kAppFontFamily,
+          fontFamilyFallback: kAppFontFamilyFallback,
+        ),
         decoration: BoxDecoration(
           color: c.surfaceVariant,
           borderRadius: BorderRadius.circular(6),

@@ -38,81 +38,104 @@ class _SettingsShortcutsSectionState
     return Focus(
       focusNode: _recordingFocusNode,
       onKeyEvent: (_, event) => _handleRecordingKey(event, settings),
-      child: Container(
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: c.surface,
-          borderRadius: BorderRadius.circular(kCardRadius),
-          border: Border.all(color: c.border),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '快捷键',
-                    style: TextStyle(
-                      color: c.textPrimary,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 560;
+              final title = Text(
+                '快捷键',
+                style: TextStyle(
+                  color: c.textSecondary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              );
+              final controls = Row(
+                mainAxisSize: compact ? MainAxisSize.max : MainAxisSize.min,
+                children: [
+                  if (compact) const Spacer(),
+                  Text(
+                    '启用全局快捷键',
+                    style: TextStyle(color: c.textSecondary, fontSize: 12),
+                  ),
+                  const SizedBox(width: 6),
+                  Transform.scale(
+                    scale: 0.82,
+                    child: Switch(
+                      key: const ValueKey('settings-global-shortcuts-switch'),
+                      value: settings.globalHotkeysEnabled,
+                      activeThumbColor: c.accent,
+                      onChanged: (value) {
+                        _save(settings.copyWith(globalHotkeysEnabled: value));
+                      },
                     ),
                   ),
+                  const SizedBox(width: 4),
+                  _ShortcutHeaderButton(
+                    key: const ValueKey('settings-shortcuts-reset-button'),
+                    icon: Icons.restart_alt_outlined,
+                    label: '恢复默认',
+                    colors: c,
+                    onTap: () => _save(ShortcutSettings.defaults()),
+                  ),
+                ],
+              );
+
+              return Padding(
+                padding: const EdgeInsets.only(left: 2, bottom: 8),
+                child: compact
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [title, const SizedBox(height: 6), controls],
+                      )
+                    : Row(children: [title, const Spacer(), controls]),
+              );
+            },
+          ),
+          Container(
+            decoration: BoxDecoration(
+              color: c.surface,
+              borderRadius: BorderRadius.circular(kCardRadius),
+              border: Border.all(color: c.divider),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _ShortcutGroup(
+                  title: '播放控制',
+                  actions: const [
+                    ShortcutAction.playPauseInApp,
+                    ShortcutAction.playPauseGlobal,
+                    ShortcutAction.previousTrack,
+                    ShortcutAction.nextTrack,
+                    ShortcutAction.volumeUp,
+                    ShortcutAction.volumeDown,
+                    ShortcutAction.mute,
+                  ],
+                  settings: settings,
+                  recordingAction: _recordingAction,
+                  colors: c,
+                  onEdit: _startRecording,
                 ),
-                Text(
-                  '启用全局快捷键',
-                  style: TextStyle(color: c.textSecondary, fontSize: 12),
-                ),
-                const SizedBox(width: 8),
-                Switch(
-                  key: const ValueKey('settings-global-shortcuts-switch'),
-                  value: settings.globalHotkeysEnabled,
-                  activeThumbColor: c.accent,
-                  onChanged: (value) {
-                    _save(settings.copyWith(globalHotkeysEnabled: value));
-                  },
-                ),
-                const SizedBox(width: 8),
-                TextButton.icon(
-                  key: const ValueKey('settings-shortcuts-reset-button'),
-                  onPressed: () => _save(ShortcutSettings.defaults()),
-                  icon: const Icon(Icons.restart_alt_outlined, size: 16),
-                  label: const Text('恢复默认'),
+                Divider(height: 1, color: c.divider),
+                _ShortcutGroup(
+                  title: '窗口与歌词',
+                  actions: const [
+                    ShortcutAction.toggleDesktopLyrics,
+                    ShortcutAction.toggleFocusMode,
+                  ],
+                  settings: settings,
+                  recordingAction: _recordingAction,
+                  colors: c,
+                  onEdit: _startRecording,
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-            _ShortcutGroup(
-              title: '播放控制',
-              actions: const [
-                ShortcutAction.playPauseInApp,
-                ShortcutAction.playPauseGlobal,
-                ShortcutAction.previousTrack,
-                ShortcutAction.nextTrack,
-                ShortcutAction.volumeUp,
-                ShortcutAction.volumeDown,
-                ShortcutAction.mute,
-              ],
-              settings: settings,
-              recordingAction: _recordingAction,
-              colors: c,
-              onEdit: _startRecording,
-            ),
-            const SizedBox(height: 14),
-            _ShortcutGroup(
-              title: '窗口与歌词',
-              actions: const [
-                ShortcutAction.toggleDesktopLyrics,
-                ShortcutAction.toggleFocusMode,
-              ],
-              settings: settings,
-              recordingAction: _recordingAction,
-              colors: c,
-              onEdit: _startRecording,
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -152,6 +175,45 @@ class _SettingsShortcutsSectionState
   }
 }
 
+class _ShortcutHeaderButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final DeepVibeColors colors;
+  final VoidCallback onTap;
+
+  const _ShortcutHeaderButton({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.colors,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton.icon(
+      onPressed: onTap,
+      icon: Icon(icon, size: 15),
+      label: Text(label),
+      style:
+          TextButton.styleFrom(
+            foregroundColor: colors.textSecondary,
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+            minimumSize: const Size(0, 30),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(6),
+            ),
+          ).copyWith(
+            overlayColor: WidgetStatePropertyAll(
+              colors.accent.withValues(alpha: 0.08),
+            ),
+          ),
+    );
+  }
+}
+
 class _ShortcutGroup extends StatelessWidget {
   final String title;
   final List<ShortcutAction> actions;
@@ -174,25 +236,32 @@ class _ShortcutGroup extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          title,
-          style: TextStyle(
-            color: colors.textSecondary,
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 6),
+          child: Text(
+            title,
+            style: TextStyle(
+              color: colors.textMuted,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ),
-        const SizedBox(height: 8),
-        ...actions.map(
-          (action) => _ShortcutRow(
-            definition: definitionFor(action),
-            shortcut: settings.shortcutFor(action),
-            conflicts: settings.conflictingActions(action),
-            isRecording: recordingAction == action,
+        for (var i = 0; i < actions.length; i++) ...[
+          if (i > 0)
+            Padding(
+              padding: const EdgeInsets.only(left: 60),
+              child: Divider(height: 1, color: colors.divider),
+            ),
+          _ShortcutRow(
+            definition: definitionFor(actions[i]),
+            shortcut: settings.shortcutFor(actions[i]),
+            conflicts: settings.conflictingActions(actions[i]),
+            isRecording: recordingAction == actions[i],
             colors: colors,
-            onEdit: () => onEdit(action),
+            onEdit: () => onEdit(actions[i]),
           ),
-        ),
+        ],
       ],
     );
   }
@@ -222,24 +291,28 @@ class _ShortcutRow extends StatelessWidget {
         .join('、');
 
     return Container(
-      constraints: const BoxConstraints(minHeight: 54),
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: colors.divider)),
-      ),
-      child: Column(
-        children: [
-          Row(
+      constraints: const BoxConstraints(minHeight: 58),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 620;
+          final titleBlock = Row(
             children: [
-              SizedBox(
-                width: 30,
+              Container(
+                width: 28,
+                height: 28,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: colors.background.withValues(alpha: 0.7),
+                  borderRadius: BorderRadius.circular(6),
+                ),
                 child: Icon(
                   _iconFor(definition.action),
                   color: colors.textSecondary,
-                  size: 18,
+                  size: 16,
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -249,7 +322,7 @@ class _ShortcutRow extends StatelessWidget {
                       style: TextStyle(
                         color: colors.textPrimary,
                         fontSize: 14,
-                        fontWeight: FontWeight.w700,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                     const SizedBox(height: 2),
@@ -262,8 +335,15 @@ class _ShortcutRow extends StatelessWidget {
                   ],
                 ),
               ),
+            ],
+          );
+
+          final controls = Row(
+            mainAxisSize: compact ? MainAxisSize.max : MainAxisSize.min,
+            children: [
+              if (compact) const Spacer(),
               _ScopePill(scope: definition.scope, colors: colors),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               _Keycap(
                 key: ValueKey('settings-shortcut-${definition.action.name}'),
                 label: isRecording
@@ -274,26 +354,47 @@ class _ShortcutRow extends StatelessWidget {
                 colors: colors,
                 onTap: onEdit,
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 4),
               IconButton(
                 tooltip: '编辑快捷键',
                 icon: const Icon(Icons.edit_outlined, size: 17),
                 onPressed: onEdit,
+                visualDensity: VisualDensity.compact,
+                color: colors.textSecondary,
               ),
             ],
-          ),
-          if (conflicts.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(left: 38, top: 6),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  '已与 $conflictText 冲突',
-                  style: TextStyle(color: Colors.red.shade400, fontSize: 12),
+          );
+
+          return Column(
+            children: [
+              if (compact) ...[
+                titleBlock,
+                const SizedBox(height: 8),
+                controls,
+              ] else
+                Row(
+                  children: [
+                    Expanded(child: titleBlock),
+                    controls,
+                  ],
                 ),
-              ),
-            ),
-        ],
+              if (conflicts.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(left: 40, top: 6),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      '已与 $conflictText 冲突',
+                      style: TextStyle(
+                        color: Colors.red.shade400,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -315,8 +416,9 @@ class _ScopePill extends StatelessWidget {
       decoration: BoxDecoration(
         color: global
             ? colors.accent.withValues(alpha: 0.12)
-            : colors.surfaceVariant,
-        borderRadius: BorderRadius.circular(999),
+            : colors.background.withValues(alpha: 0.76),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: global ? Colors.transparent : colors.divider),
       ),
       child: Text(
         global ? '全局' : '应用内',
@@ -349,19 +451,19 @@ class _Keycap extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      borderRadius: BorderRadius.circular(999),
+      borderRadius: BorderRadius.circular(6),
       onTap: onTap,
       child: Container(
-        constraints: const BoxConstraints(minWidth: 116),
-        height: 32,
+        constraints: const BoxConstraints(minWidth: 108, maxWidth: 150),
+        height: 30,
         alignment: Alignment.center,
         padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
           color: active
               ? colors.accent.withValues(alpha: 0.12)
-              : colors.background,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: active ? colors.accent : colors.border),
+              : colors.background.withValues(alpha: 0.74),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: active ? colors.accent : colors.divider),
         ),
         child: Text(
           label,

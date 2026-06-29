@@ -6,6 +6,18 @@ import 'playback_providers.dart';
 
 const double playbackVolumeStep = 0.08;
 
+typedef PlaybackStarter =
+    Future<void> Function(
+      WidgetRef ref, {
+      required Map<String, dynamic> song,
+      required int index,
+      required List<Map<String, dynamic>> queue,
+    });
+
+final playbackStarterProvider = Provider<PlaybackStarter>(
+  (ref) => startSongPlayback,
+);
+
 class PlaybackVolumeSnapshot {
   final double volume;
   final double lastAudibleVolume;
@@ -98,6 +110,31 @@ Future<void> playNextTrack(WidgetRef ref) async {
     index: nextIndex,
     queue: queue,
   );
+}
+
+int? nextPlaybackIndexAfterCompletion({
+  required PlaybackMode mode,
+  required int currentIndex,
+  required int queueLength,
+  int Function(int max)? randomIndex,
+}) {
+  if (queueLength <= 0 || currentIndex < 0 || currentIndex >= queueLength) {
+    return null;
+  }
+
+  switch (mode) {
+    case PlaybackMode.repeatOne:
+      return currentIndex;
+    case PlaybackMode.shuffle:
+      if (queueLength == 1) return currentIndex;
+      final pick = randomIndex ?? (max) => DateTime.now().microsecond % max;
+      var next = pick(queueLength);
+      if (next == currentIndex) next = (next + 1) % queueLength;
+      return next;
+    case PlaybackMode.sequence:
+      final next = currentIndex + 1;
+      return next < queueLength ? next : null;
+  }
 }
 
 Future<void> setPlaybackVolume(WidgetRef ref, double value) async {

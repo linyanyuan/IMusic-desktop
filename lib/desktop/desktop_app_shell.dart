@@ -7,12 +7,14 @@ import '../playback/playback_providers.dart';
 import '../playback/playback_actions.dart';
 import '../services/auth_service.dart';
 import '../services/app_settings.dart';
+import '../services/audio_cache_service.dart';
 import '../services/library_service.dart';
 import '../core/models/song.dart';
 import 'widgets/desktop_sidebar.dart';
 import 'widgets/desktop_player_bar.dart';
 import 'widgets/desktop_lyrics_window_controller.dart';
 import 'widgets/desktop_shortcut_controller.dart';
+import 'widgets/playback_completion_controller.dart';
 import 'widgets/settings_shortcuts_section.dart';
 import 'widgets/animated_equalizer_icon.dart';
 import 'screens/desktop_home_screen.dart';
@@ -176,36 +178,38 @@ class DesktopAppShell extends ConsumerWidget {
     final route = ref.watch(deskRouteProvider);
     final colors = _colors(context);
 
-    return DesktopShortcutController(
-      child: DragToResizeArea(
-        resizeEdgeSize: 6,
-        child: Scaffold(
-          backgroundColor: colors.background,
-          body: Stack(
-            children: [
-              // Main UI
-              Column(
-                children: [
-                  // Top drag area spanning full width (48px height)
-                  _TopDragBar(colors: colors),
-                  Expanded(
-                    child: Row(
-                      children: [
-                        const DesktopSidebar(width: kSidebarWidth),
-                        VerticalDivider(width: 1, color: colors.divider),
-                        Expanded(child: _workbench(route, ref)),
-                      ],
+    return PlaybackCompletionController(
+      child: DesktopShortcutController(
+        child: DragToResizeArea(
+          resizeEdgeSize: 6,
+          child: Scaffold(
+            backgroundColor: colors.background,
+            body: Stack(
+              children: [
+                // Main UI
+                Column(
+                  children: [
+                    // Top drag area spanning full width (48px height)
+                    _TopDragBar(colors: colors),
+                    Expanded(
+                      child: Row(
+                        children: [
+                          const DesktopSidebar(width: kSidebarWidth),
+                          VerticalDivider(width: 1, color: colors.divider),
+                          Expanded(child: _workbench(route, ref)),
+                        ],
+                      ),
                     ),
-                  ),
-                  Divider(height: 1, color: colors.divider),
-                  const DesktopPlayerBar(),
-                ],
-              ),
-              // Standalone desktop lyrics window controller.
-              const DesktopLyricsWindowController(),
-              // Queue drawer
-              _QueueDrawer(colors: colors),
-            ],
+                    Divider(height: 1, color: colors.divider),
+                    const DesktopPlayerBar(),
+                  ],
+                ),
+                // Standalone desktop lyrics window controller.
+                const DesktopLyricsWindowController(),
+                // Queue drawer
+                _QueueDrawer(colors: colors),
+              ],
+            ),
           ),
         ),
       ),
@@ -479,98 +483,163 @@ class _SettingsPlaceholder extends ConsumerWidget {
     return Container(
       color: c.background,
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+        padding: const EdgeInsets.fromLTRB(32, 26, 32, 40),
         children: [
-          Text(
-            '设置',
-            style: TextStyle(
-              color: c.textPrimary,
-              fontSize: 28,
-              fontWeight: FontWeight.w700,
+          _AdaptiveContentWidth(
+            key: const ValueKey('settings-adaptive-content'),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  '设置',
+                  style: TextStyle(
+                    color: c.textPrimary,
+                    fontSize: 26,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 22),
+                _SettingsSection(
+                  title: '缓存',
+                  c: c,
+                  children: [
+                    _SettingsRow(
+                      title: '缓存目录',
+                      description: '用于保存需要临时下载的音频文件',
+                      c: c,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _CacheDirectoryField(c: c, settings: settings),
+                          const SizedBox(height: 10),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              _SettingsActionButton(
+                                key: const ValueKey(
+                                  'settings-cache-directory-choose-button',
+                                ),
+                                icon: Icons.folder_open_outlined,
+                                label: '选择目录',
+                                c: c,
+                                onTap: () async {
+                                  final selected = await ref
+                                      .read(cacheDirectoryPickerProvider)
+                                      .call();
+                                  if (selected == null ||
+                                      selected.trim().isEmpty) {
+                                    return;
+                                  }
+                                  await notifier.setCacheDirectory(selected);
+                                },
+                              ),
+                              _SettingsActionButton(
+                                icon: Icons.restart_alt_outlined,
+                                label: '使用默认缓存目录',
+                                c: c,
+                                onTap: notifier.useDefaultCacheDirectory,
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    _SettingsRow(
+                      title: '缓存管理',
+                      description: '复用已下载音频，并定期清理旧缓存',
+                      c: c,
+                      child: _AudioCacheManagement(c: c),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                _SettingsSection(
+                  title: '歌词',
+                  c: c,
+                  children: [
+                    _SettingsRow(
+                      title: '歌词字号',
+                      description: '${settings.lyricsFontSize.round()} px',
+                      c: c,
+                      child: SliderTheme(
+                        data: SliderTheme.of(context).copyWith(
+                          trackHeight: 3,
+                          thumbShape: const RoundSliderThumbShape(
+                            enabledThumbRadius: 8,
+                          ),
+                          overlayShape: const RoundSliderOverlayShape(
+                            overlayRadius: 16,
+                          ),
+                          inactiveTrackColor: c.divider,
+                        ),
+                        child: Slider(
+                          key: const ValueKey(
+                            'settings-lyrics-font-size-slider',
+                          ),
+                          min: 16,
+                          max: 32,
+                          divisions: 16,
+                          value: settings.lyricsFontSize.clamp(16, 32),
+                          activeColor: c.accent,
+                          onChanged: notifier.setLyricsFontSize,
+                        ),
+                      ),
+                    ),
+                    _SettingsRow(
+                      title: '歌词颜色',
+                      description: '影响桌面歌词浮窗当前行颜色',
+                      c: c,
+                      child: Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: colorOptions.map((value) {
+                          return _LyricsColorSwatch(
+                            key: value == 0xFF1ED760
+                                ? const ValueKey('settings-lyrics-color-green')
+                                : ValueKey('settings-lyrics-color-$value'),
+                            color: Color(value),
+                            selected: settings.lyricsColorValue == value,
+                            c: c,
+                            onTap: () => notifier.setLyricsColorValue(value),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                SettingsShortcutsSection(colors: c),
+              ],
             ),
           ),
-          const SizedBox(height: 18),
-          _SettingsSection(
-            title: '缓存',
-            c: c,
-            children: [
-              _SettingsLabel(
-                title: '缓存目录',
-                description: '用于保存需要临时下载的音频文件',
-                c: c,
-              ),
-              const SizedBox(height: 10),
-              _CacheDirectoryField(c: c, settings: settings),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  TextButton.icon(
-                    key: const ValueKey(
-                      'settings-cache-directory-choose-button',
-                    ),
-                    onPressed: () async {
-                      final selected = await ref
-                          .read(cacheDirectoryPickerProvider)
-                          .call();
-                      if (selected == null || selected.trim().isEmpty) return;
-                      await notifier.setCacheDirectory(selected);
-                    },
-                    icon: const Icon(Icons.folder_open_outlined, size: 16),
-                    label: const Text('选择目录'),
-                  ),
-                  const SizedBox(width: 8),
-                  TextButton.icon(
-                    onPressed: notifier.useDefaultCacheDirectory,
-                    icon: const Icon(Icons.restart_alt_outlined, size: 16),
-                    label: const Text('使用默认缓存目录'),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          _SettingsSection(
-            title: '歌词',
-            c: c,
-            children: [
-              _SettingsLabel(
-                title: '歌词字号',
-                description: '${settings.lyricsFontSize.round()} px',
-                c: c,
-              ),
-              Slider(
-                key: const ValueKey('settings-lyrics-font-size-slider'),
-                min: 16,
-                max: 32,
-                divisions: 16,
-                value: settings.lyricsFontSize.clamp(16, 32),
-                activeColor: c.accent,
-                onChanged: notifier.setLyricsFontSize,
-              ),
-              const SizedBox(height: 8),
-              _SettingsLabel(title: '歌词颜色', description: '影响桌面歌词浮窗当前行颜色', c: c),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: colorOptions.map((value) {
-                  return _LyricsColorSwatch(
-                    key: value == 0xFF1ED760
-                        ? const ValueKey('settings-lyrics-color-green')
-                        : ValueKey('settings-lyrics-color-$value'),
-                    color: Color(value),
-                    selected: settings.lyricsColorValue == value,
-                    c: c,
-                    onTap: () => notifier.setLyricsColorValue(value),
-                  );
-                }).toList(),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          SettingsShortcutsSection(colors: c),
         ],
       ),
+    );
+  }
+}
+
+class _AdaptiveContentWidth extends StatelessWidget {
+  final Widget child;
+
+  const _AdaptiveContentWidth({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableWidth = constraints.maxWidth;
+        if (!availableWidth.isFinite) return child;
+
+        final contentWidth = availableWidth < 920
+            ? availableWidth
+            : (availableWidth * 0.88).clamp(860.0, 1180.0).toDouble();
+
+        return Align(
+          alignment: Alignment.topCenter,
+          child: SizedBox(width: contentWidth, child: child),
+        );
+      },
     );
   }
 }
@@ -600,7 +669,7 @@ class _CacheDirectoryField extends ConsumerWidget {
     final displayText = defaultDirAsync.when(
       data: (path) => '当前缓存目录: $path（默认）',
       loading: () => '正在获取默认缓存目录...',
-      error: (_, __) => '使用系统默认缓存目录（无法获取路径）',
+      error: (_, stackTrace) => '使用系统默认缓存目录（无法获取路径）',
     );
 
     return _fieldContainer(
@@ -620,12 +689,289 @@ class _CacheDirectoryField extends ConsumerWidget {
       constraints: const BoxConstraints(minHeight: 42),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: c.background,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: c.border),
+        color: c.background.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: c.divider),
       ),
       alignment: Alignment.centerLeft,
       child: child,
+    );
+  }
+}
+
+class _AudioCacheManagement extends ConsumerStatefulWidget {
+  final DeepVibeColors c;
+
+  const _AudioCacheManagement({required this.c});
+
+  @override
+  ConsumerState<_AudioCacheManagement> createState() =>
+      _AudioCacheManagementState();
+}
+
+class _AudioCacheManagementState extends ConsumerState<_AudioCacheManagement> {
+  bool _busy = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = widget.c;
+    final settings = ref.watch(appSettingsProvider);
+    final stats = ref.watch(audioCacheStatsProvider);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            _CacheMetric(
+              c: c,
+              label: '占用',
+              value: stats.maybeWhen(
+                data: (value) => value.displaySize,
+                loading: () => '计算中',
+                orElse: () => '无法读取',
+              ),
+            ),
+            _CacheMetric(
+              c: c,
+              label: '文件',
+              value: stats.maybeWhen(
+                data: (value) => '${value.fileCount} 个',
+                loading: () => '-',
+                orElse: () => '-',
+              ),
+            ),
+            _CacheMetric(
+              c: c,
+              label: '保留',
+              value: '${settings.cacheRetentionDays} 天',
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '自动清理',
+                  style: TextStyle(color: c.textSecondary, fontSize: 12),
+                ),
+                const SizedBox(width: 6),
+                Transform.scale(
+                  scale: 0.82,
+                  child: Switch(
+                    key: const ValueKey('settings-cache-auto-cleanup-switch'),
+                    value: settings.cacheAutoCleanupEnabled,
+                    activeThumbColor: c.accent,
+                    onChanged: (value) {
+                      ref
+                          .read(appSettingsProvider.notifier)
+                          .setCacheAutoCleanupEnabled(value);
+                    },
+                  ),
+                ),
+              ],
+            ),
+            _CacheRetentionMenu(c: c, settings: settings),
+            _SettingsActionButton(
+              key: const ValueKey('settings-cache-clear-expired-button'),
+              icon: Icons.auto_delete_outlined,
+              label: '清理过期',
+              c: c,
+              onTap: _busy ? null : _clearExpired,
+            ),
+            _SettingsActionButton(
+              key: const ValueKey('settings-cache-clear-button'),
+              icon: Icons.delete_sweep_outlined,
+              label: '立即清理',
+              c: c,
+              onTap: _busy ? null : _clearAll,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Future<void> _clearExpired() async {
+    final settings = ref.read(appSettingsProvider);
+    await _runCleanup(
+      () => ref
+          .read(audioCacheServiceProvider)
+          .clearExpired(
+            settings.cacheDirectory,
+            retentionDays: settings.cacheRetentionDays,
+          ),
+    );
+  }
+
+  Future<void> _clearAll() async {
+    final settings = ref.read(appSettingsProvider);
+    await _runCleanup(
+      () => ref.read(audioCacheServiceProvider).clear(settings.cacheDirectory),
+    );
+  }
+
+  Future<void> _runCleanup(
+    Future<AudioCacheCleanupResult> Function() cleanup,
+  ) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final result = await cleanup();
+      ref.invalidate(audioCacheStatsProvider);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result.fileCount == 0
+                ? '没有需要清理的缓存'
+                : '已清理 ${result.fileCount} 个缓存文件，释放 ${result.displayFreedSize}',
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('清理缓存失败'), duration: Duration(seconds: 2)),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+}
+
+class _CacheRetentionMenu extends ConsumerWidget {
+  final DeepVibeColors c;
+  final AppSettings settings;
+
+  const _CacheRetentionMenu({required this.c, required this.settings});
+
+  static const _options = [3, 7, 14, 30];
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return PopupMenuButton<int>(
+      key: const ValueKey('settings-cache-retention-menu'),
+      tooltip: '设置缓存保留天数',
+      initialValue: settings.cacheRetentionDays,
+      onSelected: (days) {
+        ref.read(appSettingsProvider.notifier).setCacheRetentionDays(days);
+      },
+      itemBuilder: (context) => [
+        for (final days in _options)
+          PopupMenuItem(value: days, child: Text('$days 天')),
+      ],
+      child: Container(
+        height: 32,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        decoration: BoxDecoration(
+          color: c.background.withValues(alpha: 0.74),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: c.divider),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.schedule_outlined, size: 15, color: c.textSecondary),
+            const SizedBox(width: 6),
+            Text(
+              '保留 ${settings.cacheRetentionDays} 天',
+              style: TextStyle(color: c.textSecondary, fontSize: 12),
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.expand_more, size: 16, color: c.textMuted),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CacheMetric extends StatelessWidget {
+  final DeepVibeColors c;
+  final String label;
+  final String value;
+
+  const _CacheMetric({
+    required this.c,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 88, minHeight: 44),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: c.background.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: c.divider),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label, style: TextStyle(color: c.textMuted, fontSize: 11)),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            style: TextStyle(
+              color: c.textPrimary,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SettingsActionButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final DeepVibeColors c;
+  final VoidCallback? onTap;
+
+  const _SettingsActionButton({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.c,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton.icon(
+      onPressed: onTap,
+      icon: Icon(icon, size: 15),
+      label: Text(label),
+      style:
+          TextButton.styleFrom(
+            foregroundColor: c.textSecondary,
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            minimumSize: const Size(0, 32),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(6),
+            ),
+          ).copyWith(
+            overlayColor: WidgetStatePropertyAll(
+              c.accent.withValues(alpha: 0.08),
+            ),
+          ),
     );
   }
 }
@@ -643,38 +989,97 @@ class _SettingsSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: c.surface,
-        borderRadius: BorderRadius.circular(kCardRadius),
-        border: Border.all(color: c.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 2, bottom: 8),
+          child: Text(
             title,
             style: TextStyle(
-              color: c.textPrimary,
-              fontSize: 16,
+              color: c.textSecondary,
+              fontSize: 13,
               fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(height: 16),
-          ...children,
-        ],
-      ),
+        ),
+        Container(
+          decoration: BoxDecoration(
+            color: c.surface,
+            borderRadius: BorderRadius.circular(kCardRadius),
+            border: Border.all(color: c.divider),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            children: [
+              for (var i = 0; i < children.length; i++) ...[
+                if (i > 0) Divider(height: 1, color: c.divider),
+                children[i],
+              ],
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
 
-class _SettingsLabel extends StatelessWidget {
+class _SettingsRow extends StatelessWidget {
+  final String title;
+  final String description;
+  final DeepVibeColors c;
+  final Widget child;
+
+  const _SettingsRow({
+    required this.title,
+    required this.description,
+    required this.c,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final stacked = constraints.maxWidth < 620;
+        final label = _SettingsRowLabel(
+          title: title,
+          description: description,
+          c: c,
+        );
+
+        if (stacked) {
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [label, const SizedBox(height: 12), child],
+            ),
+          );
+        }
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              SizedBox(width: 210, child: label),
+              const SizedBox(width: 22),
+              Expanded(child: child),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SettingsRowLabel extends StatelessWidget {
   final String title;
   final String description;
   final DeepVibeColors c;
 
-  const _SettingsLabel({
+  const _SettingsRowLabel({
     required this.title,
     required this.description,
     required this.c,
@@ -682,19 +1087,24 @@ class _SettingsLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          child: Text(
-            title,
-            style: TextStyle(
-              color: c.textPrimary,
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-            ),
+        Text(
+          title,
+          style: TextStyle(
+            color: c.textPrimary,
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
           ),
         ),
-        Text(description, style: TextStyle(color: c.textMuted, fontSize: 12)),
+        const SizedBox(height: 4),
+        Text(
+          description,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: c.textMuted, fontSize: 12, height: 1.25),
+        ),
       ],
     );
   }
@@ -722,13 +1132,13 @@ class _LyricsColorSwatch extends StatelessWidget {
         borderRadius: BorderRadius.circular(999),
         onTap: onTap,
         child: Container(
-          width: 32,
-          height: 32,
+          width: 30,
+          height: 30,
           decoration: BoxDecoration(
             color: color,
             shape: BoxShape.circle,
             border: Border.all(
-              color: selected ? c.textPrimary : c.border,
+              color: selected ? c.accent : c.divider,
               width: selected ? 3 : 1,
             ),
           ),
@@ -814,50 +1224,91 @@ class _ProfileScreen extends ConsumerWidget {
     return Container(
       color: c.background,
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+        padding: const EdgeInsets.fromLTRB(32, 26, 32, 40),
         children: [
-          _ProfileHero(
-            user: user,
-            c: c,
-            likedCount: library.likedSongs.length,
-            createdCount: createdPlaylists.length,
-            collectedCount: collectedPlaylists.length,
-          ),
-          const SizedBox(height: 20),
-          _ProfileSectionTitle(
-            title: '音乐库',
-            trailing: '${library.likedSongs.length} 首喜欢',
-            c: c,
-          ),
-          const SizedBox(height: 12),
-          _ProfileLikedCard(
-            key: const ValueKey('profile-liked-playlist'),
-            songCount: library.likedSongs.length,
-            c: c,
-            onTap: () {
-              navigateDeskRoute(ref, DeskRoute.favorites);
-            },
-          ),
-          const SizedBox(height: 24),
-          _ProfilePlaylistSection(
-            title: '创建的歌单',
-            emptyMessage: '暂无创建的歌单',
-            playlists: createdPlaylists,
-            keyPrefix: 'profile-created-playlist',
-            c: c,
-            onOpen: (id) => _openUserPlaylist(ref, id),
-          ),
-          const SizedBox(height: 24),
-          _ProfilePlaylistSection(
-            title: '收藏的歌单',
-            emptyMessage: '暂无收藏的歌单',
-            playlists: collectedPlaylists,
-            keyPrefix: 'profile-collected-playlist',
-            c: c,
-            onOpen: (id) => _openUserPlaylist(ref, id),
+          _AdaptiveContentWidth(
+            key: const ValueKey('profile-adaptive-content'),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _ProfileHero(
+                  user: user,
+                  c: c,
+                  likedCount: library.likedSongs.length,
+                  createdCount: createdPlaylists.length,
+                  collectedCount: collectedPlaylists.length,
+                ),
+                const SizedBox(height: 20),
+                _ProfilePanel(
+                  title: '音乐库',
+                  trailing: '${library.likedSongs.length} 首喜欢',
+                  c: c,
+                  child: _ProfileLikedCard(
+                    key: const ValueKey('profile-liked-playlist'),
+                    songCount: library.likedSongs.length,
+                    c: c,
+                    onTap: () {
+                      navigateDeskRoute(ref, DeskRoute.favorites);
+                    },
+                  ),
+                ),
+                const SizedBox(height: 18),
+                _ProfilePlaylistSection(
+                  title: '创建的歌单',
+                  emptyMessage: '暂无创建的歌单',
+                  playlists: createdPlaylists,
+                  keyPrefix: 'profile-created-playlist',
+                  c: c,
+                  onOpen: (id) => _openUserPlaylist(ref, id),
+                ),
+                const SizedBox(height: 18),
+                _ProfilePlaylistSection(
+                  title: '收藏的歌单',
+                  emptyMessage: '暂无收藏的歌单',
+                  playlists: collectedPlaylists,
+                  keyPrefix: 'profile-collected-playlist',
+                  c: c,
+                  onOpen: (id) => _openUserPlaylist(ref, id),
+                ),
+              ],
+            ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ProfilePanel extends StatelessWidget {
+  final String title;
+  final String? trailing;
+  final DeepVibeColors c;
+  final Widget child;
+
+  const _ProfilePanel({
+    required this.title,
+    required this.trailing,
+    required this.c,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _ProfileSectionTitle(title: title, trailing: trailing, c: c),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            color: c.surface,
+            borderRadius: BorderRadius.circular(kCardRadius),
+            border: Border.all(color: c.divider),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: child,
+        ),
+      ],
     );
   }
 }
@@ -881,59 +1332,97 @@ class _ProfilePlaylistSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _ProfileSectionTitle(
-          title: title,
-          trailing: playlists.isEmpty ? null : '${playlists.length} 个',
+    if (playlists.isEmpty) {
+      return _ProfilePanel(
+        title: title,
+        trailing: null,
+        c: c,
+        child: _ProfileEmptyRow(
           c: c,
+          icon: Icons.queue_music,
+          message: emptyMessage,
         ),
-        const SizedBox(height: 12),
-        if (playlists.isEmpty)
-          _EmptyDataState(c: c, icon: Icons.queue_music, message: emptyMessage)
-        else
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final columns = constraints.maxWidth >= 920
-                  ? 3
-                  : constraints.maxWidth >= 620
-                  ? 2
-                  : 1;
-              const gap = 12.0;
-              final cardWidth =
-                  (constraints.maxWidth - (columns - 1) * gap) / columns;
-              return Wrap(
-                spacing: gap,
-                runSpacing: gap,
-                children: playlists.map((playlist) {
-                  final id = playlist['id']?.toString() ?? '';
-                  final name =
-                      playlist['name']?.toString() ??
-                      playlist['title']?.toString() ??
-                      '未命名歌单';
-                  final description =
-                      playlist['description']?.toString() ??
-                      playlist['subtitle']?.toString() ??
-                      '';
-                  final songCount = _playlistSongCount(playlist);
-                  return SizedBox(
-                    width: cardWidth,
-                    child: _ProfilePlaylistCard(
-                      key: ValueKey('$keyPrefix-$id'),
-                      title: name,
-                      description: description,
-                      songCount: songCount,
-                      collected: playlist['isCollected'] == true,
-                      c: c,
-                      onTap: () => onOpen(id),
-                    ),
-                  );
-                }).toList(),
-              );
-            },
+      );
+    }
+
+    return _ProfilePanel(
+      title: title,
+      trailing: '${playlists.length} 个',
+      c: c,
+      child: Column(
+        children: [
+          for (var i = 0; i < playlists.length; i++) ...[
+            if (i > 0) Divider(height: 1, color: c.divider),
+            _playlistCardFor(playlists[i]),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _playlistCardFor(Map<String, dynamic> playlist) {
+    final id = playlist['id']?.toString() ?? '';
+    final name =
+        playlist['name']?.toString() ??
+        playlist['title']?.toString() ??
+        '未命名歌单';
+    final description =
+        playlist['description']?.toString() ??
+        playlist['subtitle']?.toString() ??
+        '';
+    final songCount = _playlistSongCount(playlist);
+    return _ProfilePlaylistCard(
+      key: ValueKey('$keyPrefix-$id'),
+      title: name,
+      description: description,
+      songCount: songCount,
+      collected: playlist['isCollected'] == true,
+      c: c,
+      onTap: () => onOpen(id),
+    );
+  }
+}
+
+class _ProfileEmptyRow extends StatelessWidget {
+  final DeepVibeColors c;
+  final IconData icon;
+  final String message;
+
+  const _ProfileEmptyRow({
+    required this.c,
+    required this.icon,
+    required this.message,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 68,
+      padding: const EdgeInsets.symmetric(horizontal: 18),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: c.background.withValues(alpha: 0.74),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: c.divider),
+            ),
+            child: Icon(icon, size: 18, color: c.textMuted),
           ),
-      ],
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              message,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: c.textMuted, fontSize: 13),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -956,57 +1445,61 @@ class _ProfileHero extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(22, 20, 22, 20),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: c.surface,
         borderRadius: BorderRadius.circular(kCardRadius),
-        border: Border.all(color: c.border),
+        border: Border.all(color: c.divider),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(3),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: c.accent.withValues(alpha: 0.55)),
-            ),
-            child: _UserAvatar(user: user, colors: c, radius: 44),
-          ),
-          const SizedBox(width: 18),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '我的主页',
-                  style: TextStyle(
-                    color: c.textMuted,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                  ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 640;
+          final identity = Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: c.divider),
                 ),
-                const SizedBox(height: 7),
-                Text(
-                  user.nickname,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: c.textPrimary,
-                    fontSize: 28,
-                    height: 1.05,
-                    fontWeight: FontWeight.w700,
-                  ),
+                child: _UserAvatar(user: user, colors: c, radius: 40),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '我的主页',
+                      style: TextStyle(
+                        color: c.textMuted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      user.nickname,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: c.textPrimary,
+                        fontSize: 24,
+                        height: 1.08,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _ProfileHandlePill(text: '@${user.username}', c: c),
+                  ],
                 ),
-                const SizedBox(height: 9),
-                _ProfileHandlePill(text: '@${user.username}', c: c),
-              ],
-            ),
-          ),
-          const SizedBox(width: 18),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
+              ),
+            ],
+          );
+          final metrics = Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: compact ? WrapAlignment.start : WrapAlignment.end,
             children: [
               _ProfileMetricPill(
                 icon: Icons.favorite,
@@ -1027,8 +1520,24 @@ class _ProfileHero extends StatelessWidget {
                 c: c,
               ),
             ],
-          ),
-        ],
+          );
+
+          if (compact) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [identity, const SizedBox(height: 16), metrics],
+            );
+          }
+
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(child: identity),
+              const SizedBox(width: 18),
+              metrics,
+            ],
+          );
+        },
       ),
     );
   }
@@ -1050,9 +1559,9 @@ class _ProfileHandlePill extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 10),
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: c.background,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: c.border),
+          color: c.background.withValues(alpha: 0.74),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: c.divider),
         ),
         child: Text(
           text,
@@ -1086,12 +1595,12 @@ class _ProfileMetricPill extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: 82,
-      height: 50,
+      height: 46,
       padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: BoxDecoration(
-        color: c.background,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: c.border),
+        color: c.background.withValues(alpha: 0.74),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: c.divider),
       ),
       child: Row(
         children: [
@@ -1109,7 +1618,7 @@ class _ProfileMetricPill extends StatelessWidget {
                   style: TextStyle(
                     color: c.textPrimary,
                     fontSize: 14,
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
                 Text(
@@ -1145,8 +1654,8 @@ class _ProfileSectionTitle extends StatelessWidget {
         Text(
           title,
           style: TextStyle(
-            color: c.textPrimary,
-            fontSize: 18,
+            color: c.textSecondary,
+            fontSize: 13,
             fontWeight: FontWeight.w700,
           ),
         ),
@@ -1192,33 +1701,32 @@ class _ProfileLikedCardState extends State<_ProfileLikedCard> {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(kCardRadius),
           onTap: widget.onTap,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 140),
-            height: 92,
+            height: 72,
             padding: const EdgeInsets.symmetric(horizontal: 18),
             decoration: BoxDecoration(
-              color: _hover ? widget.c.surfaceVariant : widget.c.surface,
-              borderRadius: BorderRadius.circular(kCardRadius),
-              border: Border.all(color: widget.c.border),
+              color: _hover
+                  ? widget.c.surfaceVariant.withValues(alpha: 0.72)
+                  : widget.c.surface,
             ),
             child: Row(
               children: [
                 Container(
-                  width: 56,
-                  height: 56,
+                  width: 40,
+                  height: 40,
                   decoration: BoxDecoration(
                     color: Colors.red.withValues(alpha: 0.14),
-                    borderRadius: BorderRadius.circular(kCardRadius),
+                    borderRadius: BorderRadius.circular(6),
                   ),
                   child: const Icon(
                     Icons.favorite,
                     color: Colors.red,
-                    size: 24,
+                    size: 20,
                   ),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -1230,8 +1738,8 @@ class _ProfileLikedCardState extends State<_ProfileLikedCard> {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: widget.c.textPrimary,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                       const SizedBox(height: 5),
@@ -1298,16 +1806,15 @@ class _ProfilePlaylistCardState extends State<_ProfilePlaylistCard> {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(kCardRadius),
           onTap: widget.onTap,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 140),
-            height: 104,
-            padding: const EdgeInsets.all(12),
+            constraints: const BoxConstraints(minHeight: 72),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
             decoration: BoxDecoration(
-              color: _hover ? widget.c.surfaceVariant : widget.c.surface,
-              borderRadius: BorderRadius.circular(kCardRadius),
-              border: Border.all(color: widget.c.border),
+              color: _hover
+                  ? widget.c.surfaceVariant.withValues(alpha: 0.72)
+                  : widget.c.surface,
             ),
             child: Row(
               children: [
@@ -1325,7 +1832,7 @@ class _ProfilePlaylistCardState extends State<_ProfilePlaylistCard> {
                         style: TextStyle(
                           color: widget.c.textPrimary,
                           fontSize: 14,
-                          fontWeight: FontWeight.w700,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                       const SizedBox(height: 6),
@@ -1362,27 +1869,27 @@ class _PlaylistCoverMark extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 58,
-      height: 58,
+      height: 48,
+      width: 48,
       decoration: BoxDecoration(
         color: c.accent.withValues(alpha: collected ? 0.1 : 0.16),
-        borderRadius: BorderRadius.circular(7),
+        borderRadius: BorderRadius.circular(6),
       ),
       child: Stack(
         children: [
           Positioned(
-            left: 10,
-            top: 12,
+            left: 9,
+            top: 10,
             child: Icon(
               collected ? Icons.bookmark : Icons.queue_music,
               color: c.accent,
-              size: 24,
+              size: 21,
             ),
           ),
           Positioned(
-            right: 8,
-            bottom: 8,
-            child: Icon(Icons.graphic_eq, color: c.textMuted, size: 16),
+            right: 7,
+            bottom: 7,
+            child: Icon(Icons.graphic_eq, color: c.textMuted, size: 14),
           ),
         ],
       ),
