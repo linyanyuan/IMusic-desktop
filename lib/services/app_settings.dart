@@ -12,6 +12,7 @@ class AppSettings {
   final int cacheRetentionDays;
   final double lyricsFontSize;
   final int lyricsColorValue;
+  final bool aiRecommendationsEnabled;
   final ShortcutSettings shortcutSettings;
 
   const AppSettings({
@@ -20,6 +21,7 @@ class AppSettings {
     this.cacheRetentionDays = 7,
     this.lyricsFontSize = 22,
     this.lyricsColorValue = 0xFF1ED760,
+    this.aiRecommendationsEnabled = false,
     this.shortcutSettings = const ShortcutSettings(
       shortcuts: defaultShortcutBindings,
     ),
@@ -31,6 +33,7 @@ class AppSettings {
     int? cacheRetentionDays,
     double? lyricsFontSize,
     int? lyricsColorValue,
+    bool? aiRecommendationsEnabled,
     ShortcutSettings? shortcutSettings,
   }) {
     return AppSettings(
@@ -40,6 +43,8 @@ class AppSettings {
       cacheRetentionDays: cacheRetentionDays ?? this.cacheRetentionDays,
       lyricsFontSize: lyricsFontSize ?? this.lyricsFontSize,
       lyricsColorValue: lyricsColorValue ?? this.lyricsColorValue,
+      aiRecommendationsEnabled:
+          aiRecommendationsEnabled ?? this.aiRecommendationsEnabled,
       shortcutSettings: shortcutSettings ?? this.shortcutSettings,
     );
   }
@@ -56,6 +61,8 @@ class AppSettingsNotifier extends StateNotifier<AppSettings> {
   static const _cacheRetentionDaysKey = 'settings_cache_retention_days';
   static const _lyricsFontSizeKey = 'settings_lyrics_font_size';
   static const _lyricsColorKey = 'settings_lyrics_color';
+  static const _aiRecommendationsEnabledKey =
+      'settings_ai_recommendations_enabled';
   static const _shortcutSettingsKey = 'settings_shortcuts';
 
   Future<void> _load() async {
@@ -73,6 +80,9 @@ class AppSettingsNotifier extends StateNotifier<AppSettings> {
           const AppSettings().lyricsFontSize,
       lyricsColorValue:
           prefs.getInt(_lyricsColorKey) ?? const AppSettings().lyricsColorValue,
+      aiRecommendationsEnabled:
+          prefs.getBool(_aiRecommendationsEnabledKey) ??
+          const AppSettings().aiRecommendationsEnabled,
       shortcutSettings: _loadShortcutSettings(prefs),
     );
   }
@@ -125,6 +135,12 @@ class AppSettingsNotifier extends StateNotifier<AppSettings> {
     state = state.copyWith(lyricsColorValue: value);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_lyricsColorKey, value);
+  }
+
+  Future<void> setAiRecommendationsEnabled(bool value) async {
+    state = state.copyWith(aiRecommendationsEnabled: value);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_aiRecommendationsEnabledKey, value);
   }
 
   Future<void> setShortcutSettings(ShortcutSettings value) async {

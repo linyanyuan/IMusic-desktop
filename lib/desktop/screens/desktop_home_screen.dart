@@ -6,7 +6,11 @@ import '../../core/models/song.dart';
 import '../../core/models/playlist.dart';
 import '../../playback/playback_actions.dart';
 import '../../playback/playback_providers.dart';
+import '../../services/app_settings.dart';
+import '../../services/auth_service.dart';
+import '../../services/library_service.dart';
 import '../../services/music_service.dart';
+import '../../services/recommendation_service.dart';
 import '../desktop_app_shell.dart';
 import '../widgets/components/network_cover_image.dart';
 
@@ -25,6 +29,24 @@ final homeRecommendedSongsLoadingProvider = StateProvider<bool>((ref) => false);
 final homeLoadingMoreProvider = StateProvider<bool>((ref) => false);
 final homeLoadedCountProvider = StateProvider<int>((ref) => 0);
 final homeInitializedProvider = StateProvider<bool>((ref) => false);
+final homePersonalizedRecommendationsProvider =
+    FutureProvider<PersonalizedRecommendations>((ref) async {
+      final settings = ref.watch(appSettingsProvider);
+      if (!settings.aiRecommendationsEnabled) {
+        return const PersonalizedRecommendations.empty();
+      }
+
+      final auth = ref.watch(authProvider);
+      final token = auth.token;
+      final history = ref.watch(libraryProvider).playHistory;
+      if (token == null || token.isEmpty || history.isEmpty) {
+        return const PersonalizedRecommendations.empty();
+      }
+
+      return ref
+          .watch(recommendationServiceProvider)
+          .getPersonalizedRecommendations(token, history: history);
+    });
 
 const _homeInitialDataTimeout = Duration(seconds: 5);
 const _homeLoadMoreTimeout = Duration(seconds: 6);
@@ -72,9 +94,11 @@ class _DesktopHomeScreenState extends ConsumerState<DesktopHomeScreen> {
     MusicService musicService,
   ) async {
     try {
-      final playlists = await musicService
-          .getHotPlaylists(limit: 6, offset: 0)
-          .timeout(_homeInitialDataTimeout, onTimeout: () => const []);
+      final playlists = await _loadPersonalizedHotPlaylists(
+        container,
+        musicService,
+        limit: 6,
+      );
 
       container.read(homeHotPlaylistsProvider.notifier).state = playlists
           .map(_mapPlaylist)
@@ -94,9 +118,9 @@ class _DesktopHomeScreenState extends ConsumerState<DesktopHomeScreen> {
     MusicService musicService,
   ) async {
     try {
-      final songs = await musicService.getRecommendedSongs().timeout(
-        _homeInitialDataTimeout,
-        onTimeout: () => const [],
+      final songs = await _loadPersonalizedRecommendedSongs(
+        container,
+        musicService,
       );
 
       container.read(homeRecommendedSongsProvider.notifier).state = songs
@@ -112,6 +136,91 @@ class _DesktopHomeScreenState extends ConsumerState<DesktopHomeScreen> {
     }
   }
 
+  Future<List<Map<String, dynamic>>> _loadPersonalizedHotPlaylists(
+    ProviderContainer container,
+    MusicService musicService, {
+    required int limit,
+  }) async {
+    final fallback = () => musicService
+        .getHotPlaylists(limit: limit, offset: 0)
+        .timeout(_homeInitialDataTimeout, onTimeout: () => const []);
+
+    if (!_canUsePersonalizedRecommendations(container)) {
+      return await fallback();
+    }
+
+    try {
+      final recommendations = await container
+          .read(homePersonalizedRecommendationsProvider.future)
+          .timeout(_homeInitialDataTimeout);
+      if (recommendations.playlistQueries.isEmpty) return await fallback();
+
+      final playlists = <Map<String, dynamic>>[];
+      final seen = <String>{};
+      for (final query in recommendations.playlistQueries) {
+        final results = await musicService.searchSongs(query);
+        for (final song in results) {
+          if (!song.isPlaylist) continue;
+          if (!seen.add(song.id)) continue;
+          playlists.add(song.toJson());
+          if (playlists.length >= limit) return playlists;
+        }
+      }
+      return playlists.isEmpty ? await fallback() : playlists;
+    } catch (e) {
+      return await fallback();
+    }
+  }
+
+  Future<List<Song>> _loadPersonalizedRecommendedSongs(
+    ProviderContainer container,
+    MusicService musicService,
+  ) async {
+    final fallback = () => musicService.getRecommendedSongs().timeout(
+      _homeInitialDataTimeout,
+      onTimeout: () => const [],
+    );
+
+    if (!_canUsePersonalizedRecommendations(container)) {
+      return await fallback();
+    }
+
+    try {
+      final recommendations = await container
+          .read(homePersonalizedRecommendationsProvider.future)
+          .timeout(_homeInitialDataTimeout);
+      if (recommendations.songQueries.isEmpty) return await fallback();
+
+      final songs = <Song>[];
+      final seen = <String>{};
+      for (final query in recommendations.songQueries) {
+        final results = await musicService.searchSongs(query);
+        for (final song in results) {
+          if (song.isPlaylist) continue;
+          if (!seen.add(song.id)) continue;
+          songs.add(song);
+          if (songs.length >= 8) return songs;
+        }
+      }
+      return songs.isEmpty ? await fallback() : songs;
+    } catch (e) {
+      return await fallback();
+    }
+  }
+
+  bool _canUsePersonalizedRecommendations(ProviderContainer container) {
+    try {
+      if (!container.read(appSettingsProvider).aiRecommendationsEnabled) {
+        return false;
+      }
+      final token = container.read(authProvider).token;
+      if (token == null || token.isEmpty) return false;
+      return container.read(libraryProvider).playHistory.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
   void _syncHomeLoadingState(ProviderContainer container) {
     final stillLoading =
         container.read(homeHotPlaylistsLoadingProvider) ||
@@ -123,6 +232,7 @@ class _DesktopHomeScreenState extends ConsumerState<DesktopHomeScreen> {
   Future<void> _loadMore() async {
     final container = ProviderScope.containerOf(context, listen: false);
     if (container.read(homeLoadingMoreProvider)) return;
+    if (_canUsePersonalizedRecommendations(container)) return;
 
     container.read(homeLoadingMoreProvider.notifier).state = true;
     final musicService = container.read(musicServiceProvider);
