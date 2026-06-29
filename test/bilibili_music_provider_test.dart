@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -91,6 +92,34 @@ void main() {
       );
     },
   );
+
+  test('recommendations fall back when the gateway does not return', () async {
+    final fallbackAdapter = _JsonAdapter((options) {
+      return {
+        'data': {
+          'result': [
+            {
+              'bvid': 'BVfallback',
+              'title': '热门音乐',
+              'author': '音乐UP',
+              'duration': '03:30',
+              'pic': '//i0.hdslb.com/cover.jpg',
+            },
+          ],
+        },
+      };
+    });
+    final provider = BilibiliMusicProvider(
+      dio: _dio(fallbackAdapter),
+      gatewayDio: _dio(_NeverCompletingAdapter()),
+      recommendationTimeout: const Duration(milliseconds: 20),
+    );
+
+    final results = await provider.getRecommendedSongs();
+
+    expect(results.single['id'], 'bilibili:BVfallback');
+    expect(fallbackAdapter.requests.single.path, contains('/search/type'));
+  });
 }
 
 Dio _dio(HttpClientAdapter adapter) {
@@ -119,6 +148,20 @@ class _JsonAdapter implements HttpClientAdapter {
         Headers.contentTypeHeader: ['application/json'],
       },
     );
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
+class _NeverCompletingAdapter implements HttpClientAdapter {
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) {
+    return Completer<ResponseBody>().future;
   }
 
   @override

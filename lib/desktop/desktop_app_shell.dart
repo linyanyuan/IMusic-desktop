@@ -12,6 +12,8 @@ import '../core/models/song.dart';
 import 'widgets/desktop_sidebar.dart';
 import 'widgets/desktop_player_bar.dart';
 import 'widgets/desktop_lyrics_window_controller.dart';
+import 'widgets/desktop_shortcut_controller.dart';
+import 'widgets/settings_shortcuts_section.dart';
 import 'widgets/animated_equalizer_icon.dart';
 import 'screens/desktop_home_screen.dart';
 import 'screens/desktop_search_screen.dart';
@@ -174,35 +176,37 @@ class DesktopAppShell extends ConsumerWidget {
     final route = ref.watch(deskRouteProvider);
     final colors = _colors(context);
 
-    return DragToResizeArea(
-      resizeEdgeSize: 6,
-      child: Scaffold(
-        backgroundColor: colors.background,
-        body: Stack(
-          children: [
-            // Main UI
-            Column(
-              children: [
-                // Top drag area spanning full width (48px height)
-                _TopDragBar(colors: colors),
-                Expanded(
-                  child: Row(
-                    children: [
-                      const DesktopSidebar(width: kSidebarWidth),
-                      VerticalDivider(width: 1, color: colors.divider),
-                      Expanded(child: _workbench(route, ref)),
-                    ],
+    return DesktopShortcutController(
+      child: DragToResizeArea(
+        resizeEdgeSize: 6,
+        child: Scaffold(
+          backgroundColor: colors.background,
+          body: Stack(
+            children: [
+              // Main UI
+              Column(
+                children: [
+                  // Top drag area spanning full width (48px height)
+                  _TopDragBar(colors: colors),
+                  Expanded(
+                    child: Row(
+                      children: [
+                        const DesktopSidebar(width: kSidebarWidth),
+                        VerticalDivider(width: 1, color: colors.divider),
+                        Expanded(child: _workbench(route, ref)),
+                      ],
+                    ),
                   ),
-                ),
-                Divider(height: 1, color: colors.divider),
-                const DesktopPlayerBar(),
-              ],
-            ),
-            // Standalone desktop lyrics window controller.
-            const DesktopLyricsWindowController(),
-            // Queue drawer
-            _QueueDrawer(colors: colors),
-          ],
+                  Divider(height: 1, color: colors.divider),
+                  const DesktopPlayerBar(),
+                ],
+              ),
+              // Standalone desktop lyrics window controller.
+              const DesktopLyricsWindowController(),
+              // Queue drawer
+              _QueueDrawer(colors: colors),
+            ],
+          ),
         ),
       ),
     );
@@ -563,6 +567,8 @@ class _SettingsPlaceholder extends ConsumerWidget {
               ),
             ],
           ),
+          const SizedBox(height: 16),
+          SettingsShortcutsSection(colors: c),
         ],
       ),
     );

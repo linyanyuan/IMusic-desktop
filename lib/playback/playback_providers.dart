@@ -25,6 +25,12 @@ final playbackModeProvider = StateProvider<PlaybackMode>(
   (ref) => PlaybackMode.sequence,
 );
 
+/// Current player volume, normalized from 0.0 to 1.0.
+final playerVolumeProvider = StateProvider<double>((ref) => 1.0);
+
+/// Last non-zero volume used when toggling mute back off.
+final lastAudibleVolumeProvider = StateProvider<double>((ref) => 1.0);
+
 /// Audio player instance provider
 final audioPlayerProvider = Provider<AudioPlayer>((ref) {
   final player = AudioPlayer();

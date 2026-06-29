@@ -57,4 +57,18 @@ void main() {
       expect(runner, contains('HWND_TOPMOST'));
     },
   );
+
+  test('Windows runner registers and dispatches global hotkeys', () {
+    final header = File('windows/runner/flutter_window.h').readAsStringSync();
+    final source = File('windows/runner/flutter_window.cpp').readAsStringSync();
+
+    expect(source, contains('imusic/global_hotkeys'));
+    expect(source, contains('registerHotkeys'));
+    expect(source, contains('unregisterHotkeys'));
+    expect(source, contains('RegisterHotKey'));
+    expect(source, contains('UnregisterHotKey'));
+    expect(source, contains('WM_HOTKEY'));
+    expect(source, contains('hotkeyPressed'));
+    expect(header, contains('global_hotkey_channel_'));
+  });
 }

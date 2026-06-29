@@ -1,20 +1,40 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import '../shared/collection_lyrics.dart';
 import 'music_provider.dart';
 
 /// Bilibili music provider - provides playback URLs and search from Bilibili
 class BilibiliMusicProvider implements MusicProvider {
-  BilibiliMusicProvider({Dio? dio})
-    : _dio =
-          dio ??
-          Dio(
-            BaseOptions(
-              baseUrl: 'https://api.bilibili.com',
-              headers: _defaultHeaders,
-              connectTimeout: const Duration(seconds: 15),
-              receiveTimeout: const Duration(seconds: 15),
-            ),
-          );
+  BilibiliMusicProvider({
+    Dio? dio,
+    Dio? gatewayDio,
+    Duration recommendationTimeout = const Duration(seconds: 3),
+  }) : _dio =
+           dio ??
+           Dio(
+             BaseOptions(
+               baseUrl: 'https://api.bilibili.com',
+               headers: _defaultHeaders,
+               connectTimeout: const Duration(seconds: 15),
+               receiveTimeout: const Duration(seconds: 15),
+             ),
+           ),
+       _gatewayDio =
+           gatewayDio ??
+           Dio(
+             BaseOptions(
+               baseUrl: 'https://gateway.karpov.cn/api/proxy',
+               headers: {
+                 'Accept': 'application/json',
+                 'User-Agent': _defaultHeaders['User-Agent']!,
+               },
+               connectTimeout: recommendationTimeout,
+               receiveTimeout: recommendationTimeout,
+               sendTimeout: recommendationTimeout,
+             ),
+           ),
+       _recommendationTimeout = recommendationTimeout;
 
   static const _defaultHeaders = {
     'Accept': 'application/json, text/plain, */*',
@@ -26,6 +46,8 @@ class BilibiliMusicProvider implements MusicProvider {
   };
 
   final Dio _dio;
+  final Dio _gatewayDio;
+  final Duration _recommendationTimeout;
 
   /// Expose dio instance for downloading audio with headers
   Dio get dio => _dio;
@@ -92,23 +114,14 @@ class BilibiliMusicProvider implements MusicProvider {
     print('[BilibiliMusicProvider] getRecommendedSongs - 开始获取推荐歌曲');
 
     try {
-      // 使用 Karpov Gateway API（移动端使用的接口）
-      final gatewayDio = Dio(
-        BaseOptions(
-          baseUrl: 'https://gateway.karpov.cn/api/proxy',
-          headers: {
-            'Accept': 'application/json',
-            'User-Agent': _defaultHeaders['User-Agent']!,
-          },
-        ),
-      );
-
       print('[BilibiliMusicProvider] 请求 Gateway API: /qqmusic/search/songs');
 
-      final response = await gatewayDio.get<Map<String, dynamic>>(
-        '/qqmusic/search/songs',
-        queryParameters: {'q': '热门', 'page': 1, 'page_size': 30},
-      );
+      final response = await _gatewayDio
+          .get<Map<String, dynamic>>(
+            '/qqmusic/search/songs',
+            queryParameters: {'q': '热门', 'page': 1, 'page_size': 30},
+          )
+          .timeout(_recommendationTimeout);
 
       final data = response.data;
       final songs = (data?['songs'] as List?) ?? [];

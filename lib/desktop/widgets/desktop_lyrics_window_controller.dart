@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:audioplayers/audioplayers.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -10,6 +9,7 @@ import '../../core/models/song.dart';
 import '../../lyrics_window/lyrics_window_channel.dart';
 import '../../lyrics_window/lyrics_window_manager.dart';
 import '../../playback/playback_actions.dart';
+import '../../playback/playback_commands.dart';
 import '../../playback/playback_providers.dart';
 import '../../services/app_settings.dart';
 import '../../services/auth_service.dart';
@@ -176,61 +176,15 @@ class _DesktopLyricsWindowControllerState
   }
 
   Future<void> _togglePlayPause() async {
-    final player = ref.read(audioPlayerProvider);
-    final current = ref.read(currentSongProvider);
-    final loaded = ref.read(loadedPlaybackProvider);
-    if (current == null) return;
-
-    if (player.state == PlayerState.playing) {
-      await player.pause();
-      ref.read(currentSongProvider.notifier).state = {
-        ...current,
-        'status': 'paused',
-      };
-      return;
-    }
-
-    if (loaded?['id']?.toString() == current['id']?.toString()) {
-      await player.resume();
-      ref.read(currentSongProvider.notifier).state = {
-        ...current,
-        'status': 'playing',
-      };
-      return;
-    }
-
-    await startSongPlayback(
-      ref,
-      song: current,
-      index: ref.read(currentSongIndexProvider),
-      queue: ref.read(playbackQueueProvider),
-    );
+    await togglePlayPause(ref);
   }
 
   Future<void> _previous() async {
-    final queue = ref.read(playbackQueueProvider);
-    if (queue.isEmpty) return;
-    final currentIndex = ref.read(currentSongIndexProvider);
-    final prevIndex = currentIndex > 0 ? currentIndex - 1 : queue.length - 1;
-    await startSongPlayback(
-      ref,
-      song: queue[prevIndex],
-      index: prevIndex,
-      queue: queue,
-    );
+    await playPreviousTrack(ref);
   }
 
   Future<void> _next() async {
-    final queue = ref.read(playbackQueueProvider);
-    if (queue.isEmpty) return;
-    final currentIndex = ref.read(currentSongIndexProvider);
-    final nextIndex = (currentIndex + 1) % queue.length;
-    await startSongPlayback(
-      ref,
-      song: queue[nextIndex],
-      index: nextIndex,
-      queue: queue,
-    );
+    await playNextTrack(ref);
   }
 
   Future<void> _toggleFavorite() async {

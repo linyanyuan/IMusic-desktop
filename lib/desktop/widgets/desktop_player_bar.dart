@@ -2,9 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:audioplayers/audioplayers.dart';
 
 import '../../app/theme.dart';
+import '../../playback/playback_commands.dart';
 import '../../playback/playback_providers.dart';
 import '../../playback/playback_actions.dart';
 import '../desktop_app_shell.dart';
@@ -215,10 +215,7 @@ class DesktopPlayerBar extends ConsumerWidget {
                             tooltip: '播放队列',
                           ),
                           const SizedBox(width: 4),
-                          _VolumeControl(
-                            c: c,
-                            player: ref.watch(audioPlayerProvider),
-                          ),
+                          _VolumeControl(c: c),
                         ],
                       ),
                     ),
@@ -233,63 +230,15 @@ class DesktopPlayerBar extends ConsumerWidget {
   }
 
   void _togglePlayPause(WidgetRef ref) async {
-    final player = ref.read(audioPlayerProvider);
-    final current = ref.read(currentSongProvider);
-    final loaded = ref.read(loadedPlaybackProvider);
-
-    if (current == null) return;
-
-    final playerState = player.state;
-
-    if (playerState == PlayerState.playing) {
-      await player.pause();
-      ref.read(currentSongProvider.notifier).state = {
-        ...current,
-        'status': 'paused',
-      };
-    } else {
-      if (loaded?['id']?.toString() == current['id']?.toString()) {
-        await player.resume();
-        ref.read(currentSongProvider.notifier).state = {
-          ...current,
-          'status': 'playing',
-        };
-      } else {
-        final queue = ref.read(playbackQueueProvider);
-        final index = ref.read(currentSongIndexProvider);
-        await startSongPlayback(ref, song: current, index: index, queue: queue);
-      }
-    }
+    await togglePlayPause(ref);
   }
 
   void _next(WidgetRef ref) async {
-    final queue = ref.read(playbackQueueProvider);
-    final currentIndex = ref.read(currentSongIndexProvider);
-
-    if (queue.isEmpty) return;
-
-    final nextIndex = (currentIndex + 1) % queue.length;
-    await startSongPlayback(
-      ref,
-      song: queue[nextIndex],
-      index: nextIndex,
-      queue: queue,
-    );
+    await playNextTrack(ref);
   }
 
   void _previous(WidgetRef ref) async {
-    final queue = ref.read(playbackQueueProvider);
-    final currentIndex = ref.read(currentSongIndexProvider);
-
-    if (queue.isEmpty) return;
-
-    final prevIndex = currentIndex > 0 ? currentIndex - 1 : queue.length - 1;
-    await startSongPlayback(
-      ref,
-      song: queue[prevIndex],
-      index: prevIndex,
-      queue: queue,
-    );
+    await playPreviousTrack(ref);
   }
 
   void _cycleMode(WidgetRef ref) {
@@ -517,9 +466,8 @@ class _ProgressBarState extends State<_ProgressBar> {
 /// Hover-popup volume control with vertical slider
 class _VolumeControl extends ConsumerStatefulWidget {
   final DeepVibeColors c;
-  final AudioPlayer player;
 
-  const _VolumeControl({required this.c, required this.player});
+  const _VolumeControl({required this.c});
 
   @override
   ConsumerState<_VolumeControl> createState() => _VolumeControlState();
@@ -527,15 +475,8 @@ class _VolumeControl extends ConsumerStatefulWidget {
 
 class _VolumeControlState extends ConsumerState<_VolumeControl> {
   final LayerLink _layerLink = LayerLink();
-  double _volume = 1.0;
   OverlayEntry? _overlayEntry;
   Timer? _hideTimer;
-
-  @override
-  void initState() {
-    super.initState();
-    widget.player.setVolume(_volume);
-  }
 
   @override
   void dispose() {
@@ -546,9 +487,8 @@ class _VolumeControlState extends ConsumerState<_VolumeControl> {
 
   void _setVolume(double value) async {
     if (!mounted) return;
-    setState(() => _volume = value);
     _overlayEntry?.markNeedsBuild();
-    await widget.player.setVolume(value);
+    await setPlaybackVolume(ref, value);
   }
 
   void _showPopup() {
@@ -610,7 +550,7 @@ class _VolumeControlState extends ConsumerState<_VolumeControl> {
                                   thumbColor: widget.c.accent,
                                 ),
                                 child: Slider(
-                                  value: _volume,
+                                  value: ref.watch(playerVolumeProvider),
                                   onChanged: _setVolume,
                                 ),
                               ),
@@ -646,9 +586,10 @@ class _VolumeControlState extends ConsumerState<_VolumeControl> {
 
   @override
   Widget build(BuildContext context) {
-    final icon = _volume <= 0.0
+    final volume = ref.watch(playerVolumeProvider);
+    final icon = volume <= 0.0
         ? Icons.volume_mute
-        : _volume < 0.5
+        : volume < 0.5
         ? Icons.volume_down
         : Icons.volume_up;
 
@@ -666,7 +607,7 @@ class _VolumeControlState extends ConsumerState<_VolumeControl> {
             color: widget.c.textSecondary,
             tooltip: '音量',
             onPressed: () {
-              _setVolume(_volume > 0 ? 0.0 : 1.0);
+              togglePlaybackMute(ref);
             },
           ),
         ),

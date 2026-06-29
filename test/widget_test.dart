@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -255,6 +256,67 @@ void main() {
     expect(find.byTooltip('返回'), findsNothing);
     expect(find.text('专注模式'), findsOneWidget);
     expect(find.text('播放歌曲后进入专注聆听'), findsOneWidget);
+  });
+
+  testWidgets('F shortcut toggles focus mode inside the desktop shell', (
+    tester,
+  ) async {
+    final container = await _shellContainer(authenticated: false);
+    addTearDown(container.dispose);
+    await _pumpDesktopShell(tester, container);
+
+    expect(container.read(deskRouteProvider), DeskRoute.home);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+    await tester.pump();
+
+    expect(container.read(deskRouteProvider), DeskRoute.focus);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+    await tester.pump();
+
+    expect(container.read(deskRouteProvider), DeskRoute.home);
+  });
+
+  testWidgets('settings page shows configurable keyboard shortcuts', (
+    tester,
+  ) async {
+    final container = await _shellContainer(authenticated: false);
+    addTearDown(container.dispose);
+    container.read(deskRouteProvider.notifier).state = DeskRoute.settings;
+
+    await _pumpDesktopShell(tester, container);
+
+    expect(find.text('快捷键'), findsOneWidget);
+    expect(find.text('播放控制'), findsOneWidget);
+    expect(find.text('窗口与歌词'), findsOneWidget);
+    expect(find.text('Ctrl + Alt + P'), findsOneWidget);
+    expect(find.text('F'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('settings-shortcuts-reset-button')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('recording F shortcut does not toggle focus mode', (
+    tester,
+  ) async {
+    final container = await _shellContainer(authenticated: false);
+    addTearDown(container.dispose);
+    container.read(deskRouteProvider.notifier).state = DeskRoute.settings;
+
+    await _pumpDesktopShell(tester, container);
+    final keycap = find.byKey(
+      const ValueKey('settings-shortcut-toggleFocusMode'),
+    );
+    await tester.drag(find.byType(ListView).first, const Offset(0, -900));
+    await tester.pumpAndSettle();
+    await tester.tap(keycap);
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+    await tester.pump();
+
+    expect(container.read(deskRouteProvider), DeskRoute.settings);
   });
 
   testWidgets('right rail fallback labels are readable Chinese', (
