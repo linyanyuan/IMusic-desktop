@@ -104,12 +104,26 @@ class UserInfo {
           json['avatarText']?.toString() ??
           (username.isNotEmpty ? username[0].toUpperCase() : 'A'),
       avatarUrl:
-          _stringValue(json['avatarUrl']) ??
-          _stringValue(json['avatar']) ??
-          _stringValue(json['avatar_url']) ??
+          _avatarUrlValue(json['avatarUrl']) ??
+          _avatarUrlValue(json['avatar']) ??
+          _avatarUrlValue(json['avatar_url']) ??
           '',
     );
   }
+}
+
+String? _avatarUrlValue(Object? value) {
+  final text = _stringValue(value);
+  if (text == null) return null;
+
+  final uri = Uri.tryParse(text);
+  if (uri == null) return null;
+  if (uri.hasScheme) {
+    return (uri.scheme == 'http' || uri.scheme == 'https') ? text : null;
+  }
+  if (text.startsWith('//')) return 'https:$text';
+
+  return Uri.parse(AuthService._baseUrl).resolve(text).toString();
 }
 
 String? _stringValue(Object? value) {

@@ -33,6 +33,15 @@ void main() {
       }).avatarUrl,
       'https://example.test/avatar-c.png',
     );
+
+    expect(
+      UserInfo.fromJson({
+        'id': 1,
+        'username': 'tester',
+        'avatar': '/uploads/avatar-d.png',
+      }).avatarUrl,
+      'http://60.205.218.90:8787/uploads/avatar-d.png',
+    );
   });
 
   test('register stores token and applies returned account library', () async {
