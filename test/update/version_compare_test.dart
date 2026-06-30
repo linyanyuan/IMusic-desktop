@@ -4,6 +4,7 @@ import 'package:deepvibe_desktop/services/update_service.dart';
 import 'package:deepvibe_desktop/desktop/update/update_providers.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 void main() {
   group('isUpdateAvailable', () {
@@ -151,6 +152,28 @@ void main() {
   });
 
   group('UpdateCheckNotifier', () {
+    test('manual 404 check explains missing release manifest', () async {
+      PackageInfo.setMockInitialValues(
+        appName: 'IMusic',
+        packageName: 'imusic',
+        version: '1.0.0',
+        buildNumber: '1',
+        buildSignature: '',
+      );
+      final notifier = _TestUpdateCheckNotifier(
+        _MissingManifestUpdateService(),
+      );
+      addTearDown(notifier.dispose);
+
+      await notifier.checkForUpdates(manual: true);
+
+      final state = notifier.state;
+      expect(state, isA<UpdateError>());
+      expect((state as UpdateError).message, contains('未找到更新文件'));
+      expect(state.message, contains('/releases/desktop-update.json'));
+      expect(state.message, contains('dist\\releases'));
+    });
+
     test('download cancellation returns to idle instead of error', () async {
       final service = _CancellableUpdateService();
       final notifier = _TestUpdateCheckNotifier(service);
@@ -203,6 +226,23 @@ class _CancellableUpdateService extends UpdateService {
     throw DioException(
       requestOptions: RequestOptions(path: manifest.downloadUrl),
       type: DioExceptionType.cancel,
+    );
+  }
+}
+
+class _MissingManifestUpdateService extends UpdateService {
+  @override
+  Future<UpdateManifest?> fetchManifest({
+    required String currentVersion,
+    bool manual = false,
+  }) async {
+    final request = RequestOptions(
+      path: updateManifestPath,
+      baseUrl: defaultUpdateBaseUrl,
+    );
+    throw DioException(
+      requestOptions: request,
+      response: Response<dynamic>(requestOptions: request, statusCode: 404),
     );
   }
 }

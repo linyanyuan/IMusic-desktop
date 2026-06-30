@@ -47,6 +47,12 @@ dist\releases\UPLOAD_TO_SERVER.txt
 scp .\dist\releases\* root@60.205.218.90:/opt/imusic-desktop/releases/
 ```
 
+也可以用项目里的上传脚本，它会上传后自动验证 `desktop-update.json`：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\publish_releases.ps1
+```
+
 客户端会读取：
 
 ```text

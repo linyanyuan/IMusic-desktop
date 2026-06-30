@@ -144,6 +144,16 @@ class UpdateCheckNotifier extends StateNotifier<UpdateCheckState> {
 
   static String _describe(Object e) {
     if (e is DioException) {
+      final status = e.response?.statusCode;
+      if (status == 404) {
+        final uri = e.requestOptions.uri;
+        return '未找到更新文件：$uri\n'
+            '请确认 dist\\releases 已上传到服务器，并且服务器已将 '
+            '/opt/imusic-desktop/releases 暴露为 /releases。';
+      }
+      if (status != null) {
+        return '更新服务器返回 $status：${e.message ?? '请求失败'}';
+      }
       return e.error != null ? '网络错误：${e.error}' : '网络错误：${e.message ?? '未知'}';
     }
     return '更新失败：$e';

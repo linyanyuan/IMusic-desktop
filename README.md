@@ -125,6 +125,12 @@ ssh root@60.205.218.90 "mkdir -p /opt/imusic-desktop/releases"
 scp .\dist\releases\* root@60.205.218.90:/opt/imusic-desktop/releases/
 ```
 
+也可以使用发布脚本，上传后会自动验证 manifest：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\publish_releases.ps1
+```
+
 上传后检查 manifest 是否能访问：
 
 ```powershell
