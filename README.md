@@ -65,10 +65,91 @@ flutter test
 dart analyze
 ```
 
+## 版本发布与软件内更新
+
+桌面端内置更新读取服务器上的：
+
+```text
+http://60.205.218.90:8787/releases/desktop-update.json
+```
+
+服务器目录对应为：
+
+```text
+/opt/imusic-desktop/releases
+```
+
+### 1. 确认新版本号
+
+每次正式发布都要递增版本号：
+
+```text
+1.0.1+2
+1.0.2+3
+1.1.0+4
+```
+
+脚本里分开填写：
+
+```powershell
+-Version 1.0.2 -BuildNumber 3
+```
+
+注意：软件内更新主要比较 `Version`。如果旧版是 `1.0.1+1`，只发布 `1.0.1+2` 不会触发更新；应发布 `1.0.2+3` 或更高版本。
+
+### 2. 打包新版本
+
+普通发布用 zip 绿色包即可，不需要提前准备安装器：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\package_windows.ps1 -Version 1.0.2 -BuildNumber 3 -Changelog "修复若干问题，优化更新体验"
+```
+
+执行后会生成：
+
+```text
+dist\imusic-1.0.2+3-windows-x64\
+dist\imusic-1.0.2+3-windows-x64.zip
+dist\releases\imusic-1.0.2+3-windows-x64.zip
+dist\releases\desktop-update.json
+dist\releases\update-manifest-1.0.2.json
+dist\releases\UPLOAD_TO_SERVER.txt
+```
+
+### 3. 上传服务器
+
+把 `dist\releases\` 里的文件上传到服务器发布目录：
+
+```powershell
+ssh root@60.205.218.90 "mkdir -p /opt/imusic-desktop/releases"
+scp .\dist\releases\* root@60.205.218.90:/opt/imusic-desktop/releases/
+```
+
+上传后检查 manifest 是否能访问：
+
+```powershell
+Invoke-WebRequest http://60.205.218.90:8787/releases/desktop-update.json
+```
+
+返回内容里应包含新版本号、下载地址和 `sha256`。
+
+### 4. 测试软件内更新
+
+1. 运行低于服务器版本的客户端，例如本地旧版是 `1.0.1+2`，服务器发布 `1.0.2`。
+2. 打开软件设置里的检查更新，或重启软件等待自动检查。
+3. 看到新版本弹窗后点击下载。
+4. 下载完成后点击立即更新并退出。
+5. 软件会退出、覆盖当前目录、再自动打开新版本。
+
+### 5. 重要限制
+
+- zip 更新要求当前客户端已经包含 zip 更新能力；非常早的旧客户端只支持 `.exe/.msi` 安装器更新。
+- 如果要发布安装器，可以先用 Inno Setup、NSIS 等工具生成 `.exe/.msi`，再给脚本传 `-InstallerPath`。
+- 更完整的命令和常见报错见 `scripts/package_windows_usage.md`。
+
 ## 开发说明
 
 - 当前项目主要面向 Windows 桌面端。
 - 播放、搜索、登录和曲库同步逻辑集中在 `lib/services/` 与 `lib/playback/`。
 - 桌面歌词窗口使用 `desktop_multi_window` 创建独立 Flutter 子窗口。
 - 构建产物、日志、IDE 配置、本地调试报告和本地 agent 状态已在 `.gitignore` 中忽略。
-
