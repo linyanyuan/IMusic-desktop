@@ -8,18 +8,18 @@
 
 ## 1. 普通打包
 
-大多数情况下先用这个。它会生成可直接运行的 Windows 绿色版目录和 zip：
+大多数情况下用这个。它会生成可直接运行的 Windows 绿色版目录、zip，以及软件内更新需要的 `desktop-update.json`：
 
 把版本号和构建号换成你要发布的：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\package_windows.ps1 -Version 1.0.1 -BuildNumber 2
+powershell -ExecutionPolicy Bypass -File .\scripts\package_windows.ps1 -Version 1.0.1 -BuildNumber 2 -Changelog "修复若干问题，优化更新体验"
 ```
 
 如果你不小心写成了 `package_windows_windows.ps1`，项目里也提供了兼容入口，可以继续转发到正确脚本：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\package_windows_windows.ps1 -Version 1.0.1 -BuildNumber 2
+powershell -ExecutionPolicy Bypass -File .\scripts\package_windows_windows.ps1 -Version 1.0.1 -BuildNumber 2 -Changelog "修复若干问题，优化更新体验"
 ```
 
 执行后会生成：
@@ -27,9 +27,53 @@ powershell -ExecutionPolicy Bypass -File .\scripts\package_windows_windows.ps1 -
 ```text
 dist\imusic-1.0.1+2-windows-x64\
 dist\imusic-1.0.1+2-windows-x64.zip
+dist\releases\imusic-1.0.1+2-windows-x64.zip
+dist\releases\desktop-update.json
+dist\releases\update-manifest-1.0.1.json
+dist\releases\UPLOAD_TO_SERVER.txt
 ```
 
-## 2. 带自动更新文件
+## 2. 上传到服务器
+
+把 `dist\releases\` 里面的文件上传到服务器：
+
+```text
+/opt/imusic-desktop/releases
+```
+
+示例：
+
+```powershell
+scp .\dist\releases\* root@60.205.218.90:/opt/imusic-desktop/releases/
+```
+
+客户端会读取：
+
+```text
+http://60.205.218.90:8787/releases/desktop-update.json
+```
+
+更新包下载地址会类似：
+
+```text
+http://60.205.218.90:8787/releases/imusic-1.0.1%2B2-windows-x64.zip
+```
+
+上传后先用浏览器或 PowerShell 检查：
+
+```powershell
+Invoke-WebRequest http://60.205.218.90:8787/releases/desktop-update.json
+```
+
+## 3. 测试软件内更新
+
+1. 先安装或运行旧版本，例如 `1.0.0+1`。
+2. 打包新版本时 `Version` 必须变大，例如 `1.0.1`。只增加 `BuildNumber` 不会触发更新。
+3. 上传 `dist\releases\*` 到服务器。
+4. 打开旧版本软件，进入设置里手动检查更新，或重启软件等待自动检查。
+5. 点击下载，下载完成后点击立即更新并退出。
+
+## 4. 可选：带安装器发布
 
 只有你已经用 Inno Setup、NSIS、Advanced Installer 等工具提前生成了安装包，才使用 `-InstallerPath`。
 
@@ -70,33 +114,7 @@ dist\releases\update-manifest-1.0.1.json
 dist\releases\UPLOAD_TO_SERVER.txt
 ```
 
-## 3. 上传到服务器
-
-把 `dist\releases\` 里面的文件上传到服务器：
-
-```text
-/opt/imusic-desktop/releases
-```
-
-示例：
-
-```powershell
-scp .\dist\releases\* root@60.205.218.90:/opt/imusic-desktop/releases/
-```
-
-客户端会读取：
-
-```text
-http://60.205.218.90:8787/releases/desktop-update.json
-```
-
-安装包下载地址会类似：
-
-```text
-http://60.205.218.90:8787/releases/IMusic-Setup-1.0.1.exe
-```
-
-## 4. 版本号怎么填
+## 5. 版本号怎么填
 
 每次发新版时递增：
 
@@ -114,7 +132,9 @@ http://60.205.218.90:8787/releases/IMusic-Setup-1.0.1.exe
 
 `Version` 是用户看到的版本号，`BuildNumber` 是构建号，建议每次发布都加 1。
 
-## 5. 常见报错
+注意：软件内更新判断主要看 `Version`。如果旧版是 `1.0.1+1`，你只打 `1.0.1+2`，软件不会认为这是新版；要打 `1.0.2+2`。
+
+## 6. 常见报错
 
 如果提示：
 

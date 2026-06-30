@@ -146,41 +146,49 @@ try {
     zip = $zipPath
   }
 
+  New-Item -ItemType Directory -Force -Path $localReleasesDir | Out-Null
+
   if ($InstallerPath) {
-    New-Item -ItemType Directory -Force -Path $localReleasesDir | Out-Null
-    $installerName = [System.IO.Path]::GetFileName($resolvedInstaller)
-    $publishedInstaller = Join-Path $localReleasesDir $installerName
-    Copy-Item -LiteralPath $resolvedInstaller -Destination $publishedInstaller -Force
-
-    $sha256 = (Get-FileHash -LiteralPath $publishedInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
-    $downloadUrl = $DownloadBaseUrl.TrimEnd('/') + '/' + [uri]::EscapeDataString($installerName)
-    $manifest = [ordered]@{
-      version = $Version
-      downloadUrl = $downloadUrl
-      sha256 = $sha256
-      changelog = $Changelog
-    }
-
-    $manifestPath = Join-Path $localReleasesDir "update-manifest-$Version.json"
-    $latestManifestPath = Join-Path $localReleasesDir 'desktop-update.json'
-    $manifestJson = $manifest | ConvertTo-Json -Depth 4
-    [System.IO.File]::WriteAllText(
-      $manifestPath,
-      $manifestJson + [Environment]::NewLine,
-      [System.Text.UTF8Encoding]::new($false)
-    )
-    [System.IO.File]::WriteAllText(
-      $latestManifestPath,
-      $manifestJson + [Environment]::NewLine,
-      [System.Text.UTF8Encoding]::new($false)
-    )
-
-    $output.installer = $publishedInstaller
-    $output.manifest = $manifestPath
-    $output.latestManifest = $latestManifestPath
-    $output.sha256 = $sha256
-    $output.downloadUrl = $downloadUrl
+    $assetSource = $resolvedInstaller
+    $assetKind = 'installer'
+  } else {
+    $assetSource = $zipPath
+    $assetKind = 'zip'
   }
+
+  $assetName = [System.IO.Path]::GetFileName($assetSource)
+  $publishedAsset = Join-Path $localReleasesDir $assetName
+  Copy-Item -LiteralPath $assetSource -Destination $publishedAsset -Force
+
+  $sha256 = (Get-FileHash -LiteralPath $publishedAsset -Algorithm SHA256).Hash.ToLowerInvariant()
+  $downloadUrl = $DownloadBaseUrl.TrimEnd('/') + '/' + [uri]::EscapeDataString($assetName)
+  $manifest = [ordered]@{
+    version = $Version
+    downloadUrl = $downloadUrl
+    sha256 = $sha256
+    changelog = $Changelog
+  }
+
+  $manifestPath = Join-Path $localReleasesDir "update-manifest-$Version.json"
+  $latestManifestPath = Join-Path $localReleasesDir 'desktop-update.json'
+  $manifestJson = $manifest | ConvertTo-Json -Depth 4
+  [System.IO.File]::WriteAllText(
+    $manifestPath,
+    $manifestJson + [Environment]::NewLine,
+    [System.Text.UTF8Encoding]::new($false)
+  )
+  [System.IO.File]::WriteAllText(
+    $latestManifestPath,
+    $manifestJson + [Environment]::NewLine,
+    [System.Text.UTF8Encoding]::new($false)
+  )
+
+  $output.releaseAssetKind = $assetKind
+  $output.releaseAsset = $publishedAsset
+  $output.manifest = $manifestPath
+  $output.latestManifest = $latestManifestPath
+  $output.sha256 = $sha256
+  $output.downloadUrl = $downloadUrl
 
   if (Test-Path -LiteralPath $localReleasesDir) {
     $uploadGuidePath = Join-Path $localReleasesDir 'UPLOAD_TO_SERVER.txt'

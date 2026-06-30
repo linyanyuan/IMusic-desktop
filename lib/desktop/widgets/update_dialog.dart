@@ -52,21 +52,21 @@ class UpdateDialog extends ConsumerWidget {
           ),
         ];
       case UpdateDownloaded(:final manifest):
-        title = '下载完成，可以安装';
+        title = '下载完成，可以更新';
         body = _ChangelogBody(
           c: c,
           text: manifest.changelog,
-          subtitle: '准备好的安装包将替换当前版本。',
+          subtitle: '软件会退出并替换当前版本，完成后自动重新打开。',
         );
         actions = [
           _TextButton(
             c: c,
-            label: '稍后安装',
+            label: '稍后更新',
             onTap: () => UpdateActions.dismissUpdate(ref),
           ),
           _PrimaryButton(
             c: c,
-            label: '立即安装并退出',
+            label: '立即更新并退出',
             onTap: () => UpdateActions.installAndQuit(ref),
           ),
         ];
@@ -154,10 +154,7 @@ class _ChangelogBody extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (subtitle != null) ...[
-          Text(
-            subtitle!,
-            style: TextStyle(color: c.accent, fontSize: 13),
-          ),
+          Text(subtitle!, style: TextStyle(color: c.accent, fontSize: 13)),
           const SizedBox(height: 8),
         ],
         Container(
@@ -245,7 +242,11 @@ class _ErrorBody extends StatelessWidget {
 }
 
 class _PrimaryButton extends StatelessWidget {
-  const _PrimaryButton({required this.c, required this.label, required this.onTap});
+  const _PrimaryButton({
+    required this.c,
+    required this.label,
+    required this.onTap,
+  });
   final DeepVibeColors c;
   final String label;
   final VoidCallback onTap;
@@ -266,7 +267,11 @@ class _PrimaryButton extends StatelessWidget {
 }
 
 class _TextButton extends StatelessWidget {
-  const _TextButton({required this.c, required this.label, required this.onTap});
+  const _TextButton({
+    required this.c,
+    required this.label,
+    required this.onTap,
+  });
   final DeepVibeColors c;
   final String label;
   final VoidCallback onTap;

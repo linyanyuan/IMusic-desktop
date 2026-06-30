@@ -89,6 +89,16 @@ void main() {
       expect(installerFileNameFor(m), 'imusic-update-1.2.0.exe');
     });
 
+    test('uses a fixed local file name for zip update packages', () {
+      final m = UpdateManifest.fromJson({
+        'version': '1.2.0',
+        'downloadUrl': 'http://example.test/releases/imusic-1.2.0.zip',
+        'sha256': 'abc123',
+      });
+
+      expect(installerFileNameFor(m), 'imusic-update-1.2.0.zip');
+    });
+
     test('builds installer launch commands without using the shell', () {
       final exe = installerLaunchCommand(r'C:\Temp\imusic-update-1.2.0.exe');
       expect(exe.executable, r'C:\Temp\imusic-update-1.2.0.exe');
@@ -101,10 +111,38 @@ void main() {
       expect(msi.runInShell, isFalse);
     });
 
+    test('builds zip updater commands without using the shell', () {
+      final command = zipUpdaterLaunchCommand(
+        scriptPath: r'C:\Temp\updater.ps1',
+        zipPath: r'C:\Temp\imusic-update-1.2.0.zip',
+        targetDir: r'C:\App\IMusic',
+        exePath: r'C:\App\IMusic\imusic.exe',
+        currentPid: 1234,
+      );
+
+      expect(command.executable, 'powershell.exe');
+      expect(command.runInShell, isFalse);
+      expect(command.arguments, [
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        r'C:\Temp\updater.ps1',
+        '-ZipPath',
+        r'C:\Temp\imusic-update-1.2.0.zip',
+        '-TargetDir',
+        r'C:\App\IMusic',
+        '-ExePath',
+        r'C:\App\IMusic\imusic.exe',
+        '-CurrentPid',
+        '1234',
+      ]);
+    });
+
     test('rejects unsupported installer extensions', () {
       final m = UpdateManifest.fromJson({
         'version': '1.2.0',
-        'downloadUrl': 'http://example.test/releases/update.zip',
+        'downloadUrl': 'http://example.test/releases/update.7z',
         'sha256': 'abc123',
       });
 

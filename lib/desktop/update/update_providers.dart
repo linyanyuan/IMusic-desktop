@@ -110,7 +110,7 @@ class UpdateCheckNotifier extends StateNotifier<UpdateCheckState> {
         available.manifest.sha256,
       );
       if (!ok) {
-        state = const UpdateError('安装包校验失败，请稍后重试');
+        state = const UpdateError('更新包校验失败，请稍后重试');
         return;
       }
       state = UpdateDownloaded(

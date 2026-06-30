@@ -71,10 +71,38 @@ class InstallerLaunchCommand {
 }
 
 String installerFileNameFor(UpdateManifest manifest) {
-  final ext = _installerExtension(manifest.downloadUrl);
+  final ext = _updateAssetExtension(manifest.downloadUrl);
   final version = manifest.version.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
   final safeVersion = version.isEmpty ? 'unknown' : version;
   return 'imusic-update-$safeVersion$ext';
+}
+
+InstallerLaunchCommand zipUpdaterLaunchCommand({
+  required String scriptPath,
+  required String zipPath,
+  required String targetDir,
+  required String exePath,
+  required int currentPid,
+}) {
+  return InstallerLaunchCommand(
+    executable: 'powershell.exe',
+    arguments: [
+      '-NoProfile',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-File',
+      scriptPath,
+      '-ZipPath',
+      zipPath,
+      '-TargetDir',
+      targetDir,
+      '-ExePath',
+      exePath,
+      '-CurrentPid',
+      currentPid.toString(),
+    ],
+    runInShell: false,
+  );
 }
 
 InstallerLaunchCommand installerLaunchCommand(String path) {
@@ -96,13 +124,14 @@ InstallerLaunchCommand installerLaunchCommand(String path) {
   throw FormatException('Unsupported installer type: $path');
 }
 
-String _installerExtension(String downloadUrl) {
+String _updateAssetExtension(String downloadUrl) {
   final uri = Uri.tryParse(downloadUrl);
   final path = (uri?.path.isNotEmpty ?? false) ? uri!.path : downloadUrl;
   final lowerPath = path.toLowerCase();
   if (lowerPath.endsWith('.exe')) return '.exe';
   if (lowerPath.endsWith('.msi')) return '.msi';
-  throw FormatException('Unsupported installer URL: $downloadUrl');
+  if (lowerPath.endsWith('.zip')) return '.zip';
+  throw FormatException('Unsupported update asset URL: $downloadUrl');
 }
 
 /// Whether [remote] is a newer version than [current]. Returns false on
@@ -230,14 +259,20 @@ class UpdateService {
     return await sha256.bind(stream).first;
   }
 
-  /// Resolve a path for the downloaded installer in the system temp dir.
+  /// Resolve a path for the downloaded update asset in the system temp dir.
   Future<String> resolveInstallerPath(UpdateManifest manifest) async {
     final dir = await getTemporaryDirectory();
     return '${dir.path}${Platform.pathSeparator}${installerFileNameFor(manifest)}';
   }
 
-  /// Launch the installer (EXE/MSI) and quit the current process.
+  /// Launch the update asset (EXE/MSI installer or ZIP green package) and quit
+  /// the current process.
   Future<void> launchInstaller(String path) async {
+    if (path.toLowerCase().endsWith('.zip')) {
+      await _launchZipUpdater(path);
+      return;
+    }
+
     final command = installerLaunchCommand(path);
     await Process.start(
       command.executable,
@@ -248,8 +283,112 @@ class UpdateService {
     await Future<void>.delayed(const Duration(milliseconds: 300));
     exit(0);
   }
+
+  Future<void> _launchZipUpdater(String zipPath) async {
+    if (!Platform.isWindows) {
+      throw UnsupportedError('ZIP updates are only supported on Windows');
+    }
+
+    final exePath = Platform.resolvedExecutable;
+    final targetDir = File(exePath).parent.path;
+    final script = await _writeZipUpdaterScript();
+    final command = zipUpdaterLaunchCommand(
+      scriptPath: script.path,
+      zipPath: zipPath,
+      targetDir: targetDir,
+      exePath: exePath,
+      currentPid: pid,
+    );
+    await Process.start(
+      command.executable,
+      command.arguments,
+      runInShell: command.runInShell,
+      mode: ProcessStartMode.detached,
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    exit(0);
+  }
+
+  Future<File> _writeZipUpdaterScript() async {
+    final dir = Directory.systemTemp;
+    final name =
+        'imusic-zip-updater-${DateTime.now().millisecondsSinceEpoch}.ps1';
+    final file = File('${dir.path}${Platform.pathSeparator}$name');
+    return file.writeAsString(_zipUpdaterScript);
+  }
 }
 
 final updateServiceProvider = Provider<UpdateService>((ref) {
   return UpdateService();
 });
+
+const _zipUpdaterScript = r'''
+param(
+  [Parameter(Mandatory = $true)]
+  [string]$ZipPath,
+
+  [Parameter(Mandatory = $true)]
+  [string]$TargetDir,
+
+  [Parameter(Mandatory = $true)]
+  [string]$ExePath,
+
+  [Parameter(Mandatory = $true)]
+  [int]$CurrentPid
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+function Get-FullPath([string]$Path) {
+  return [System.IO.Path]::GetFullPath($Path)
+}
+
+function Assert-UnderPath([string]$Path, [string]$ParentPath) {
+  $full = Get-FullPath $Path
+  $parent = (Get-FullPath $ParentPath).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+  if (-not $full.StartsWith($parent, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "Refusing to operate outside '$parent': $full"
+  }
+}
+
+$zip = Get-FullPath $ZipPath
+$target = Get-FullPath $TargetDir
+$exe = Get-FullPath $ExePath
+
+if (-not (Test-Path -LiteralPath $zip -PathType Leaf)) {
+  throw "Update ZIP not found: $zip"
+}
+if (-not $zip.ToLowerInvariant().EndsWith('.zip')) {
+  throw "Update asset must be a ZIP file: $zip"
+}
+if (-not (Test-Path -LiteralPath $target -PathType Container)) {
+  throw "Target directory not found: $target"
+}
+Assert-UnderPath -Path $exe -ParentPath $target
+
+Wait-Process -Id $CurrentPid -Timeout 60 -ErrorAction SilentlyContinue
+
+$staging = Join-Path ([System.IO.Path]::GetTempPath()) ("imusic-update-" + [guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Force -Path $staging | Out-Null
+
+try {
+  Expand-Archive -LiteralPath $zip -DestinationPath $staging -Force
+
+  $payloadRoot = $staging
+  if (-not (Test-Path -LiteralPath (Join-Path $payloadRoot 'imusic.exe') -PathType Leaf)) {
+    $children = @(Get-ChildItem -LiteralPath $staging -Directory)
+    if ($children.Count -eq 1 -and (Test-Path -LiteralPath (Join-Path $children[0].FullName 'imusic.exe') -PathType Leaf)) {
+      $payloadRoot = $children[0].FullName
+    } else {
+      throw "Update ZIP does not contain imusic.exe at the package root"
+    }
+  }
+
+  Copy-Item -Path (Join-Path $payloadRoot '*') -Destination $target -Recurse -Force
+  Start-Process -FilePath $exe -WorkingDirectory $target
+}
+finally {
+  Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
+}
+''';
