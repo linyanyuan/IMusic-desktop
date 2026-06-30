@@ -5,7 +5,7 @@ param(
 
   [string]$LocalReleaseDir = (Join-Path $PSScriptRoot '..\dist\releases'),
 
-  [string]$PublicManifestUrl = 'http://60.205.218.90:8787/releases/desktop-update.json'
+  [string]$PublicManifestUrl = 'http://60.205.218.90:8787/desktop-releases/desktop-update.json'
 )
 
 Set-StrictMode -Version Latest

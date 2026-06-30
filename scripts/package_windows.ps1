@@ -9,7 +9,7 @@ param(
 
   [string]$InstallerPath,
 
-  [string]$DownloadBaseUrl = 'http://60.205.218.90:8787/releases',
+  [string]$DownloadBaseUrl = 'http://60.205.218.90:8787/desktop-releases',
 
   [string]$ServerReleaseDir = '/opt/imusic-desktop/releases',
 
@@ -210,7 +210,7 @@ try {
       '',
       "  scp .\dist\releases\* root@60.205.218.90:$ServerReleaseDir/",
       '',
-      'Nginx or the backend server must expose that directory as /releases.'
+      'Nginx or the backend server must expose that directory as /desktop-releases.'
     ) -join [Environment]::NewLine
     [System.IO.File]::WriteAllText(
       $uploadGuidePath,

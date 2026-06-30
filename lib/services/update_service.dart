@@ -8,11 +8,11 @@ import 'package:path_provider/path_provider.dart';
 import 'package:pub_semver/pub_semver.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Public update host. The server maps `/releases` to
+/// Public update host. The server maps `/desktop-releases` to
 /// `/opt/imusic-desktop/releases`.
 const defaultUpdateBaseUrl = 'http://60.205.218.90:8787';
-const defaultDownloadBaseUrl = '$defaultUpdateBaseUrl/releases';
-const updateManifestPath = '/releases/desktop-update.json';
+const defaultDownloadBaseUrl = '$defaultUpdateBaseUrl/desktop-releases';
+const updateManifestPath = '/desktop-releases/desktop-update.json';
 
 /// Parsed remote update manifest. Field names follow the agreed backend
 /// contract (camelCase); fromJson tolerates snake_case as well.

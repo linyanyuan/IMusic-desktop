@@ -70,7 +70,7 @@ dart analyze
 桌面端内置更新读取服务器上的：
 
 ```text
-http://60.205.218.90:8787/releases/desktop-update.json
+http://60.205.218.90:8787/desktop-releases/desktop-update.json
 ```
 
 服务器目录对应为：
@@ -78,6 +78,8 @@ http://60.205.218.90:8787/releases/desktop-update.json
 ```text
 /opt/imusic-desktop/releases
 ```
+
+不要放到移动端后端目录 `/opt/imusic/server/releases`，那里用于移动端 APK 等发布文件。
 
 ### 1. 确认新版本号
 
@@ -134,7 +136,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish_releases.ps1
 上传后检查 manifest 是否能访问：
 
 ```powershell
-Invoke-WebRequest http://60.205.218.90:8787/releases/desktop-update.json
+Invoke-WebRequest http://60.205.218.90:8787/desktop-releases/desktop-update.json
 ```
 
 返回内容里应包含新版本号、下载地址和 `sha256`。

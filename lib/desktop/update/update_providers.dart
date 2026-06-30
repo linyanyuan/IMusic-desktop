@@ -149,7 +149,7 @@ class UpdateCheckNotifier extends StateNotifier<UpdateCheckState> {
         final uri = e.requestOptions.uri;
         return '未找到更新文件：$uri\n'
             '请确认 dist\\releases 已上传到服务器，并且服务器已将 '
-            '/opt/imusic-desktop/releases 暴露为 /releases。';
+            '/opt/imusic-desktop/releases 暴露为 /desktop-releases。';
       }
       if (status != null) {
         return '更新服务器返回 $status：${e.message ?? '请求失败'}';

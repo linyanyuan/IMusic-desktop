@@ -38,12 +38,12 @@ void main() {
     test('parses camelCase contract', () {
       final m = UpdateManifest.fromJson({
         'version': '1.2.0',
-        'downloadUrl': '/releases/imusic.exe',
+        'downloadUrl': '/desktop-releases/imusic.exe',
         'sha256': 'abc123',
         'changelog': 'fixes',
       });
       expect(m.version, '1.2.0');
-      expect(m.downloadUrl, '/releases/imusic.exe');
+      expect(m.downloadUrl, '/desktop-releases/imusic.exe');
       expect(m.sha256, 'abc123');
       expect(m.changelog, 'fixes');
       expect(m.isValid, isTrue);
@@ -73,9 +73,12 @@ void main() {
 
   group('release endpoint', () {
     test('uses the static releases manifest path', () {
-      expect(updateManifestPath, '/releases/desktop-update.json');
+      expect(updateManifestPath, '/desktop-releases/desktop-update.json');
       expect(defaultUpdateBaseUrl, 'http://60.205.218.90:8787');
-      expect(defaultDownloadBaseUrl, 'http://60.205.218.90:8787/releases');
+      expect(
+        defaultDownloadBaseUrl,
+        'http://60.205.218.90:8787/desktop-releases',
+      );
     });
   });
 
@@ -83,7 +86,8 @@ void main() {
     test('uses a fixed local file name for exe installers', () {
       final m = UpdateManifest.fromJson({
         'version': '1.2.0',
-        'downloadUrl': 'http://example.test/releases/evil name.exe?x=1&y=2',
+        'downloadUrl':
+            'http://example.test/desktop-releases/evil name.exe?x=1&y=2',
         'sha256': 'abc123',
       });
 
@@ -93,7 +97,7 @@ void main() {
     test('uses a fixed local file name for zip update packages', () {
       final m = UpdateManifest.fromJson({
         'version': '1.2.0',
-        'downloadUrl': 'http://example.test/releases/imusic-1.2.0.zip',
+        'downloadUrl': 'http://example.test/desktop-releases/imusic-1.2.0.zip',
         'sha256': 'abc123',
       });
 
@@ -143,7 +147,7 @@ void main() {
     test('rejects unsupported installer extensions', () {
       final m = UpdateManifest.fromJson({
         'version': '1.2.0',
-        'downloadUrl': 'http://example.test/releases/update.7z',
+        'downloadUrl': 'http://example.test/desktop-releases/update.7z',
         'sha256': 'abc123',
       });
 
@@ -170,7 +174,7 @@ void main() {
       final state = notifier.state;
       expect(state, isA<UpdateError>());
       expect((state as UpdateError).message, contains('未找到更新文件'));
-      expect(state.message, contains('/releases/desktop-update.json'));
+      expect(state.message, contains('/desktop-releases/desktop-update.json'));
       expect(state.message, contains('dist\\releases'));
     });
 
@@ -197,7 +201,7 @@ void main() {
 UpdateManifest _manifest() {
   return UpdateManifest.fromJson({
     'version': '1.2.0',
-    'downloadUrl': 'http://example.test/releases/imusic.exe',
+    'downloadUrl': 'http://example.test/desktop-releases/imusic.exe',
     'sha256': 'abc123',
   });
 }

@@ -41,6 +41,8 @@ dist\releases\UPLOAD_TO_SERVER.txt
 /opt/imusic-desktop/releases
 ```
 
+不要上传到 `/opt/imusic/server/releases`，那个目录用于移动端 APK 等发布文件。
+
 示例：
 
 ```powershell
@@ -56,19 +58,19 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish_releases.ps1
 客户端会读取：
 
 ```text
-http://60.205.218.90:8787/releases/desktop-update.json
+http://60.205.218.90:8787/desktop-releases/desktop-update.json
 ```
 
 更新包下载地址会类似：
 
 ```text
-http://60.205.218.90:8787/releases/imusic-1.0.1%2B2-windows-x64.zip
+http://60.205.218.90:8787/desktop-releases/imusic-1.0.1%2B2-windows-x64.zip
 ```
 
 上传后先用浏览器或 PowerShell 检查：
 
 ```powershell
-Invoke-WebRequest http://60.205.218.90:8787/releases/desktop-update.json
+Invoke-WebRequest http://60.205.218.90:8787/desktop-releases/desktop-update.json
 ```
 
 ## 3. 测试软件内更新
@@ -191,5 +193,5 @@ Close the running release app before packaging
 并确认浏览器能打开：
 
 ```text
-http://60.205.218.90:8787/releases/desktop-update.json
+http://60.205.218.90:8787/desktop-releases/desktop-update.json
 ```
