@@ -81,6 +81,24 @@ http://60.205.218.90:8787/desktop-releases/desktop-update.json
 
 不要放到移动端后端目录 `/opt/imusic/server/releases`，那里用于移动端 APK 等发布文件。
 
+### 0. 一次性服务器配置
+
+桌面端和移动端发布目录要分开：
+
+```text
+移动端：/opt/imusic/server/releases       -> /downloads 和 /api/app/latest
+桌面端：/opt/imusic-desktop/releases     -> /desktop-releases
+```
+
+服务器上的 `imusic-api` Node 服务需要把桌面端目录公开成 `/desktop-releases`。配置完成后，下面两个地址必须能返回内容：
+
+```bash
+curl -i http://127.0.0.1:8787/desktop-releases/desktop-update.json
+curl -i http://60.205.218.90:8787/desktop-releases/desktop-update.json
+```
+
+如果返回 `404 {"error":"Not found"}`，说明文件可能已经上传了，但后端还没有映射 `/desktop-releases`。
+
 ### 1. 确认新版本号
 
 每次正式发布都要递增版本号：
@@ -141,6 +159,12 @@ Invoke-WebRequest http://60.205.218.90:8787/desktop-releases/desktop-update.json
 
 返回内容里应包含新版本号、下载地址和 `sha256`。
 
+同时确认 manifest 里的 zip 下载地址也能访问，例如：
+
+```text
+http://60.205.218.90:8787/desktop-releases/imusic-1.0.2%2B3-windows-x64.zip
+```
+
 ### 4. 测试软件内更新
 
 1. 运行低于服务器版本的客户端，例如本地旧版是 `1.0.1+2`，服务器发布 `1.0.2`。
@@ -154,6 +178,13 @@ Invoke-WebRequest http://60.205.218.90:8787/desktop-releases/desktop-update.json
 - zip 更新要求当前客户端已经包含 zip 更新能力；非常早的旧客户端只支持 `.exe/.msi` 安装器更新。
 - 如果要发布安装器，可以先用 Inno Setup、NSIS 等工具生成 `.exe/.msi`，再给脚本传 `-InstallerPath`。
 - 更完整的命令和常见报错见 `scripts/package_windows_usage.md`。
+
+### 6. 常见问题
+
+- 文件已上传但公网验证 404：检查 Node 服务是否把 `/desktop-releases` 映射到了 `/opt/imusic-desktop/releases`。
+- 软件提示已经是最新版本：确认打开的是旧版本客户端，且新版本的 `Version` 大于旧版本。
+- 下载失败：先在浏览器打开 `desktop-update.json` 里的 `downloadUrl`，确认 zip 能直接下载。
+- 更新后无法覆盖：确认当前客户端目录没有被杀毒软件或其他进程锁住。
 
 ## 开发说明
 
