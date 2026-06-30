@@ -134,7 +134,11 @@ class UpdateCheckNotifier extends StateNotifier<UpdateCheckState> {
   Future<void> installAndQuit() async {
     final downloaded = state;
     if (downloaded is! UpdateDownloaded) return;
-    await _service.launchInstaller(downloaded.filePath);
+    try {
+      await _service.launchInstaller(downloaded.filePath);
+    } catch (e) {
+      state = UpdateError(_describe(e));
+    }
   }
 
   void dismiss() {

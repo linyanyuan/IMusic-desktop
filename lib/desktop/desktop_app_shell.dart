@@ -669,19 +669,123 @@ class _AboutSection extends ConsumerWidget {
       title: '关于',
       c: c,
       children: [
-        _SettingsRow(
-          title: '当前版本',
-          description: versionText,
+        _AboutSettingsRow(
           c: c,
-          child: _SettingsActionButton(
-            key: const ValueKey('settings-check-update-button'),
-            icon: icon,
-            label: label,
-            c: c,
-            onTap: () => UpdateActions.checkForUpdates(ref, manual: true),
-          ),
+          versionText: versionText,
+          updateIcon: icon,
+          updateLabel: label,
+          onCheckForUpdates: () =>
+              UpdateActions.checkForUpdates(ref, manual: true),
         ),
       ],
+    );
+  }
+}
+
+class _AboutSettingsRow extends StatelessWidget {
+  final DeepVibeColors c;
+  final String versionText;
+  final IconData updateIcon;
+  final String updateLabel;
+  final VoidCallback onCheckForUpdates;
+
+  const _AboutSettingsRow({
+    required this.c,
+    required this.versionText,
+    required this.updateIcon,
+    required this.updateLabel,
+    required this.onCheckForUpdates,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final stacked = constraints.maxWidth < 620;
+        final details = Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: c.accent.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: c.accent.withValues(alpha: 0.18)),
+              ),
+              child: Icon(Icons.music_note_outlined, size: 18, color: c.accent),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'IMusic Desktop',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '当前版本 $versionText',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: c.textMuted,
+                      fontSize: 12,
+                      height: 1.25,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+        final button = _SettingsActionButton(
+          key: const ValueKey('settings-check-update-button'),
+          icon: updateIcon,
+          label: updateLabel,
+          c: c,
+          onTap: onCheckForUpdates,
+        );
+
+        if (stacked) {
+          return SizedBox(
+            key: const ValueKey('settings-about-row'),
+            width: double.infinity,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  details,
+                  const SizedBox(height: 14),
+                  Align(alignment: Alignment.centerRight, child: button),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return SizedBox(
+          key: const ValueKey('settings-about-row'),
+          width: double.infinity,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
+            child: Row(
+              children: [
+                Expanded(child: details),
+                const SizedBox(width: 18),
+                button,
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -1078,6 +1182,7 @@ class _SettingsSection extends StatelessWidget {
           ),
           clipBehavior: Clip.antiAlias,
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               for (var i = 0; i < children.length; i++) ...[
                 if (i > 0) Divider(height: 1, color: c.divider),

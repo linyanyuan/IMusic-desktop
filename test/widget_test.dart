@@ -154,6 +154,20 @@ void main() {
     );
   });
 
+  testWidgets('player bar shows playback failure feedback', (tester) async {
+    final container = _containerWithSong();
+    addTearDown(container.dispose);
+    container.read(currentSongProvider.notifier).state = {
+      ...container.read(currentSongProvider)!,
+      'status': 'error',
+    };
+
+    await _pumpPlayerBar(tester, container);
+
+    final failureText = tester.widget<Text>(find.text('播放失败，点击播放键重试'));
+    expect(failureText.style?.color, DeepVibeColors.light.warning);
+    expect(find.text('测试歌手'), findsNothing);
+  });
   testWidgets('source label is not shown beside bottom song identity', (
     tester,
   ) async {
@@ -1518,6 +1532,28 @@ void main() {
       find.byKey(const ValueKey('settings-lyrics-color-green')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('settings about update button aligns to the right edge', (
+    tester,
+  ) async {
+    final container = await _shellContainer(authenticated: false);
+    addTearDown(container.dispose);
+    container.read(deskRouteProvider.notifier).state = DeskRoute.settings;
+
+    await _pumpDesktopShell(tester, container);
+    final buttonFinder = find.byKey(
+      const ValueKey('settings-check-update-button'),
+    );
+    await tester.ensureVisible(buttonFinder);
+    await tester.pumpAndSettle();
+
+    final rowRight = tester
+        .getRect(find.byKey(const ValueKey('settings-about-row')))
+        .right;
+    final buttonRight = tester.getRect(buttonFinder).right;
+
+    expect(buttonRight, closeTo(rowRight - 18, 1));
   });
 
   testWidgets('settings cache retention days can be changed', (tester) async {

@@ -10,6 +10,8 @@
 
 大多数情况下用这个。它会生成可直接运行的 Windows 绿色版目录、zip，以及软件内更新需要的 `desktop-update.json`：
 
+注意：普通打包不是安装器，不会写入开始菜单、注册表，也不会创建桌面快捷方式。
+
 把版本号和构建号换成你要发布的：
 
 ```powershell
@@ -80,6 +82,8 @@ Invoke-WebRequest http://60.205.218.90:8787/desktop-releases/desktop-update.json
 3. 上传 `dist\releases\*` 到服务器。
 4. 打开旧版本软件，进入设置里手动检查更新，或重启软件等待自动检查。
 5. 点击下载，下载完成后点击立即更新并退出。
+
+注意：点击“立即更新并退出”时，执行复制和重启的是旧版本客户端内置的 updater 代码，不是新 zip 里的代码。如果这次修的是 updater 本身，要先运行一个已经包含修复的旧版本，再发布更高的 `Version` 来测试。
 
 ## 4. 可选：带安装器发布
 
@@ -176,13 +180,13 @@ Get-ChildItem .\IMusic-Setup-1.0.1.exe
 powershell -ExecutionPolicy Bypass -File .\scripts\package_windows.ps1 -Version 1.0.1 -BuildNumber 2
 ```
 
-如果提示：
+旧版本脚本如果提示：
 
 ```text
 Close the running release app before packaging
 ```
 
-说明旧的 `imusic.exe` 正在运行。先关闭软件，再重新执行打包命令。
+说明 `build\windows\x64\runner\Release\imusic.exe` 正在运行。现在脚本会自动关闭这个路径下的 Release app，再继续打包；如果仍然遇到文件占用，再检查是否有其他程序占用了 build 输出目录。
 
 如果自动更新没检测到新版，检查服务器上有没有这个文件：
 

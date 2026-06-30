@@ -91,24 +91,35 @@ Future<void> startSongPlayback(
   final requestSerial = ++playbackRequestSerial;
   ++lyricsRequestSerial;
 
+  final previousSong = ref.read(currentSongProvider);
+  final previousStatus = previousSong?['status']?.toString();
+  final keepPreviousPlaybackVisible =
+      previousStatus == 'playing' || previousStatus == 'paused';
+
   // Check if song already has lyrics
   final initialLyrics = song['lyrics']?.toString().trim() ?? '';
   final initialLyricsStatus = initialLyrics.isEmpty
       ? lyricsStatusLoading
       : lyricsStatusLoaded;
+  var previousPlaybackStopped = false;
 
-  // Write queue and current song immediately
-  ref.read(playbackQueueProvider.notifier).state = queue;
-  ref.read(currentSongIndexProvider.notifier).state = index;
-  ref.read(currentSongProvider.notifier).state = {
-    ...song,
-    'status': 'loading',
-    'lyricsStatus': initialLyricsStatus,
-    lyricsLoadingStartedAtKey: initialLyrics.isEmpty
-        ? DateTime.now().millisecondsSinceEpoch
-        : null,
-    lyricsTimeoutAtKey: null,
-  };
+  void showRequestedSongLoading() {
+    ref.read(playbackQueueProvider.notifier).state = queue;
+    ref.read(currentSongIndexProvider.notifier).state = index;
+    ref.read(currentSongProvider.notifier).state = {
+      ...song,
+      'status': 'loading',
+      'lyricsStatus': initialLyricsStatus,
+      lyricsLoadingStartedAtKey: initialLyrics.isEmpty
+          ? DateTime.now().millisecondsSinceEpoch
+          : null,
+      lyricsTimeoutAtKey: null,
+    };
+  }
+
+  if (!keepPreviousPlaybackVisible) {
+    showRequestedSongLoading();
+  }
 
   try {
     // Remember songs for cache
@@ -125,6 +136,10 @@ Future<void> startSongPlayback(
     // Load and play audio
     final player = ref.read(audioPlayerProvider);
     await player.stop();
+    previousPlaybackStopped = true;
+
+    if (requestSerial != playbackRequestSerial) return;
+    showRequestedSongLoading();
 
     // Windows audioplayers doesn't support custom headers
     // Download to a stable local cache file if headers are required.
@@ -164,7 +179,9 @@ Future<void> startSongPlayback(
 
     // Merge lyrics: prefer PlaybackUrl.lyrics > currentSong.lyrics > initialLyrics
     final current = ref.read(currentSongProvider);
-    final currentLyrics = current?['lyrics']?.toString() ?? '';
+    final currentLyrics = current?['id']?.toString() == song['id']?.toString()
+        ? (current?['lyrics']?.toString() ?? '')
+        : '';
     final resolvedLyrics = playUrl.lyrics.trim().isNotEmpty
         ? playUrl.lyrics
         : currentLyrics.trim().isNotEmpty
@@ -188,6 +205,8 @@ Future<void> startSongPlayback(
     };
 
     // Update providers
+    ref.read(playbackQueueProvider.notifier).state = queue;
+    ref.read(currentSongIndexProvider.notifier).state = index;
     ref.read(loadedPlaybackProvider.notifier).state = enriched;
     ref.read(currentSongProvider.notifier).state = enriched;
 
@@ -214,12 +233,26 @@ Future<void> startSongPlayback(
     print('[PlaybackActions] 播放成功: ${song['title']} (${song['id']})');
   } catch (e) {
     print('[PlaybackActions] 播放失败: $e');
-    // Revert to previous state on error
-    final current = ref.read(currentSongProvider);
-    if (current != null && requestSerial == playbackRequestSerial) {
+    if (requestSerial == playbackRequestSerial) {
+      if (!previousPlaybackStopped) {
+        try {
+          await ref.read(audioPlayerProvider).stop();
+          previousPlaybackStopped = true;
+        } catch (stopError) {
+          print('[PlaybackActions] 停止旧播放失败: $stopError');
+        }
+      }
+
+      ref.read(playbackQueueProvider.notifier).state = queue;
+      ref.read(currentSongIndexProvider.notifier).state = index;
       ref.read(currentSongProvider.notifier).state = {
-        ...current,
+        ...song,
         'status': 'error',
+        'lyricsStatus': initialLyricsStatus,
+        lyricsLoadingStartedAtKey: initialLyrics.isEmpty
+            ? DateTime.now().millisecondsSinceEpoch
+            : null,
+        lyricsTimeoutAtKey: null,
       };
     }
   }

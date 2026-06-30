@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
@@ -62,11 +63,13 @@ class InstallerLaunchCommand {
   final String executable;
   final List<String> arguments;
   final bool runInShell;
+  final ProcessStartMode mode;
 
   const InstallerLaunchCommand({
     required this.executable,
     required this.arguments,
     required this.runInShell,
+    this.mode = ProcessStartMode.normal,
   });
 }
 
@@ -88,6 +91,7 @@ InstallerLaunchCommand zipUpdaterLaunchCommand({
     executable: 'powershell.exe',
     arguments: [
       '-NoProfile',
+      '-NonInteractive',
       '-ExecutionPolicy',
       'Bypass',
       '-File',
@@ -299,13 +303,43 @@ class UpdateService {
       exePath: exePath,
       currentPid: pid,
     );
-    await Process.start(
-      command.executable,
-      command.arguments,
-      runInShell: command.runInShell,
-      mode: ProcessStartMode.detached,
+    await _appendZipUpdaterLog(
+      'Launch ZIP updater. Script=${script.path} Zip=$zipPath '
+      'Target=$targetDir Exe=$exePath CurrentPid=$pid',
     );
-    await Future<void>.delayed(const Duration(milliseconds: 300));
+
+    final Process process;
+    try {
+      process = await Process.start(
+        command.executable,
+        command.arguments,
+        runInShell: command.runInShell,
+        mode: command.mode,
+      );
+    } catch (e) {
+      await _appendZipUpdaterLog('Failed to start ZIP updater: $e');
+      rethrow;
+    }
+
+    await _appendZipUpdaterLog('Started ZIP updater PID=${process.pid}');
+    unawaited(process.stdout.drain<void>());
+    final stderr = process.stderr.transform(utf8.decoder).join();
+    final earlyExitCode = await _waitForEarlyExit(
+      process,
+      const Duration(milliseconds: 800),
+    );
+    if (earlyExitCode != null) {
+      final errorText = await _readFinishedOutput(stderr);
+      await _appendZipUpdaterLog(
+        'ZIP updater exited early. ExitCode=$earlyExitCode Stderr=$errorText',
+      );
+      throw StateError(
+        '更新器启动后立即退出（退出码 $earlyExitCode）'
+        '${errorText.isEmpty ? '' : '：$errorText'}',
+      );
+    }
+
+    await _appendZipUpdaterLog('ZIP updater is running; exiting app.');
     exit(0);
   }
 
@@ -315,6 +349,35 @@ class UpdateService {
         'imusic-zip-updater-${DateTime.now().millisecondsSinceEpoch}.ps1';
     final file = File('${dir.path}${Platform.pathSeparator}$name');
     return file.writeAsString(_zipUpdaterScript);
+  }
+
+  Future<int?> _waitForEarlyExit(Process process, Duration timeout) async {
+    try {
+      return await process.exitCode.timeout(timeout);
+    } on TimeoutException {
+      return null;
+    }
+  }
+
+  Future<String> _readFinishedOutput(Future<String> output) async {
+    try {
+      return (await output.timeout(const Duration(milliseconds: 200))).trim();
+    } on TimeoutException {
+      return '';
+    }
+  }
+
+  Future<void> _appendZipUpdaterLog(String message) async {
+    try {
+      final file = File(
+        '${Directory.systemTemp.path}${Platform.pathSeparator}imusic-update.log',
+      );
+      final line =
+          '${DateTime.now().toIso8601String()} $message${Platform.lineTerminator}';
+      await file.writeAsString(line, mode: FileMode.append, flush: true);
+    } catch (_) {
+      // Logging must never prevent the updater from starting.
+    }
   }
 }
 
@@ -394,6 +457,45 @@ function Copy-WithRetry([string]$SourceRoot, [string]$Target) {
   throw $lastError
 }
 
+function Start-UpdatedApp([string]$Exe, [string]$WorkingDirectory) {
+  Write-Log "Starting updated app"
+  $process = Start-Process -FilePath $Exe -WorkingDirectory $WorkingDirectory -PassThru
+  if ($null -eq $process) {
+    throw "Start-Process did not return a process handle: $Exe"
+  }
+
+  Write-Log "Started updated app PID=$($process.Id)"
+  Start-Sleep -Milliseconds 1500
+  $process.Refresh()
+  if ($process.HasExited) {
+    throw "Updated app exited immediately. PID=$($process.Id) ExitCode=$($process.ExitCode)"
+  }
+  Write-Log "Updated app is running. PID=$($process.Id)"
+}
+
+function Remove-DownloadedZip([string]$Zip) {
+  try {
+    Assert-UnderPath -Path $Zip -ParentPath ([System.IO.Path]::GetTempPath())
+  } catch {
+    Write-Log "Skip downloaded ZIP cleanup outside temp: $Zip"
+    return
+  }
+
+  if (-not $Zip.ToLowerInvariant().EndsWith('.zip')) {
+    Write-Log "Skip downloaded ZIP cleanup for non-ZIP file: $Zip"
+    return
+  }
+
+  if (Test-Path -LiteralPath $Zip -PathType Leaf) {
+    try {
+      Write-Log "Removing downloaded ZIP: $Zip"
+      Remove-Item -LiteralPath $Zip -Force -ErrorAction Stop
+    } catch {
+      Write-Log "Failed to remove downloaded ZIP: $($_.Exception.Message)"
+    }
+  }
+}
+
 $zip = Get-FullPath $ZipPath
 $target = Get-FullPath $TargetDir
 $exe = Get-FullPath $ExePath
@@ -432,8 +534,8 @@ try {
 
   Write-Log "Payload root: $payloadRoot"
   Copy-WithRetry -SourceRoot $payloadRoot -Target $target
-  Write-Log "Starting updated app"
-  Start-Process -FilePath $exe -WorkingDirectory $target
+  Start-UpdatedApp -Exe $exe -WorkingDirectory $target
+  Remove-DownloadedZip -Zip $zip
   Write-Log "Update complete"
 } catch {
   Write-Log "Update failed: $($_.Exception.Message)"

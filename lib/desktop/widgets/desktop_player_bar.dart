@@ -24,6 +24,10 @@ class DesktopPlayerBar extends ConsumerWidget {
         : DeepVibeColors.light;
 
     final currentSong = ref.watch(currentSongProvider);
+    final playbackStatus = currentSong?['status']?.toString();
+    final subtitleText = playbackStatus == 'error'
+        ? '播放失败，点击播放键重试'
+        : currentSong?['artist']?.toString() ?? 'DeepVibe';
     final isPlayingAsync = ref.watch(playbackPlayingProvider);
     final positionAsync = ref.watch(playbackPositionProvider);
     final durationAsync = ref.watch(playbackDurationProvider);
@@ -113,12 +117,13 @@ class DesktopPlayerBar extends ConsumerWidget {
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
-                                      currentSong?['artist']?.toString() ??
-                                          'DeepVibe',
+                                      subtitleText,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
-                                        color: c.textMuted,
+                                        color: playbackStatus == 'error'
+                                            ? c.warning
+                                            : c.textMuted,
                                         fontSize: 12,
                                       ),
                                     ),

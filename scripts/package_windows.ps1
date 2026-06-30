@@ -33,11 +33,70 @@ function Assert-UnderPath([string]$Path, [string]$ParentPath) {
   }
 }
 
+function Assert-InstallerOutsideReleases([string]$InstallerPath, [string]$ReleasesDir) {
+  $full = Get-FullPath $InstallerPath
+  $releases = (Get-FullPath $ReleasesDir).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+  if ($full.StartsWith($releases, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "InstallerPath must not point inside dist\releases because that folder is cleaned before packaging: $full"
+  }
+}
+
 function Invoke-Checked([string]$Command, [string[]]$Arguments) {
   Write-Host "> $Command $($Arguments -join ' ')"
   & $Command @Arguments
   if ($LASTEXITCODE -ne 0) {
     throw "Command failed with exit code ${LASTEXITCODE}: $Command"
+  }
+}
+
+function Stop-RunningReleaseApp([string]$ExePath) {
+  $exe = Get-FullPath $ExePath
+  $running = @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
+    try {
+      $_.Path -eq $exe
+    } catch {
+      $false
+    }
+  })
+
+  if ($running.Count -eq 0) {
+    return
+  }
+
+  $ids = ($running | ForEach-Object { $_.Id }) -join ', '
+  Write-Host "Closing running release app before packaging. PID(s): $ids"
+
+  foreach ($process in $running) {
+    try {
+      if ($process.MainWindowHandle -ne 0) {
+        [void]$process.CloseMainWindow()
+      }
+    } catch {
+    }
+  }
+
+  $deadline = (Get-Date).AddSeconds(10)
+  do {
+    Start-Sleep -Milliseconds 300
+    $running = @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
+      try {
+        $_.Path -eq $exe
+      } catch {
+        $false
+      }
+    })
+  } while ($running.Count -gt 0 -and (Get-Date) -lt $deadline)
+
+  foreach ($process in $running) {
+    Write-Host "Force stopping running release app. PID=$($process.Id)"
+    try {
+      Stop-Process -Id $process.Id -Force -ErrorAction Stop
+    } catch {
+      $stillRunning = Get-Process -Id $process.Id -ErrorAction SilentlyContinue
+      if ($stillRunning) {
+        throw
+      }
+    }
   }
 }
 
@@ -62,6 +121,42 @@ function Copy-CleanDirectory([string]$Source, [string]$Destination, [string]$All
   }
   New-Item -ItemType Directory -Force -Path $Destination | Out-Null
   Copy-Item -Path (Join-Path $Source '*') -Destination $Destination -Recurse -Force
+}
+
+function Clear-DirectoryContents([string]$Path, [string]$AllowedParent) {
+  Assert-UnderPath -Path $Path -ParentPath $AllowedParent
+  if (Test-Path -LiteralPath $Path) {
+    Get-ChildItem -LiteralPath $Path -Force | Remove-Item -Recurse -Force
+  } else {
+    New-Item -ItemType Directory -Force -Path $Path | Out-Null
+  }
+}
+
+function Stop-RunningGeneratedDistApps([string]$DistRoot) {
+  if (-not (Test-Path -LiteralPath $DistRoot)) {
+    return
+  }
+
+  Get-ChildItem -LiteralPath $DistRoot -Directory -Force | Where-Object {
+    $_.Name -match '^imusic-.+-windows-x64$'
+  } | ForEach-Object {
+    Stop-RunningReleaseApp -ExePath (Join-Path $_.FullName 'imusic.exe')
+  }
+}
+
+function Remove-GeneratedDistArtifacts([string]$DistRoot) {
+  New-Item -ItemType Directory -Force -Path $DistRoot | Out-Null
+  Stop-RunningGeneratedDistApps -DistRoot $DistRoot
+
+  Get-ChildItem -LiteralPath $DistRoot -Force | Where-Object {
+    ($_.PSIsContainer -and $_.Name -match '^imusic-.+-windows-x64$') -or
+      ((-not $_.PSIsContainer) -and $_.Name -match '^imusic-.+-windows-x64\.zip$')
+  } | ForEach-Object {
+    Assert-UnderPath -Path $_.FullName -ParentPath $DistRoot
+    Remove-Item -LiteralPath $_.FullName -Recurse -Force
+  }
+
+  Clear-DirectoryContents -Path (Join-Path $DistRoot 'releases') -AllowedParent $DistRoot
 }
 
 function Get-InstallerExtension([string]$Path) {
@@ -97,6 +192,7 @@ If you do not already have an installer, remove -InstallerPath and run:
 "@
   }
   Get-InstallerExtension $resolvedInstaller | Out-Null
+  Assert-InstallerOutsideReleases -InstallerPath $resolvedInstaller -ReleasesDir $localReleasesDir
 }
 
 Write-Host "Packaging IMusic Windows release $versionText"
@@ -104,12 +200,7 @@ Set-PubspecVersion -PubspecPath $pubspecPath -VersionText $versionText
 
 Push-Location $repoRoot
 try {
-  $runningRelease = Get-Process -ErrorAction SilentlyContinue |
-    Where-Object { $_.Path -eq (Join-Path $releaseBuildDir 'imusic.exe') }
-  if ($runningRelease) {
-    $ids = ($runningRelease | ForEach-Object { $_.Id }) -join ', '
-    throw "Close the running release app before packaging. PID(s): $ids"
-  }
+  Stop-RunningReleaseApp -ExePath (Join-Path $releaseBuildDir 'imusic.exe')
 
   Invoke-Checked -Command 'flutter' -Arguments @('pub', 'get')
 
@@ -130,6 +221,7 @@ try {
   }
 
   New-Item -ItemType Directory -Force -Path $distRoot | Out-Null
+  Remove-GeneratedDistArtifacts -DistRoot $distRoot
   Copy-CleanDirectory -Source $releaseBuildDir -Destination $packageDir -AllowedParent $distRoot
 
   if (Test-Path -LiteralPath $zipPath) {

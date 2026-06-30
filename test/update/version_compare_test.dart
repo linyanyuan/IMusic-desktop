@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:deepvibe_desktop/services/update_service.dart';
 import 'package:deepvibe_desktop/desktop/update/update_providers.dart';
@@ -127,8 +128,10 @@ void main() {
 
       expect(command.executable, 'powershell.exe');
       expect(command.runInShell, isFalse);
+      expect(command.mode, ProcessStartMode.normal);
       expect(command.arguments, [
         '-NoProfile',
+        '-NonInteractive',
         '-ExecutionPolicy',
         'Bypass',
         '-File',
@@ -142,6 +145,36 @@ void main() {
         '-CurrentPid',
         '1234',
       ]);
+    });
+
+    test('zip updater logs and verifies the relaunched app process', () async {
+      final source = await File(
+        'lib/services/update_service.dart',
+      ).readAsString();
+
+      expect(source, contains('-PassThru'));
+      expect(source, contains('Started updated app PID='));
+      expect(source, contains('Updated app exited immediately'));
+    });
+
+    test('zip updater removes the downloaded temp zip after success', () async {
+      final source = await File(
+        'lib/services/update_service.dart',
+      ).readAsString();
+
+      expect(source, contains('function Remove-DownloadedZip'));
+      expect(
+        source,
+        contains(
+          r'Assert-UnderPath -Path $Zip -ParentPath ([System.IO.Path]::GetTempPath())',
+        ),
+      );
+      expect(source, contains(r'Remove-Item -LiteralPath $Zip -Force'));
+
+      final removeCall = source.indexOf(r'Remove-DownloadedZip -Zip $zip');
+      final completeLog = source.indexOf('Write-Log "Update complete"');
+      expect(removeCall, greaterThan(0));
+      expect(completeLog, greaterThan(removeCall));
     });
 
     test('rejects unsupported installer extensions', () {
@@ -195,6 +228,112 @@ void main() {
 
       expect(notifier.state, isA<UpdateIdle>());
     });
+
+    test('install failure is surfaced as an update error', () async {
+      final service = _FailingInstallUpdateService();
+      final notifier = _TestUpdateCheckNotifier(service);
+      addTearDown(notifier.dispose);
+
+      notifier.setDownloaded(_manifest(), r'C:\Temp\imusic-update-1.2.0.zip');
+
+      await notifier.installAndQuit();
+
+      final state = notifier.state;
+      expect(state, isA<UpdateError>());
+      expect((state as UpdateError).message, contains('更新失败'));
+      expect(state.message, contains('boom'));
+    });
+  });
+
+  group('packaging script', () {
+    test('cleans old generated Windows artifacts before packaging', () async {
+      final source = await File('scripts/package_windows.ps1').readAsString();
+
+      expect(source, contains('function Remove-GeneratedDistArtifacts'));
+      expect(source, contains(r"'^imusic-.+-windows-x64$'"));
+      expect(source, contains(r"'^imusic-.+-windows-x64\.zip$'"));
+      expect(source, contains('Clear-DirectoryContents'));
+
+      final cleanupCall = source.indexOf(
+        'Remove-GeneratedDistArtifacts -DistRoot',
+      );
+      final packageCopy = source.indexOf('Copy-CleanDirectory -Source');
+      expect(cleanupCall, greaterThan(0));
+      expect(packageCopy, greaterThan(cleanupCall));
+    });
+
+    test(
+      'rejects installer paths inside local releases before cleanup',
+      () async {
+        final source = await File('scripts/package_windows.ps1').readAsString();
+
+        expect(source, contains('function Assert-InstallerOutsideReleases'));
+        expect(
+          source,
+          contains(
+            'Assert-InstallerOutsideReleases -InstallerPath '
+            r'$resolvedInstaller -ReleasesDir $localReleasesDir',
+          ),
+        );
+        expect(
+          source,
+          contains('InstallerPath must not point inside dist\\releases'),
+        );
+
+        final guardCall = source.indexOf(
+          'Assert-InstallerOutsideReleases -InstallerPath',
+        );
+        final cleanupCall = source.indexOf(
+          'Remove-GeneratedDistArtifacts -DistRoot',
+        );
+        expect(guardCall, greaterThan(0));
+        expect(cleanupCall, greaterThan(guardCall));
+      },
+    );
+
+    test('stops running release app before packaging', () async {
+      final source = await File('scripts/package_windows.ps1').readAsString();
+
+      expect(source, contains('function Stop-RunningReleaseApp'));
+      expect(source, contains('CloseMainWindow()'));
+      expect(source, contains('Stop-Process -Id'));
+      expect(
+        source,
+        isNot(
+          contains('throw "Close the running release app before packaging'),
+        ),
+      );
+
+      final stopCall = source.indexOf(
+        "Stop-RunningReleaseApp -ExePath (Join-Path "
+        r"$releaseBuildDir 'imusic.exe')",
+      );
+      final flutterCall = source.indexOf("Invoke-Checked -Command 'flutter'");
+      expect(stopCall, greaterThan(0));
+      expect(flutterCall, greaterThan(stopCall));
+    });
+
+    test('stops running generated dist apps before cleanup', () async {
+      final source = await File('scripts/package_windows.ps1').readAsString();
+
+      expect(source, contains('function Stop-RunningGeneratedDistApps'));
+      expect(
+        source,
+        contains(
+          "Stop-RunningReleaseApp -ExePath (Join-Path "
+          r"$_.FullName 'imusic.exe')",
+        ),
+      );
+
+      final stopCall = source.indexOf(
+        'Stop-RunningGeneratedDistApps -DistRoot',
+      );
+      final removeCall = source.indexOf(
+        r'Remove-Item -LiteralPath $_.FullName -Recurse -Force',
+      );
+      expect(stopCall, greaterThan(0));
+      expect(removeCall, greaterThan(stopCall));
+    });
   });
 }
 
@@ -211,6 +350,10 @@ class _TestUpdateCheckNotifier extends UpdateCheckNotifier {
 
   void setAvailable(UpdateManifest manifest) {
     state = UpdateAvailable(manifest);
+  }
+
+  void setDownloaded(UpdateManifest manifest, String filePath) {
+    state = UpdateDownloaded(filePath: filePath, manifest: manifest);
   }
 }
 
@@ -248,6 +391,13 @@ class _MissingManifestUpdateService extends UpdateService {
       requestOptions: request,
       response: Response<dynamic>(requestOptions: request, statusCode: 404),
     );
+  }
+}
+
+class _FailingInstallUpdateService extends UpdateService {
+  @override
+  Future<void> launchInstaller(String path) async {
+    throw StateError('boom');
   }
 }
 

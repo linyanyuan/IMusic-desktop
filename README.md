@@ -175,6 +175,7 @@ http://60.205.218.90:8787/desktop-releases/imusic-1.0.2%2B3-windows-x64.zip
 
 ### 5. 重要限制
 
+- 默认产物是绿色 ZIP 包，不是安装器；它不会写入开始菜单、注册表或桌面快捷方式。需要桌面快捷方式时，请用 Inno Setup、NSIS 等工具单独制作安装器，再通过 `-InstallerPath` 发布。
 - zip 更新要求当前客户端已经包含 zip 更新能力；非常早的旧客户端只支持 `.exe/.msi` 安装器更新。
 - 如果要发布安装器，可以先用 Inno Setup、NSIS 等工具生成 `.exe/.msi`，再给脚本传 `-InstallerPath`。
 - 更完整的命令和常见报错见 `scripts/package_windows_usage.md`。
