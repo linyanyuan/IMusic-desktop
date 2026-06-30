@@ -2087,6 +2087,9 @@ void main() {
     await tester.tap(loginIcon);
     await tester.pumpAndSettle();
 
+    expect(find.text('登录 IMusic'), findsOneWidget);
+    expect(find.text('同步你的收藏、歌单和播放历史。'), findsOneWidget);
+    expect(find.text('未登录也可以搜索和播放，登录后保存你的音乐资产。'), findsOneWidget);
     expect(find.text('用户名'), findsOneWidget);
     expect(find.text('密码'), findsOneWidget);
   });
@@ -2108,6 +2111,7 @@ void main() {
     await tester.tap(find.text('注册'));
     await tester.pumpAndSettle();
 
+    expect(find.text('创建账户'), findsOneWidget);
     expect(find.text('昵称（可选）'), findsOneWidget);
     expect(find.text('确认密码'), findsOneWidget);
 
@@ -2115,7 +2119,7 @@ void main() {
     await tester.enterText(find.widgetWithText(TextField, '昵称（可选）'), '新用户');
     await tester.enterText(find.widgetWithText(TextField, '密码'), 'secret123');
     await tester.enterText(find.widgetWithText(TextField, '确认密码'), 'secret123');
-    await tester.tap(find.text('注册并登录'));
+    await tester.tap(find.text('创建并同步'));
     await tester.pumpAndSettle();
 
     expect(authService.registeredUsername, 'new-user');

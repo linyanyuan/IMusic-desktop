@@ -14,6 +14,7 @@ import 'widgets/desktop_sidebar.dart';
 import 'widgets/desktop_player_bar.dart';
 import 'widgets/desktop_lyrics_window_controller.dart';
 import 'widgets/desktop_shortcut_controller.dart';
+import 'widgets/update_checker_controller.dart';
 import 'widgets/playback_completion_controller.dart';
 import 'widgets/settings_shortcuts_section.dart';
 import 'widgets/animated_equalizer_icon.dart';
@@ -22,6 +23,7 @@ import 'screens/desktop_search_screen.dart';
 import 'screens/desktop_playlist_detail_screen.dart';
 import 'screens/desktop_library_screen.dart';
 import 'screens/desktop_focus_screen.dart';
+import 'update/update_providers.dart';
 
 /// In-shell route. We keep a single persistent shell (sidebar + workbench +
 /// right rail + bottom bar) and swap only the central workbench, matching
@@ -206,6 +208,8 @@ class DesktopAppShell extends ConsumerWidget {
                 ),
                 // Standalone desktop lyrics window controller.
                 const DesktopLyricsWindowController(),
+                // In-app update auto-check + dialog owner.
+                const UpdateCheckerController(),
                 // Queue drawer
                 _QueueDrawer(colors: colors),
               ],
@@ -610,11 +614,74 @@ class _SettingsPlaceholder extends ConsumerWidget {
                 ),
                 const SizedBox(height: 18),
                 SettingsShortcutsSection(colors: c),
+                const SizedBox(height: 18),
+                _AboutSection(c: c),
               ],
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+/// "关于" section of the settings page — shows the running version and a
+/// manual update-check button whose label follows [updateCheckStateProvider].
+class _AboutSection extends ConsumerWidget {
+  const _AboutSection({required this.c});
+  final DeepVibeColors c;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final version = ref.watch(currentVersionProvider).valueOrNull;
+    final state = ref.watch(updateCheckStateProvider);
+    final String versionText = version ?? '…';
+
+    final IconData icon;
+    final String label;
+    switch (state) {
+      case UpdateChecking():
+        icon = Icons.sync;
+        label = '检查中…';
+      case UpdateAvailable(:final manifest):
+        icon = Icons.system_update_alt_outlined;
+        label = '有新版本 v${manifest.version}';
+      case UpdateDownloading(:final received, :final total):
+        icon = Icons.download_outlined;
+        label = total != null && total > 0
+            ? '下载中 ${(received / total * 100).toStringAsFixed(0)}%'
+            : '下载中…';
+      case UpdateDownloaded():
+        icon = Icons.install_desktop_outlined;
+        label = '去安装';
+      case UpdateUpToDate():
+        icon = Icons.check_circle_outline;
+        label = '已是最新';
+      case UpdateError():
+        icon = Icons.refresh;
+        label = '检查失败，重试';
+      default:
+        icon = Icons.system_update_alt_outlined;
+        label = '检查更新';
+    }
+
+    return _SettingsSection(
+      title: '关于',
+      c: c,
+      children: [
+        _SettingsRow(
+          title: '当前版本',
+          description: versionText,
+          c: c,
+          child: _SettingsActionButton(
+            key: const ValueKey('settings-check-update-button'),
+            icon: icon,
+            label: label,
+            c: c,
+            onTap: () => UpdateActions.checkForUpdates(ref, manual: true),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -2719,173 +2786,311 @@ class _LoginDialogState extends ConsumerState<_LoginDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final title = _isRegistering ? '创建账户' : '登录 IMusic';
+    final actionLabel = _isRegistering ? '创建并同步' : '登录并同步';
+
     return Center(
       child: Material(
         color: Colors.transparent,
         child: Dialog(
-          backgroundColor: widget.colors.surface,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(kCardRadius),
           ),
           child: Container(
-            width: 400,
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      _isRegistering ? '注册账户' : '登录',
-                      style: TextStyle(
-                        color: widget.colors.textPrimary,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const Spacer(),
-                    IconButton(
-                      icon: Icon(Icons.close, size: 20),
-                      color: widget.colors.textSecondary,
-                      onPressed: () => Navigator.of(context).pop(),
-                    ),
-                  ],
+            width: 432,
+            constraints: const BoxConstraints(maxWidth: 432),
+            decoration: BoxDecoration(
+              color: widget.colors.surface,
+              borderRadius: BorderRadius.circular(kCardRadius),
+              border: Border.all(color: widget.colors.border),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.24),
+                  blurRadius: 42,
+                  offset: const Offset(0, 22),
                 ),
-                const SizedBox(height: 18),
-                Container(
-                  height: 38,
-                  padding: const EdgeInsets.all(3),
-                  decoration: BoxDecoration(
-                    color: widget.colors.background,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: widget.colors.border),
-                  ),
-                  child: Row(
+              ],
+            ),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(26, 24, 26, 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _AuthModeButton(
-                        label: '登录',
-                        selected: !_isRegistering,
-                        colors: widget.colors,
-                        onTap: _isLoading ? null : () => _setMode(false),
+                      Container(
+                        width: 34,
+                        height: 34,
+                        decoration: BoxDecoration(
+                          color: widget.colors.accent.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(kCardRadius),
+                          border: Border.all(
+                            color: widget.colors.accent.withValues(alpha: 0.25),
+                          ),
+                        ),
+                        child: Icon(
+                          Icons.graphic_eq,
+                          size: 18,
+                          color: widget.colors.accent,
+                        ),
                       ),
-                      _AuthModeButton(
-                        label: '注册',
-                        selected: _isRegistering,
-                        colors: widget.colors,
-                        onTap: _isLoading ? null : () => _setMode(true),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              title,
+                              style: TextStyle(
+                                color: widget.colors.textPrimary,
+                                fontSize: 21,
+                                height: 1.2,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              '同步你的收藏、歌单和播放历史。',
+                              style: TextStyle(
+                                color: widget.colors.textSecondary,
+                                fontSize: 13,
+                                height: 1.35,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        tooltip: '关闭',
+                        icon: const Icon(Icons.close, size: 18),
+                        color: widget.colors.textMuted,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 32,
+                          minHeight: 32,
+                        ),
+                        onPressed: () => Navigator.of(context).pop(),
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(height: 18),
-                TextField(
-                  controller: _usernameController,
-                  decoration: InputDecoration(
-                    labelText: '用户名',
-                    labelStyle: TextStyle(color: widget.colors.textSecondary),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(color: widget.colors.border),
+                  const SizedBox(height: 22),
+                  Container(
+                    height: 40,
+                    padding: const EdgeInsets.all(3),
+                    decoration: BoxDecoration(
+                      color: widget.colors.background,
+                      borderRadius: BorderRadius.circular(kCardRadius),
+                      border: Border.all(color: widget.colors.border),
                     ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(
-                        color: widget.colors.accent,
-                        width: 2,
-                      ),
+                    child: Row(
+                      children: [
+                        _AuthModeButton(
+                          label: '登录',
+                          selected: !_isRegistering,
+                          colors: widget.colors,
+                          onTap: _isLoading ? null : () => _setMode(false),
+                        ),
+                        _AuthModeButton(
+                          label: '注册',
+                          selected: _isRegistering,
+                          colors: widget.colors,
+                          onTap: _isLoading ? null : () => _setMode(true),
+                        ),
+                      ],
                     ),
                   ),
-                  style: TextStyle(color: widget.colors.textPrimary),
-                  enabled: !_isLoading,
-                ),
-                const SizedBox(height: 16),
-                if (_isRegistering) ...[
+                  const SizedBox(height: 20),
                   TextField(
-                    controller: _nicknameController,
+                    controller: _usernameController,
                     decoration: _authInputDecoration(
-                      label: '昵称（可选）',
+                      label: '用户名',
+                      icon: Icons.person_outline,
                       colors: widget.colors,
                     ),
-                    style: TextStyle(color: widget.colors.textPrimary),
+                    style: TextStyle(
+                      color: widget.colors.textPrimary,
+                      fontSize: 14,
+                    ),
+                    cursorColor: widget.colors.accent,
+                    textInputAction: TextInputAction.next,
                     enabled: !_isLoading,
                   ),
-                  const SizedBox(height: 16),
-                ],
-                TextField(
-                  controller: _passwordController,
-                  obscureText: true,
-                  decoration: InputDecoration(
-                    labelText: '密码',
-                    labelStyle: TextStyle(color: widget.colors.textSecondary),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(color: widget.colors.border),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(
-                        color: widget.colors.accent,
-                        width: 2,
+                  const SizedBox(height: 12),
+                  if (_isRegistering) ...[
+                    TextField(
+                      controller: _nicknameController,
+                      decoration: _authInputDecoration(
+                        label: '昵称（可选）',
+                        icon: Icons.badge_outlined,
+                        colors: widget.colors,
                       ),
+                      style: TextStyle(
+                        color: widget.colors.textPrimary,
+                        fontSize: 14,
+                      ),
+                      cursorColor: widget.colors.accent,
+                      textInputAction: TextInputAction.next,
+                      enabled: !_isLoading,
                     ),
-                  ),
-                  style: TextStyle(color: widget.colors.textPrimary),
-                  enabled: !_isLoading,
-                  onSubmitted: (_) => _submit(),
-                ),
-                if (_isRegistering) ...[
-                  const SizedBox(height: 16),
+                    const SizedBox(height: 12),
+                  ],
                   TextField(
-                    controller: _confirmPasswordController,
+                    controller: _passwordController,
                     obscureText: true,
                     decoration: _authInputDecoration(
-                      label: '确认密码',
+                      label: '密码',
+                      icon: Icons.lock_outline,
                       colors: widget.colors,
                     ),
-                    style: TextStyle(color: widget.colors.textPrimary),
+                    style: TextStyle(
+                      color: widget.colors.textPrimary,
+                      fontSize: 14,
+                    ),
+                    cursorColor: widget.colors.accent,
+                    textInputAction: _isRegistering
+                        ? TextInputAction.next
+                        : TextInputAction.done,
                     enabled: !_isLoading,
-                    onSubmitted: (_) => _submit(),
+                    onSubmitted: (_) {
+                      if (!_isRegistering) _submit();
+                    },
                   ),
-                ],
-                if (_errorMessage != null) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    _errorMessage!,
-                    style: TextStyle(color: Colors.red.shade400, fontSize: 13),
-                  ),
-                ],
-                const SizedBox(height: 24),
-                ElevatedButton(
-                  onPressed: _isLoading ? null : _submit,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: widget.colors.accent,
-                    foregroundColor: widget.colors.background,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
+                  if (_isRegistering) ...[
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _confirmPasswordController,
+                      obscureText: true,
+                      decoration: _authInputDecoration(
+                        label: '确认密码',
+                        icon: Icons.verified_user_outlined,
+                        colors: widget.colors,
+                      ),
+                      style: TextStyle(
+                        color: widget.colors.textPrimary,
+                        fontSize: 14,
+                      ),
+                      cursorColor: widget.colors.accent,
+                      textInputAction: TextInputAction.done,
+                      enabled: !_isLoading,
+                      onSubmitted: (_) => _submit(),
+                    ),
+                  ],
+                  if (_errorMessage != null) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 9,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE06161).withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(kCardRadius),
+                        border: Border.all(
+                          color: const Color(
+                            0xFFE06161,
+                          ).withValues(alpha: 0.28),
+                        ),
+                      ),
+                      child: Text(
+                        _errorMessage!,
+                        style: TextStyle(
+                          color: const Color(0xFFE06161),
+                          fontSize: 12,
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 18),
+                  SizedBox(
+                    height: 44,
+                    child: ElevatedButton(
+                      onPressed: _isLoading ? null : _submit,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: widget.colors.accent,
+                        foregroundColor: widget.colors.background,
+                        disabledBackgroundColor: widget.colors.surfaceVariant,
+                        disabledForegroundColor: widget.colors.textMuted,
+                        elevation: 0,
+                        shadowColor: Colors.transparent,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(kCardRadius),
+                        ),
+                      ),
+                      child: _isLoading
+                          ? SizedBox(
+                              height: 18,
+                              width: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation(
+                                  widget.colors.background,
+                                ),
+                              ),
+                            )
+                          : Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  actionLabel,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Icon(
+                                  _isRegistering
+                                      ? Icons.person_add_alt_1
+                                      : Icons.arrow_forward,
+                                  size: 17,
+                                ),
+                              ],
+                            ),
                     ),
                   ),
-                  child: _isLoading
-                      ? SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation(
-                              widget.colors.background,
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: widget.colors.background,
+                      borderRadius: BorderRadius.circular(kCardRadius),
+                      border: Border.all(color: widget.colors.border),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          size: 16,
+                          color: widget.colors.textMuted,
+                        ),
+                        const SizedBox(width: 9),
+                        Expanded(
+                          child: Text(
+                            '未登录也可以搜索和播放，登录后保存你的音乐资产。',
+                            style: TextStyle(
+                              color: widget.colors.textSecondary,
+                              fontSize: 12,
+                              height: 1.45,
                             ),
                           ),
-                        )
-                      : Text(
-                          _isRegistering ? '注册并登录' : '登录',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                          ),
                         ),
-                ),
-              ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -2895,17 +3100,28 @@ class _LoginDialogState extends ConsumerState<_LoginDialog> {
 
   InputDecoration _authInputDecoration({
     required String label,
+    required IconData icon,
     required DeepVibeColors colors,
   }) {
+    final border = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(kCardRadius),
+      borderSide: BorderSide(color: colors.border),
+    );
     return InputDecoration(
       labelText: label,
-      labelStyle: TextStyle(color: colors.textSecondary),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
-        borderSide: BorderSide(color: colors.border),
+      labelStyle: TextStyle(color: colors.textSecondary, fontSize: 13),
+      floatingLabelStyle: TextStyle(color: colors.accent, fontSize: 13),
+      prefixIcon: Icon(icon, size: 18, color: colors.textMuted),
+      filled: true,
+      fillColor: colors.background,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
+      border: border,
+      enabledBorder: border,
+      disabledBorder: border.copyWith(
+        borderSide: BorderSide(color: colors.border.withValues(alpha: 0.55)),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(kCardRadius),
         borderSide: BorderSide(color: colors.accent, width: 2),
       ),
     );
@@ -2934,15 +3150,18 @@ class _AuthModeButton extends StatelessWidget {
         child: Container(
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: selected ? colors.surfaceVariant : Colors.transparent,
-            borderRadius: BorderRadius.circular(6),
+            color: selected ? colors.surface : Colors.transparent,
+            borderRadius: BorderRadius.circular(kCardRadius - 2),
+            border: selected
+                ? Border.all(color: colors.border)
+                : Border.all(color: Colors.transparent),
           ),
           child: Text(
             label,
             style: TextStyle(
-              color: selected ? colors.textPrimary : colors.textSecondary,
+              color: selected ? colors.textPrimary : colors.textMuted,
               fontSize: 13,
-              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
             ),
           ),
         ),
