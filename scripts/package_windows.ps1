@@ -86,7 +86,15 @@ $resolvedInstaller = $null
 if ($InstallerPath) {
   $resolvedInstaller = Get-FullPath $InstallerPath
   if (-not (Test-Path -LiteralPath $resolvedInstaller)) {
-    throw "InstallerPath not found: $resolvedInstaller"
+    throw @"
+InstallerPath not found: $resolvedInstaller
+
+-InstallerPath must point to an existing .exe or .msi installer.
+This Flutter packaging script does not create a setup installer by itself.
+
+If you do not already have an installer, remove -InstallerPath and run:
+  powershell -ExecutionPolicy Bypass -File .\scripts\package_windows.ps1 -Version $Version -BuildNumber $BuildNumber
+"@
   }
   Get-InstallerExtension $resolvedInstaller | Out-Null
 }

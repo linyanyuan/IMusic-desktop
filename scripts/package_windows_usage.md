@@ -8,6 +8,8 @@
 
 ## 1. 普通打包
 
+大多数情况下先用这个。它会生成可直接运行的 Windows 绿色版目录和 zip：
+
 把版本号和构建号换成你要发布的：
 
 ```powershell
@@ -28,6 +30,18 @@ dist\imusic-1.0.1+2-windows-x64.zip
 ```
 
 ## 2. 带自动更新文件
+
+只有你已经用 Inno Setup、NSIS、Advanced Installer 等工具提前生成了安装包，才使用 `-InstallerPath`。
+
+`-InstallerPath` 不是“生成安装包”的意思，而是“把已经存在的安装包复制到 releases 目录，并为它生成自动更新 manifest”。
+
+如果你还没有这个文件：
+
+```text
+.\IMusic-Setup-1.0.1.exe
+```
+
+不要复制下面这条命令，先用“普通打包”。
 
 如果你已经有安装包，例如 `IMusic-Setup-1.0.1.exe`，用这个：
 
@@ -126,6 +140,12 @@ InstallerPath does not exist
 
 ```powershell
 Get-ChildItem .\IMusic-Setup-1.0.1.exe
+```
+
+如果没有这个文件，就不要传 `-InstallerPath`，改用：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\package_windows.ps1 -Version 1.0.1 -BuildNumber 2
 ```
 
 如果提示：
