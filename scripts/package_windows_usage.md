@@ -14,6 +14,12 @@
 powershell -ExecutionPolicy Bypass -File .\scripts\package_windows.ps1 -Version 1.0.1 -BuildNumber 2
 ```
 
+如果你不小心写成了 `package_windows_windows.ps1`，项目里也提供了兼容入口，可以继续转发到正确脚本：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\package_windows_windows.ps1 -Version 1.0.1 -BuildNumber 2
+```
+
 执行后会生成：
 
 ```text
@@ -24,6 +30,14 @@ dist\imusic-1.0.1+2-windows-x64.zip
 ## 2. 带自动更新文件
 
 如果你已经有安装包，例如 `IMusic-Setup-1.0.1.exe`，用这个：
+
+推荐复制这一行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\package_windows.ps1 -Version 1.0.1 -BuildNumber 2 -InstallerPath .\IMusic-Setup-1.0.1.exe -Changelog "修复若干问题，优化更新体验"
+```
+
+多行版本如下：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\package_windows.ps1 `
@@ -87,6 +101,32 @@ http://60.205.218.90:8787/releases/IMusic-Setup-1.0.1.exe
 `Version` 是用户看到的版本号，`BuildNumber` 是构建号，建议每次发布都加 1。
 
 ## 5. 常见报错
+
+如果提示：
+
+```text
+-File 形式参数的实际参数“.\scripts\package_windows_windows.ps1”不存在
+```
+
+说明脚本名写错了。正确脚本是：
+
+```text
+.\scripts\package_windows.ps1
+```
+
+项目也提供了同名兼容入口 `.\scripts\package_windows_windows.ps1`，拉取最新代码后再执行即可。
+
+如果提示：
+
+```text
+InstallerPath does not exist
+```
+
+说明 `-InstallerPath` 后面的安装包路径不存在。先确认当前目录下真的有这个文件：
+
+```powershell
+Get-ChildItem .\IMusic-Setup-1.0.1.exe
+```
 
 如果提示：
 

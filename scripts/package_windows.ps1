@@ -42,7 +42,7 @@ function Invoke-Checked([string]$Command, [string[]]$Arguments) {
 }
 
 function Set-PubspecVersion([string]$PubspecPath, [string]$VersionText) {
-  $content = Get-Content -LiteralPath $PubspecPath -Raw
+  $content = Get-Content -LiteralPath $PubspecPath -Raw -Encoding UTF8
   $versionPattern = '(?m)^version:\s*.+$'
   if (-not [regex]::IsMatch($content, $versionPattern)) {
     throw "Could not find a top-level version line in $PubspecPath"
@@ -81,6 +81,15 @@ $versionText = "$Version+$BuildNumber"
 $packageName = "imusic-$versionText-windows-x64"
 $packageDir = Join-Path $distRoot $packageName
 $zipPath = Join-Path $distRoot "$packageName.zip"
+$resolvedInstaller = $null
+
+if ($InstallerPath) {
+  $resolvedInstaller = Get-FullPath $InstallerPath
+  if (-not (Test-Path -LiteralPath $resolvedInstaller)) {
+    throw "InstallerPath not found: $resolvedInstaller"
+  }
+  Get-InstallerExtension $resolvedInstaller | Out-Null
+}
 
 Write-Host "Packaging IMusic Windows release $versionText"
 Set-PubspecVersion -PubspecPath $pubspecPath -VersionText $versionText
@@ -130,12 +139,6 @@ try {
   }
 
   if ($InstallerPath) {
-    $resolvedInstaller = Get-FullPath $InstallerPath
-    if (-not (Test-Path -LiteralPath $resolvedInstaller)) {
-      throw "InstallerPath not found: $resolvedInstaller"
-    }
-    Get-InstallerExtension $resolvedInstaller | Out-Null
-
     New-Item -ItemType Directory -Force -Path $localReleasesDir | Out-Null
     $installerName = [System.IO.Path]::GetFileName($resolvedInstaller)
     $publishedInstaller = Join-Path $localReleasesDir $installerName
