@@ -339,6 +339,12 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$logPath = Join-Path ([System.IO.Path]::GetTempPath()) 'imusic-update.log'
+
+function Write-Log([string]$Message) {
+  $line = ('{0} {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff'), $Message)
+  Add-Content -LiteralPath $logPath -Value $line -Encoding UTF8
+}
 
 function Get-FullPath([string]$Path) {
   return [System.IO.Path]::GetFullPath($Path)
@@ -352,27 +358,66 @@ function Assert-UnderPath([string]$Path, [string]$ParentPath) {
   }
 }
 
+function Wait-ForTargetProcesses([string]$Exe) {
+  $deadline = (Get-Date).AddSeconds(60)
+  do {
+    $running = @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
+      try {
+        $_.Path -eq $Exe
+      } catch {
+        $false
+      }
+    })
+    if ($running.Count -eq 0) {
+      return
+    }
+    Write-Log ("Waiting for target process(es): " + (($running | ForEach-Object { $_.Id }) -join ', '))
+    Start-Sleep -Milliseconds 500
+  } while ((Get-Date) -lt $deadline)
+
+  throw "Timed out waiting for running app to exit: $Exe"
+}
+
+function Copy-WithRetry([string]$SourceRoot, [string]$Target) {
+  $lastError = $null
+  for ($attempt = 1; $attempt -le 20; $attempt++) {
+    try {
+      Write-Log "Copy attempt $attempt"
+      Copy-Item -Path (Join-Path $SourceRoot '*') -Destination $Target -Recurse -Force
+      return
+    } catch {
+      $lastError = $_
+      Write-Log "Copy attempt $attempt failed: $($_.Exception.Message)"
+      Start-Sleep -Milliseconds 500
+    }
+  }
+  throw $lastError
+}
+
 $zip = Get-FullPath $ZipPath
 $target = Get-FullPath $TargetDir
 $exe = Get-FullPath $ExePath
-
-if (-not (Test-Path -LiteralPath $zip -PathType Leaf)) {
-  throw "Update ZIP not found: $zip"
-}
-if (-not $zip.ToLowerInvariant().EndsWith('.zip')) {
-  throw "Update asset must be a ZIP file: $zip"
-}
-if (-not (Test-Path -LiteralPath $target -PathType Container)) {
-  throw "Target directory not found: $target"
-}
-Assert-UnderPath -Path $exe -ParentPath $target
-
-Wait-Process -Id $CurrentPid -Timeout 60 -ErrorAction SilentlyContinue
-
-$staging = Join-Path ([System.IO.Path]::GetTempPath()) ("imusic-update-" + [guid]::NewGuid().ToString("N"))
-New-Item -ItemType Directory -Force -Path $staging | Out-Null
+$staging = $null
+Write-Log "Start ZIP update. Zip=$zip Target=$target Exe=$exe CurrentPid=$CurrentPid"
 
 try {
+  if (-not (Test-Path -LiteralPath $zip -PathType Leaf)) {
+    throw "Update ZIP not found: $zip"
+  }
+  if (-not $zip.ToLowerInvariant().EndsWith('.zip')) {
+    throw "Update asset must be a ZIP file: $zip"
+  }
+  if (-not (Test-Path -LiteralPath $target -PathType Container)) {
+    throw "Target directory not found: $target"
+  }
+  Assert-UnderPath -Path $exe -ParentPath $target
+
+  Wait-Process -Id $CurrentPid -Timeout 60 -ErrorAction SilentlyContinue
+  Wait-ForTargetProcesses -Exe $exe
+
+  $staging = Join-Path ([System.IO.Path]::GetTempPath()) ("imusic-update-" + [guid]::NewGuid().ToString("N"))
+  New-Item -ItemType Directory -Force -Path $staging | Out-Null
+  Write-Log "Expand archive to $staging"
   Expand-Archive -LiteralPath $zip -DestinationPath $staging -Force
 
   $payloadRoot = $staging
@@ -385,10 +430,18 @@ try {
     }
   }
 
-  Copy-Item -Path (Join-Path $payloadRoot '*') -Destination $target -Recurse -Force
+  Write-Log "Payload root: $payloadRoot"
+  Copy-WithRetry -SourceRoot $payloadRoot -Target $target
+  Write-Log "Starting updated app"
   Start-Process -FilePath $exe -WorkingDirectory $target
+  Write-Log "Update complete"
+} catch {
+  Write-Log "Update failed: $($_.Exception.Message)"
+  throw
 }
 finally {
-  Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
+  if ($staging -and (Test-Path -LiteralPath $staging)) {
+    Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
+  }
 }
 ''';
