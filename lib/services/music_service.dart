@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 import '../core/models/song.dart';
+import 'auth_service.dart';
 import 'music_provider.dart';
 import 'bilibili_music_provider.dart';
 import 'meting_music_provider.dart';
@@ -17,7 +18,10 @@ final musicServiceProvider = Provider<MusicService>((ref) {
   return MusicService(
     provider: HybridMusicProvider(
       metadata: FallbackMusicProvider(
-        primary: MetingMusicProvider(),
+        primary: MetingMusicProvider(
+          // Read latest login token on each music request (Bearer auth).
+          tokenProvider: () => ref.read(authProvider).token,
+        ),
         fallback: DefaultMusicProvider(),
         isPrimaryId: (id) =>
             id.startsWith('meting:') || id.startsWith('meting-artist:'),

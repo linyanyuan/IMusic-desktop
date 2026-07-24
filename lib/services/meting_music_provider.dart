@@ -9,6 +9,7 @@ class MetingMusicProvider implements MusicProvider {
   MetingMusicProvider({
     Dio? dio,
     String apiBaseUrl = 'http://60.205.218.90:8787/api',
+    String? Function()? tokenProvider,
   })  : _dio = dio ??
             Dio(
               BaseOptions(
@@ -17,10 +18,18 @@ class MetingMusicProvider implements MusicProvider {
                 receiveTimeout: const Duration(seconds: 10),
               ),
             ),
+        _tokenProvider = tokenProvider,
         _artistTitles = {};
 
   final Dio _dio;
+  final String? Function()? _tokenProvider;
   final Map<String, String> _artistTitles;
+
+  Options? _requestOptions() {
+    final token = _tokenProvider?.call()?.trim() ?? '';
+    if (token.isEmpty) return null;
+    return Options(headers: {'Authorization': 'Bearer $token'});
+  }
 
   @override
   void rememberSongs(Iterable<Map<String, dynamic>> songs) {}
@@ -69,6 +78,7 @@ class MetingMusicProvider implements MusicProvider {
     final response = await _dio.get<Map<String, dynamic>>(
       '/music/artists/${parsed.vendor}/${Uri.encodeComponent(parsed.rawId)}',
       queryParameters: queryParameters.isEmpty ? null : queryParameters,
+      options: _requestOptions(),
     );
     return _mapValue(response.data?['data']) ?? const {};
   }
@@ -78,6 +88,7 @@ class MetingMusicProvider implements MusicProvider {
     final parsed = _parseMetingId(id);
     final response = await _dio.get<Map<String, dynamic>>(
       '/music/songs/${parsed.vendor}/${Uri.encodeComponent(parsed.rawId)}',
+      options: _requestOptions(),
     );
     return _mapValue(response.data?['data']) ?? const {};
   }
@@ -105,6 +116,7 @@ class MetingMusicProvider implements MusicProvider {
       final response = await _dio.get<Map<String, dynamic>>(
         '/music/search',
         queryParameters: {'vendor': vendor, 'q': query},
+        options: _requestOptions(),
       );
       final data = _mapValue(response.data?['data']);
       final items = data?['items'];
