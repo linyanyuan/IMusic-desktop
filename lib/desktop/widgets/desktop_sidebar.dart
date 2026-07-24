@@ -267,7 +267,7 @@ class _PlaylistsSection extends ConsumerWidget {
             )
           else
             ...playlists.map((playlist) {
-              final name = playlist['name']?.toString() ?? '未命名歌单';
+              final name = _playlistDisplayName(playlist);
               final isCollected = playlist['isCollected'] == true;
               final id = playlist['id']?.toString() ?? '';
               final selected =
@@ -537,4 +537,13 @@ class _Switch extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Prefer non-empty `name`, then `title` (detail page already does this).
+String _playlistDisplayName(Map<String, dynamic> playlist) {
+  final name = playlist['name']?.toString().trim() ?? '';
+  if (name.isNotEmpty) return name;
+  final title = playlist['title']?.toString().trim() ?? '';
+  if (title.isNotEmpty) return title;
+  return '未命名歌单';
 }

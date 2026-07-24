@@ -1042,7 +1042,9 @@ class _SongRowState extends ConsumerState<_SongRow> {
           )
         else
           ...playlists.map((playlist) {
-            final name = playlist['name']?.toString() ?? '未命名歌单';
+            final name = _nonEmptyText(playlist['name']) ??
+                _nonEmptyText(playlist['title']) ??
+                '未命名歌单';
             final alreadyAdded = playlistContainsSong(playlist, widget.song);
             return PopupMenuItem(
               enabled: !alreadyAdded,
@@ -1202,10 +1204,12 @@ Playlist? _localUserPlaylist(WidgetRef ref, String playlistId) {
           )
           .toList() ??
       [];
-  final title =
-      data['name']?.toString() ?? data['title']?.toString() ?? '未命名歌单';
-  final subtitle =
-      data['description']?.toString() ?? data['subtitle']?.toString() ?? '';
+  final title = _nonEmptyText(data['name']) ??
+      _nonEmptyText(data['title']) ??
+      '未命名歌单';
+  final subtitle = _nonEmptyText(data['description']) ??
+      _nonEmptyText(data['subtitle']) ??
+      '';
 
   return Playlist(
     id: playlistId,
@@ -1262,4 +1266,9 @@ int _durationMilliseconds(Object? value) {
   if (value is int) return value;
   if (value is num) return value.round();
   return int.tryParse(value?.toString() ?? '') ?? 0;
+}
+
+String? _nonEmptyText(Object? value) {
+  final text = value?.toString().trim() ?? '';
+  return text.isEmpty ? null : text;
 }

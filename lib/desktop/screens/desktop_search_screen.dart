@@ -729,7 +729,13 @@ class _SongRowState extends ConsumerState<_SongRow> {
           )
         else
           ...playlists.map((playlist) {
-            final name = playlist['name']?.toString() ?? '未命名歌单';
+            final name = () {
+              final n = playlist['name']?.toString().trim() ?? '';
+              if (n.isNotEmpty) return n;
+              final t = playlist['title']?.toString().trim() ?? '';
+              if (t.isNotEmpty) return t;
+              return '未命名歌单';
+            }();
             final alreadyAdded = playlistContainsSong(playlist, widget.song);
             return PopupMenuItem(
               enabled: !alreadyAdded,

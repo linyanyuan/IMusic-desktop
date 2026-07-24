@@ -201,9 +201,13 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
 
   void _applyRemoteLibrary(RemoteLibrary library, {bool? isLoading}) {
     final songs = library.likedSongs.map((s) => Song.fromJson(s)).toList();
+    // Normalize name/title (and description/subtitle) so sidebar and detail agree.
+    final playlists = library.userPlaylists
+        .map(_withLibraryPlaylistFields)
+        .toList();
     state = state.copyWith(
       likedSongs: songs,
-      userPlaylists: library.userPlaylists,
+      userPlaylists: playlists,
       themeMode: library.themeMode,
       isLoading: isLoading,
     );

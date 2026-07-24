@@ -1534,13 +1534,11 @@ class _ProfilePlaylistSection extends StatelessWidget {
 
   Widget _playlistCardFor(Map<String, dynamic> playlist) {
     final id = playlist['id']?.toString() ?? '';
-    final name =
-        playlist['name']?.toString() ??
-        playlist['title']?.toString() ??
+    final name = _profileNonEmpty(playlist['name']) ??
+        _profileNonEmpty(playlist['title']) ??
         '未命名歌单';
-    final description =
-        playlist['description']?.toString() ??
-        playlist['subtitle']?.toString() ??
+    final description = _profileNonEmpty(playlist['description']) ??
+        _profileNonEmpty(playlist['subtitle']) ??
         '';
     final songCount = _playlistSongCount(playlist);
     return _ProfilePlaylistCard(
@@ -1553,6 +1551,11 @@ class _ProfilePlaylistSection extends StatelessWidget {
       onTap: () => onOpen(id),
     );
   }
+}
+
+String? _profileNonEmpty(Object? value) {
+  final text = value?.toString().trim() ?? '';
+  return text.isEmpty ? null : text;
 }
 
 class _ProfileEmptyRow extends StatelessWidget {

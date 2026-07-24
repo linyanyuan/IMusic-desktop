@@ -255,10 +255,11 @@ class _PlaylistCardState extends State<_PlaylistCard> {
   @override
   Widget build(BuildContext context) {
     final id = widget.playlist['id']?.toString() ?? '';
-    final title =
-        widget.playlist['name']?.toString() ??
-        widget.playlist['title']?.toString() ??
-        '未命名歌单';
+    final name = widget.playlist['name']?.toString().trim() ?? '';
+    final titleText = widget.playlist['title']?.toString().trim() ?? '';
+    final title = name.isNotEmpty
+        ? name
+        : (titleText.isNotEmpty ? titleText : '未命名歌单');
     final subtitle = '${_playlistSongCount(widget.playlist)} 首歌曲';
 
     return MouseRegion(
