@@ -58,6 +58,53 @@ class HybridMusicProvider implements MusicProvider {
     );
   }
 
+  /// Metadata songs only (Meting/Default), marked for Bilibili playback.
+  Future<List<Map<String, dynamic>>> searchMetadataSongs(String query) async {
+    final results = await metadata
+        .searchSongs(query)
+        .catchError((_) => <Map<String, dynamic>>[]);
+    final songs = results
+        .where(_isSongResult)
+        .map(_withBilibiliPlaybackSource)
+        .toList();
+    _cacheSongs(songs);
+    return songs;
+  }
+
+  static bool _isSongResult(Map<String, dynamic> item) {
+    final type = item['resultType']?.toString().trim() ?? '';
+    return type.isEmpty || type == 'song';
+  }
+
+  /// Bilibili playlists only (no metadata songs).
+  Future<List<Map<String, dynamic>>> searchBilibiliPlaylists(
+    String query,
+  ) async {
+    final results = <Map<String, dynamic>>[];
+    final seenIds = <String>{};
+
+    void addPlaylists(Iterable<Map<String, dynamic>> items) {
+      for (final item in items) {
+        if (item['resultType']?.toString() != 'playlist') continue;
+        final id = item['id']?.toString() ?? '';
+        if (id.isEmpty || !seenIds.add(id)) continue;
+        results.add(_withSourceLabel(item));
+      }
+    }
+
+    try {
+      addPlaylists(await _searchPlayback(query));
+    } catch (_) {}
+
+    if (!_looksLikePlaylistQuery(query) || results.isEmpty) {
+      try {
+        addPlaylists(await _searchPlayback('$query 歌单'));
+      } catch (_) {}
+    }
+
+    return results;
+  }
+
   Future<List<Map<String, dynamic>>> _searchPlayback(String query) async {
     return (await playback.searchSongs(query))
         .map(

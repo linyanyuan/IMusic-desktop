@@ -134,7 +134,6 @@ class _DesktopLyricsWindowControllerState
         positionMs: position.inMilliseconds,
         fontSize: settings.lyricsFontSize,
         colorValue: settings.lyricsColorValue,
-        isLocked: false,
         isPlaying: ref.read(playbackPlayingProvider).value ?? false,
         isFavorite: isFavorite,
         canFavorite: song != null && auth.isLoggedIn,

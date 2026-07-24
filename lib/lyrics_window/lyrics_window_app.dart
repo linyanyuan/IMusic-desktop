@@ -49,7 +49,8 @@ class _LyricsWindowAppState extends State<LyricsWindowApp> {
             _lyricsColor = Color(
               args['colorValue'] as int? ?? _lyricsColor.toARGB32(),
             );
-            _isLocked = args['isLocked'] as bool? ?? _isLocked;
+            // Lock is local UI state; never overwrite from main-window sync
+            // (position/lyrics updates would otherwise unlock immediately).
             _isPlaying = args['isPlaying'] as bool? ?? _isPlaying;
             _isFavorite = args['isFavorite'] as bool? ?? _isFavorite;
             _canFavorite = args['canFavorite'] as bool? ?? _canFavorite;

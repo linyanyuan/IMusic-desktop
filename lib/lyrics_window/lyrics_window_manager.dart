@@ -75,12 +75,13 @@ class LyricsWindowManager {
   }
 
   /// Send lyrics data to the child window.
+  ///
+  /// Does not include lock state — the child owns drag-lock as local UI state.
   Future<void> sendLyricsData({
     required String lyricsText,
     required int positionMs,
     required double fontSize,
     required int colorValue,
-    required bool isLocked,
     required bool isPlaying,
     required bool isFavorite,
     required bool canFavorite,
@@ -93,7 +94,6 @@ class LyricsWindowManager {
         'positionMs': positionMs,
         'fontSize': fontSize,
         'colorValue': colorValue,
-        'isLocked': isLocked,
         'isPlaying': isPlaying,
         'isFavorite': isFavorite,
         'canFavorite': canFavorite,

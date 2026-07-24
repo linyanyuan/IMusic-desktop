@@ -32,6 +32,7 @@ class DesktopSearchScreen extends ConsumerStatefulWidget {
 class _DesktopSearchScreenState extends ConsumerState<DesktopSearchScreen> {
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
+  int _searchRequestId = 0;
 
   @override
   void initState() {
@@ -50,16 +51,27 @@ class _DesktopSearchScreenState extends ConsumerState<DesktopSearchScreen> {
     super.dispose();
   }
 
+  MusicSearchScope _scopeForTab(SearchTab tab) => switch (tab) {
+    SearchTab.songs => MusicSearchScope.metadataSongs,
+    SearchTab.playlists => MusicSearchScope.bilibiliPlaylists,
+    SearchTab.all || SearchTab.artists => MusicSearchScope.all,
+  };
+
   Future<void> _search(String q) async {
     final query = q.trim();
-    print('[SearchScreen] 搜索关键词: $query');
+    final tab = ref.read(searchTabProvider);
+    final scope = _scopeForTab(tab);
+    final requestId = ++_searchRequestId;
+    print('[SearchScreen] 搜索关键词: $query tab=$tab scope=$scope id=$requestId');
 
     ref.read(searchQueryProvider.notifier).state = query;
     ref.read(searchLoadingProvider.notifier).state = true;
     ref.read(searchResultsProvider.notifier).state = [];
 
     if (query.isEmpty) {
-      ref.read(searchLoadingProvider.notifier).state = false;
+      if (requestId == _searchRequestId) {
+        ref.read(searchLoadingProvider.notifier).state = false;
+      }
       return;
     }
 
@@ -67,17 +79,23 @@ class _DesktopSearchScreenState extends ConsumerState<DesktopSearchScreen> {
 
     try {
       print('[SearchScreen] 开始搜索...');
-      final results = await musicService.searchSongs(query);
+      final results = await musicService.searchSongs(query, scope: scope);
       print('[SearchScreen] 搜索结果: ${results.length} 首');
-      if (mounted) {
-        ref.read(searchResultsProvider.notifier).state = results;
-        ref.read(searchLoadingProvider.notifier).state = false;
-      }
+      if (!mounted || requestId != _searchRequestId) return;
+      ref.read(searchResultsProvider.notifier).state = results;
+      ref.read(searchLoadingProvider.notifier).state = false;
     } catch (e) {
       print('[SearchScreen] 搜索失败: $e');
-      if (mounted) {
-        ref.read(searchLoadingProvider.notifier).state = false;
-      }
+      if (!mounted || requestId != _searchRequestId) return;
+      ref.read(searchLoadingProvider.notifier).state = false;
+    }
+  }
+
+  void _onTabChanged(SearchTab tab) {
+    ref.read(searchTabProvider.notifier).state = tab;
+    final query = ref.read(searchQueryProvider);
+    if (query.isNotEmpty) {
+      _search(query);
     }
   }
 
@@ -106,7 +124,7 @@ class _DesktopSearchScreenState extends ConsumerState<DesktopSearchScreen> {
           _Tabs(
             c: c,
             tab: tab,
-            onTabChanged: (t) => ref.read(searchTabProvider.notifier).state = t,
+            onTabChanged: _onTabChanged,
           ),
           Expanded(
             child: loading

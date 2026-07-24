@@ -68,6 +68,104 @@ void main() {
 
     expect(playUrl.lyrics, '[00:00.00]B站字幕歌词');
   });
+
+  test('searchMetadataSongs returns only metadata songs', () async {
+    final provider = HybridMusicProvider(
+      metadata: const _MetadataProvider(
+        searchResults: {
+          '热歌': [
+            {
+              'id': 'meting:tencent:1',
+              'title': '热歌A',
+              'artist': '歌手A',
+              'resultType': 'song',
+            },
+            {
+              'id': 'meting:tencent:artist1',
+              'title': '某歌手',
+              'resultType': 'artist',
+            },
+            {
+              'id': 'meting-playlist:tencent:p1',
+              'title': '元数据歌单',
+              'resultType': 'playlist',
+            },
+          ],
+        },
+        details: {},
+      ),
+      playback: const _ScopedPlaybackProvider(
+        results: {
+          '热歌': [
+            {
+              'id': 'bilibili:BVxxx',
+              'title': 'B站视频',
+              'resultType': 'song',
+            },
+          ],
+        },
+      ),
+    );
+
+    final results = await provider.searchMetadataSongs('热歌');
+
+    expect(results, hasLength(1));
+    expect(results.single['id'], 'meting:tencent:1');
+    expect(results.single['playbackSource'], 'bilibili');
+  });
+
+  test('searchBilibiliPlaylists returns only bilibili playlists', () async {
+    final provider = HybridMusicProvider(
+      metadata: const _MetadataProvider(
+        searchResults: {
+          '华语': [
+            {
+              'id': 'meting:tencent:1',
+              'title': '元数据歌曲',
+              'resultType': 'song',
+            },
+          ],
+        },
+        details: {},
+      ),
+      playback: const _ScopedPlaybackProvider(
+        results: {
+          '华语': [
+            {
+              'id': 'bilibili:BVsong',
+              'title': 'B站单曲',
+              'resultType': 'song',
+            },
+            {
+              'id': 'bilibili:BVpl',
+              'title': '华语合集',
+              'resultType': 'playlist',
+              'sourceLabel': 'B站',
+            },
+          ],
+          '华语 歌单': [
+            {
+              'id': 'bilibili:BVpl2',
+              'title': '华语歌单2',
+              'resultType': 'playlist',
+              'sourceLabel': 'B站',
+            },
+          ],
+        },
+      ),
+    );
+
+    final results = await provider.searchBilibiliPlaylists('华语');
+
+    expect(results.map((item) => item['id']), [
+      'bilibili:BVpl',
+      'bilibili:BVpl2',
+    ]);
+    expect(
+      results.every((item) => item['resultType'] == 'playlist'),
+      isTrue,
+    );
+  });
 }
 
 class _MetadataProvider implements MusicProvider {
@@ -191,5 +289,45 @@ class _PlaybackProviderWithLyrics implements MusicProvider {
       lyrics: '[00:00.00]B站字幕歌词',
       resolvedId: 'bilibili:BVwithcc:1',
     );
+  }
+}
+
+class _ScopedPlaybackProvider implements MusicProvider {
+  const _ScopedPlaybackProvider({required this.results});
+
+  final Map<String, List<Map<String, dynamic>>> results;
+
+  @override
+  void rememberSongs(Iterable<Map<String, dynamic>> songs) {}
+
+  @override
+  Future<String> getLyrics(Map<String, dynamic> song) async => '';
+
+  @override
+  Future<List<Map<String, dynamic>>> searchSongs(String query) async =>
+      results[query] ?? const [];
+
+  @override
+  Future<List<Map<String, dynamic>>> getRecommendedSongs() async => const [];
+
+  @override
+  Future<List<Map<String, dynamic>>> getHotPlaylists({
+    int? limit,
+    int? offset,
+  }) async => const [];
+
+  @override
+  Future<Map<String, dynamic>> getPlaylist(String id, {int? limit}) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<Map<String, dynamic>> getSongDetail(String id) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<PlaybackUrl> getPlayUrl(String id) {
+    throw UnimplementedError();
   }
 }

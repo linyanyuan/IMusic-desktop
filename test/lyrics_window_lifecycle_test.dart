@@ -30,6 +30,10 @@ void main() {
       expect(app, contains('parseLyricLines'));
       expect(controller, contains('closeWindow()'));
       expect(controller, contains('sendLyricsData'));
+      // Lock is local to the child window; main-window sync must not reset it.
+      expect(app, isNot(contains("_isLocked = args['isLocked']")));
+      expect(manager, isNot(contains("'isLocked': isLocked")));
+      expect(controller, isNot(contains('isLocked:')));
     },
   );
 }

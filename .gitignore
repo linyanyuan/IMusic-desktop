@@ -19,8 +19,10 @@ nul
 .agents/
 .claude/
 .codex/
+.codegraph/
 .mcp.json
 .mcp.json.*
+.tmp-*
 
 # IntelliJ related
 *.iml

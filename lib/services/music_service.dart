@@ -27,6 +27,18 @@ final musicServiceProvider = Provider<MusicService>((ref) {
   );
 });
 
+/// How [MusicService.searchSongs] should load results.
+enum MusicSearchScope {
+  /// Hybrid: metadata songs + Bilibili playlists.
+  all,
+
+  /// Metadata songs only (Meting/Default).
+  metadataSongs,
+
+  /// Bilibili playlists only.
+  bilibiliPlaylists,
+}
+
 /// Music service - handles music data and playback
 class MusicService {
   MusicService({required MusicProvider provider}) : _provider = provider;
@@ -42,15 +54,34 @@ class MusicService {
     throw UnsupportedError('Current provider does not expose Dio instance');
   }
 
-  /// Search songs
-  Future<List<Song>> searchSongs(String query) async {
+  /// Search songs / playlists according to [scope].
+  Future<List<Song>> searchSongs(
+    String query, {
+    MusicSearchScope scope = MusicSearchScope.all,
+  }) async {
     try {
-      final results = await _provider.searchSongs(query);
+      final results = await _searchRaw(query, scope);
       _cacheResults(results);
       return results.map(_toSong).toList();
     } catch (e) {
       return [];
     }
+  }
+
+  Future<List<Map<String, dynamic>>> _searchRaw(
+    String query,
+    MusicSearchScope scope,
+  ) async {
+    final provider = _provider;
+    if (provider is HybridMusicProvider) {
+      return switch (scope) {
+        MusicSearchScope.all => provider.searchSongs(query),
+        MusicSearchScope.metadataSongs => provider.searchMetadataSongs(query),
+        MusicSearchScope.bilibiliPlaylists =>
+          provider.searchBilibiliPlaylists(query),
+      };
+    }
+    return provider.searchSongs(query);
   }
 
   /// Get recommended songs
