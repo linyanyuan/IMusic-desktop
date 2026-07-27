@@ -188,6 +188,30 @@ void main() {
     expect(playback.searchQueries, ['缓存歌手 缓存歌曲']);
     expect(playUrl.resolvedId, 'bilibili:BVcached:p1');
   });
+
+  test(
+    'persistent playback metadata resolves an ID without loading audio',
+    () async {
+      final playback = _ResolvingPlaybackProvider();
+      final provider = HybridMusicProvider(
+        metadata: _CountingMetadataProvider(),
+        playback: playback,
+      );
+      const song = {
+        'id': 'meting:tencent:cached-song',
+        'title': '缓存歌曲',
+        'artist': '缓存歌手',
+        'resultType': 'song',
+      };
+      provider.rememberSongs(const [song]);
+
+      final playbackId = await provider.resolvePlaybackId(song);
+
+      expect(playbackId, 'bilibili:BVcached:p1');
+      expect(playback.searchQueries, ['缓存歌手 缓存歌曲']);
+      expect(playback.playUrlCalls, 0);
+    },
+  );
 }
 
 class _CountingMetadataProvider implements MusicProvider {
@@ -231,6 +255,7 @@ class _CountingMetadataProvider implements MusicProvider {
 
 class _ResolvingPlaybackProvider implements MusicProvider {
   final searchQueries = <String>[];
+  int playUrlCalls = 0;
 
   @override
   void rememberSongs(Iterable<Map<String, dynamic>> songs) {}
@@ -252,8 +277,10 @@ class _ResolvingPlaybackProvider implements MusicProvider {
   }
 
   @override
-  Future<PlaybackUrl> getPlayUrl(String id) async =>
-      PlaybackUrl('https://example.test/audio.m4s', resolvedId: id);
+  Future<PlaybackUrl> getPlayUrl(String id) async {
+    playUrlCalls++;
+    return PlaybackUrl('https://example.test/audio.m4s', resolvedId: id);
+  }
 
   @override
   Future<List<Map<String, dynamic>>> getRecommendedSongs() async => const [];

@@ -130,6 +130,33 @@ class MusicService {
     return _provider.getPlaylistSummary(playlist.toJson());
   }
 
+  Future<Map<String, dynamic>> resolvePlaybackMetadata(Song song) async {
+    final raw = song.toJson();
+    rememberSong(raw);
+    final resolvedId = await _provider.resolvePlaybackId(raw);
+    if (!resolvedId.startsWith('bilibili:')) return raw;
+
+    final canonicalId = _canonicalBilibiliPlaybackId(resolvedId);
+    final parts = canonicalId.split(':');
+    final bvid = parts.length > 1 ? parts[1] : '';
+    final page = parts.length > 2
+        ? int.tryParse(parts[2].replaceFirst(RegExp(r'^[pP]'), '')) ?? 1
+        : 1;
+    return {
+      ...raw,
+      if (song.id.startsWith('bilibili:')) 'id': canonicalId,
+      'playbackId': canonicalId,
+      'playbackSource': 'bilibili',
+      'playbackSourceLabel': 'B站',
+      'playbackSourceId': canonicalId,
+      'sourceId': canonicalId,
+      if (bvid.isNotEmpty) 'bvid': bvid,
+      'page': page,
+      if (bvid.isNotEmpty)
+        'pageUrl': 'https://www.bilibili.com/video/$bvid?p=$page',
+    };
+  }
+
   /// Get song detail
   Future<Song?> getSongDetail(String id) async {
     // Check cache first
@@ -279,5 +306,13 @@ class MusicService {
     final minutes = duration.inMinutes;
     final seconds = duration.inSeconds.remainder(60);
     return '$minutes:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  String _canonicalBilibiliPlaybackId(String id) {
+    final parts = id.split(':');
+    if (parts.length < 2) return id;
+    final pageText = parts.length > 2 ? parts[2] : '1';
+    final page = int.tryParse(pageText.replaceFirst(RegExp(r'^[pP]'), '')) ?? 1;
+    return 'bilibili:${parts[1]}:p${page < 1 ? 1 : page}';
   }
 }

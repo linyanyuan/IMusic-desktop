@@ -42,6 +42,10 @@ abstract interface class PlaylistSummaryProvider {
   Future<PlaylistSummary> getPlaylistSummary(Map<String, dynamic> playlist);
 }
 
+abstract interface class PlaybackIdResolver {
+  Future<String> resolvePlaybackId(Map<String, dynamic> song);
+}
+
 /// Abstract music provider interface
 abstract class MusicProvider {
   /// Remember songs for future reference (caching)
@@ -80,5 +84,18 @@ extension MusicProviderPlaylistSummary on MusicProvider {
       return (provider as PlaylistSummaryProvider).getPlaylistSummary(playlist);
     }
     return const PlaylistSummary.unavailable();
+  }
+}
+
+extension MusicProviderPlaybackId on MusicProvider {
+  Future<String> resolvePlaybackId(Map<String, dynamic> song) async {
+    final provider = this;
+    if (provider is PlaybackIdResolver) {
+      return (provider as PlaybackIdResolver).resolvePlaybackId(song);
+    }
+    final playbackId = song['playbackId']?.toString().trim() ?? '';
+    return playbackId.isNotEmpty
+        ? playbackId
+        : song['id']?.toString().trim() ?? '';
   }
 }

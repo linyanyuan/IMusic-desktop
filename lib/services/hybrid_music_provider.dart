@@ -9,7 +9,8 @@ import '../shared/collection_lyrics.dart';
 ///
 /// For meting songs: fetches metadata, then resolves Bilibili playback ID
 /// For Bilibili songs: uses direct playback, but lyrics come from reverse metadata search
-class HybridMusicProvider implements MusicProvider, PlaylistSummaryProvider {
+class HybridMusicProvider
+    implements MusicProvider, PlaylistSummaryProvider, PlaybackIdResolver {
   HybridMusicProvider({required this.metadata, required this.playback})
     : _songCache = {};
 
@@ -239,6 +240,20 @@ class HybridMusicProvider implements MusicProvider, PlaylistSummaryProvider {
   }
 
   @override
+  Future<String> resolvePlaybackId(Map<String, dynamic> song) async {
+    final id = song['id']?.toString().trim() ?? '';
+    final playbackId = song['playbackId']?.toString().trim() ?? '';
+    if (playbackId.startsWith('bilibili:')) {
+      return _canonicalBilibiliPlaybackId(playbackId);
+    }
+    if (!_isMetingId(id)) return _canonicalBilibiliPlaybackId(id);
+
+    final cached = _songCache[id];
+    final metadataSong = cached == null ? song : {...cached, ...song};
+    return _resolveBilibiliPlaybackId(metadataSong);
+  }
+
+  @override
   Future<Map<String, dynamic>> getSongDetail(String id) async {
     if (!_isMetingId(id)) return playback.getSongDetail(id);
     final detail = await metadata.getSongDetail(id);
@@ -440,6 +455,15 @@ class HybridMusicProvider implements MusicProvider, PlaylistSummaryProvider {
       if (id.isNotEmpty) return id;
     }
     throw StateError('未找到可播放的 B站版本');
+  }
+
+  String _canonicalBilibiliPlaybackId(String id) {
+    if (!id.startsWith('bilibili:')) return id;
+    final parts = id.split(':');
+    if (parts.length < 2) return id;
+    final pageText = parts.length > 2 ? parts[2] : '1';
+    final page = int.tryParse(pageText.replaceFirst(RegExp(r'^[pP]'), '')) ?? 1;
+    return 'bilibili:${parts[1]}:p${page < 1 ? 1 : page}';
   }
 
   static Map<String, dynamic>? bestMetadataMatch(

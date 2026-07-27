@@ -130,6 +130,14 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
   final SharedPreferences _prefs;
   final PlaybackMetadataResolver? _playbackResolver;
   static const _historyKey = 'play_history';
+  RemoteLibrary _committedLibrary = const RemoteLibrary(
+    likedSongs: [],
+    userPlaylists: [],
+    themeMode: 'light',
+  );
+  Future<void> _mutationTail = Future<void>.value();
+  int _nextOperationId = 0;
+  final Map<String, int> _entityOwners = {};
 
   LibraryNotifier(
     this._libraryService,
@@ -197,14 +205,28 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
 
   void clearAccountLibrary() {
     state = state.copyWith(likedSongs: const [], userPlaylists: const []);
+    _committedLibrary = RemoteLibrary(
+      likedSongs: const [],
+      userPlaylists: const [],
+      themeMode: state.themeMode,
+    );
+    _entityOwners.clear();
   }
 
   void _applyRemoteLibrary(RemoteLibrary library, {bool? isLoading}) {
-    final songs = library.likedSongs.map((s) => Song.fromJson(s)).toList();
+    final likedSongs = library.likedSongs
+        .map((song) => _withMobilePlaybackFields(song))
+        .toList();
+    final songs = likedSongs.map((s) => Song.fromJson(s)).toList();
     // Normalize name/title (and description/subtitle) so sidebar and detail agree.
     final playlists = library.userPlaylists
         .map(_withLibraryPlaylistFields)
         .toList();
+    _committedLibrary = RemoteLibrary(
+      likedSongs: likedSongs,
+      userPlaylists: playlists,
+      themeMode: library.themeMode,
+    );
     state = state.copyWith(
       likedSongs: songs,
       userPlaylists: playlists,
@@ -213,35 +235,113 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     );
   }
 
+  Future<void> _enqueueRemoteMutation(
+    String token,
+    RemoteLibrary Function(RemoteLibrary committed) buildCandidate,
+  ) {
+    final operation = _mutationTail.then((_) async {
+      final candidate = buildCandidate(_committedLibrary);
+      await _libraryService.saveLibrary(
+        token,
+        likedSongs: candidate.likedSongs,
+        userPlaylists: candidate.userPlaylists,
+        themeMode: candidate.themeMode,
+      );
+      _committedLibrary = candidate;
+    });
+    _mutationTail = operation.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {},
+    );
+    return operation;
+  }
+
+  RemoteLibrary _candidateLibrary(
+    RemoteLibrary committed, {
+    List<Map<String, dynamic>>? likedSongs,
+    List<Map<String, dynamic>>? userPlaylists,
+  }) {
+    return RemoteLibrary(
+      likedSongs: likedSongs ?? committed.likedSongs,
+      userPlaylists: userPlaylists ?? committed.userPlaylists,
+      themeMode: committed.themeMode,
+    );
+  }
+
+  int _claimEntities(Iterable<String> keys) {
+    final operationId = ++_nextOperationId;
+    for (final key in keys) {
+      _entityOwners[key] = operationId;
+    }
+    return operationId;
+  }
+
+  bool _ownsEntity(String key, int operationId) {
+    return _entityOwners[key] == operationId;
+  }
+
+  void _releaseEntity(String key, int operationId) {
+    if (_ownsEntity(key, operationId)) _entityOwners.remove(key);
+  }
+
   /// Toggle like status for a song
   /// Saves the updated library to the server via PUT /library
   Future<void> toggleLike(String token, Song song) async {
-    final oldList = state.likedSongs; // Save old state for rollback
     final isLiked = state.likedSongs.any((s) => s.id == song.id);
-    List<Song> updatedList;
+    final removedSong = isLiked
+        ? state.likedSongs.firstWhere((item) => item.id == song.id)
+        : null;
+    final resolved = isLiked ? song : await _resolvePlaybackMetadata(song);
+    final entityKey = 'like:${song.id}';
+    final operationId = _claimEntities([entityKey]);
 
     if (isLiked) {
-      updatedList = state.likedSongs.where((s) => s.id != song.id).toList();
+      state = state.copyWith(
+        likedSongs: state.likedSongs.where((s) => s.id != song.id).toList(),
+      );
     } else {
-      final resolved = await _resolvePlaybackMetadata(song);
-      updatedList = [...state.likedSongs, resolved.copyWith(isFavorite: true)];
+      state = state.copyWith(
+        likedSongs: [...state.likedSongs, resolved.copyWith(isFavorite: true)],
+      );
     }
 
-    // Optimistic update
-    state = state.copyWith(likedSongs: updatedList);
-
     try {
-      // Save entire library to server
-      await _libraryService.saveLibrary(
+      await _enqueueRemoteMutation(
         token,
-        likedSongs: updatedList.map((s) => s.toJson()).toList(),
-        userPlaylists: state.userPlaylists,
-        themeMode: state.themeMode,
+        (committed) => _candidateLibrary(
+          committed,
+          likedSongs: isLiked
+              ? committed.likedSongs
+                    .where((item) => item['id']?.toString() != song.id)
+                    .toList()
+              : [
+                  ...committed.likedSongs.where(
+                    (item) => item['id']?.toString() != resolved.id,
+                  ),
+                  resolved.copyWith(isFavorite: true).toJson(),
+                ],
+        ),
       );
-    } catch (e) {
-      // Revert to old state on error
-      state = state.copyWith(likedSongs: oldList);
+    } catch (_) {
+      if (_ownsEntity(entityKey, operationId)) {
+        state = state.copyWith(
+          likedSongs: isLiked
+              ? [
+                  ...state.likedSongs,
+                  if (removedSong != null &&
+                      !state.likedSongs.any(
+                        (item) => item.id == removedSong.id,
+                      ))
+                    removedSong,
+                ]
+              : state.likedSongs
+                    .where((item) => item.id != resolved.id)
+                    .toList(),
+        );
+      }
       rethrow;
+    } finally {
+      _releaseEntity(entityKey, operationId);
     }
   }
 
@@ -301,24 +401,30 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
       'isCollected': false, // User created
     };
 
+    final entityKey = 'playlist:${newPlaylist['id']}';
+    final operationId = _claimEntities([entityKey]);
     final updatedPlaylists = [...state.userPlaylists, newPlaylist];
     state = state.copyWith(userPlaylists: updatedPlaylists);
 
     try {
-      await _libraryService.saveLibrary(
+      await _enqueueRemoteMutation(
         token,
-        likedSongs: state.likedSongs.map((s) => s.toJson()).toList(),
-        userPlaylists: updatedPlaylists,
-        themeMode: state.themeMode,
+        (committed) => _candidateLibrary(
+          committed,
+          userPlaylists: [...committed.userPlaylists, newPlaylist],
+        ),
       );
-    } catch (e) {
-      // Revert on error
-      state = state.copyWith(
-        userPlaylists: state.userPlaylists
-            .where((p) => p['id'] != newPlaylist['id'])
-            .toList(),
-      );
+    } catch (_) {
+      if (_ownsEntity(entityKey, operationId)) {
+        state = state.copyWith(
+          userPlaylists: state.userPlaylists
+              .where((p) => p['id'] != newPlaylist['id'])
+              .toList(),
+        );
+      }
       rethrow;
+    } finally {
+      _releaseEntity(entityKey, operationId);
     }
   }
 
@@ -329,23 +435,43 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
   ) async {
     final id = playlist['id']?.toString() ?? '';
     if (id.isEmpty) return;
-    final oldPlaylists = state.userPlaylists;
     final exists = state.userPlaylists.any((p) => p['id']?.toString() == id);
+    final originalIndex = state.userPlaylists.indexWhere(
+      (item) => item['id']?.toString() == id,
+    );
+    final original = originalIndex >= 0
+        ? state.userPlaylists[originalIndex]
+        : null;
+    final entityKey = 'playlist:$id';
+    final operationId = _claimEntities([entityKey]);
+
     if (exists) {
       final updatedPlaylists = state.userPlaylists
           .where((p) => p['id']?.toString() != id)
           .toList();
       state = state.copyWith(userPlaylists: updatedPlaylists);
       try {
-        await _libraryService.saveLibrary(
+        await _enqueueRemoteMutation(
           token,
-          likedSongs: state.likedSongs.map((s) => s.toJson()).toList(),
-          userPlaylists: updatedPlaylists,
-          themeMode: state.themeMode,
+          (committed) => _candidateLibrary(
+            committed,
+            userPlaylists: committed.userPlaylists
+                .where((item) => item['id']?.toString() != id)
+                .toList(),
+          ),
         );
-      } catch (e) {
-        state = state.copyWith(userPlaylists: oldPlaylists);
+      } catch (_) {
+        if (_ownsEntity(entityKey, operationId) && original != null) {
+          final restored = [...state.userPlaylists];
+          restored.insert(
+            originalIndex < restored.length ? originalIndex : restored.length,
+            original,
+          );
+          state = state.copyWith(userPlaylists: restored);
+        }
         rethrow;
+      } finally {
+        _releaseEntity(entityKey, operationId);
       }
       return;
     }
@@ -363,20 +489,29 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     state = state.copyWith(userPlaylists: updatedPlaylists);
 
     try {
-      await _libraryService.saveLibrary(
+      await _enqueueRemoteMutation(
         token,
-        likedSongs: state.likedSongs.map((s) => s.toJson()).toList(),
-        userPlaylists: updatedPlaylists,
-        themeMode: state.themeMode,
+        (committed) => _candidateLibrary(
+          committed,
+          userPlaylists: [
+            ...committed.userPlaylists.where(
+              (item) => item['id']?.toString() != id,
+            ),
+            collectedPlaylist,
+          ],
+        ),
       );
-    } catch (e) {
-      // Revert on error
-      state = state.copyWith(
-        userPlaylists: state.userPlaylists
-            .where((p) => p['id'] != collectedPlaylist['id'])
-            .toList(),
-      );
+    } catch (_) {
+      if (_ownsEntity(entityKey, operationId)) {
+        state = state.copyWith(
+          userPlaylists: state.userPlaylists
+              .where((p) => p['id'] != collectedPlaylist['id'])
+              .toList(),
+        );
+      }
       rethrow;
+    } finally {
+      _releaseEntity(entityKey, operationId);
     }
   }
 
@@ -386,32 +521,86 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     String playlistId,
     Song song,
   ) async {
-    final oldPlaylists = state.userPlaylists;
-    final resolvedSong = await _resolvePlaybackMetadata(song);
-    final updatedPlaylists = state.userPlaylists.map((playlist) {
+    final rawSong = song.toJson();
+    var inserted = false;
+    final optimisticPlaylists = state.userPlaylists.map((playlist) {
       if (playlist['id']?.toString() == playlistId) {
         final songs = List<Map<String, dynamic>>.from(playlist['songs'] ?? []);
-        // Check if song already exists
-        if (!songs.any((s) => s['id']?.toString() == resolvedSong.id)) {
-          songs.add(resolvedSong.toJson());
+        if (!songs.any((s) => s['id']?.toString() == song.id)) {
+          songs.add(rawSong);
+          inserted = true;
         }
         return {...playlist, 'songs': songs, 'songCount': songs.length};
       }
       return playlist;
     }).toList();
+    if (!inserted) return;
+
+    final entityKeys = <String>{'playlist-song:$playlistId:${song.id}'};
+    final operationId = _claimEntities(entityKeys);
+    state = state.copyWith(userPlaylists: optimisticPlaylists);
+
+    final resolvedSong = await _resolvePlaybackMetadata(song);
+    final resolvedMap = resolvedSong.toJson();
+    final resolvedEntityKey = 'playlist-song:$playlistId:${resolvedSong.id}';
+    entityKeys.add(resolvedEntityKey);
+    _entityOwners[resolvedEntityKey] = operationId;
+    final stillPresent = state.userPlaylists.any((playlist) {
+      if (playlist['id']?.toString() != playlistId) return false;
+      final songs = List<Map<String, dynamic>>.from(playlist['songs'] ?? []);
+      return songs.any((item) => identical(item, rawSong));
+    });
+    if (!stillPresent) {
+      for (final key in entityKeys) {
+        _releaseEntity(key, operationId);
+      }
+      return;
+    }
+
+    final updatedPlaylists = state.userPlaylists.map((playlist) {
+      if (playlist['id']?.toString() != playlistId) return playlist;
+      final songs = List<Map<String, dynamic>>.from(
+        playlist['songs'] ?? [],
+      ).map((item) => identical(item, rawSong) ? resolvedMap : item).toList();
+      return {...playlist, 'songs': songs, 'songCount': songs.length};
+    }).toList();
 
     state = state.copyWith(userPlaylists: updatedPlaylists);
 
     try {
-      await _libraryService.saveLibrary(
+      await _enqueueRemoteMutation(
         token,
-        likedSongs: state.likedSongs.map((s) => s.toJson()).toList(),
-        userPlaylists: updatedPlaylists,
-        themeMode: state.themeMode,
+        (committed) => _candidateLibrary(
+          committed,
+          userPlaylists: committed.userPlaylists.map((playlist) {
+            if (playlist['id']?.toString() != playlistId) return playlist;
+            final songs = List<Map<String, dynamic>>.from(
+              playlist['songs'] ?? [],
+            );
+            if (!songs.any(
+              (item) => item['id']?.toString() == resolvedSong.id,
+            )) {
+              songs.add(resolvedMap);
+            }
+            return {...playlist, 'songs': songs, 'songCount': songs.length};
+          }).toList(),
+        ),
       );
-    } catch (e) {
-      state = state.copyWith(userPlaylists: oldPlaylists);
+    } catch (_) {
+      state = state.copyWith(
+        userPlaylists: state.userPlaylists.map((playlist) {
+          if (playlist['id']?.toString() != playlistId) return playlist;
+          final songs = List<Map<String, dynamic>>.from(
+            playlist['songs'] ?? [],
+          ).where((item) => !identical(item, resolvedMap)).toList();
+          return {...playlist, 'songs': songs, 'songCount': songs.length};
+        }).toList(),
+      );
       rethrow;
+    } finally {
+      for (final key in entityKeys) {
+        _releaseEntity(key, operationId);
+      }
     }
   }
 
@@ -421,7 +610,22 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     Set<String> songIds,
   ) async {
     if (songIds.isEmpty) return;
-    final oldPlaylists = state.userPlaylists;
+    final removedSongs = <({int index, Map<String, dynamic> song})>[];
+    for (final playlist in state.userPlaylists) {
+      if (playlist['id']?.toString() != playlistId) continue;
+      final songs = List<Map<String, dynamic>>.from(playlist['songs'] ?? []);
+      for (var index = 0; index < songs.length; index++) {
+        final song = songs[index];
+        if (songIds.contains(song['id']?.toString() ?? '')) {
+          removedSongs.add((index: index, song: song));
+        }
+      }
+    }
+    if (removedSongs.isEmpty) return;
+    final entityKeys = songIds
+        .map((id) => 'playlist-song:$playlistId:$id')
+        .toList();
+    final operationId = _claimEntities(entityKeys);
     final updatedPlaylists = state.userPlaylists.map((playlist) {
       if (playlist['id']?.toString() != playlistId) return playlist;
       final songs = List<Map<String, dynamic>>.from(playlist['songs'] ?? [])
@@ -433,38 +637,91 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     state = state.copyWith(userPlaylists: updatedPlaylists);
 
     try {
-      await _libraryService.saveLibrary(
+      await _enqueueRemoteMutation(
         token,
-        likedSongs: state.likedSongs.map((s) => s.toJson()).toList(),
-        userPlaylists: updatedPlaylists,
-        themeMode: state.themeMode,
+        (committed) => _candidateLibrary(
+          committed,
+          userPlaylists: committed.userPlaylists.map((playlist) {
+            if (playlist['id']?.toString() != playlistId) return playlist;
+            final songs =
+                List<Map<String, dynamic>>.from(playlist['songs'] ?? [])
+                    .where(
+                      (song) => !songIds.contains(song['id']?.toString() ?? ''),
+                    )
+                    .toList();
+            return {...playlist, 'songs': songs, 'songCount': songs.length};
+          }).toList(),
+        ),
       );
-    } catch (e) {
-      state = state.copyWith(userPlaylists: oldPlaylists);
+    } catch (_) {
+      state = state.copyWith(
+        userPlaylists: state.userPlaylists.map((playlist) {
+          if (playlist['id']?.toString() != playlistId) return playlist;
+          final songs = List<Map<String, dynamic>>.from(
+            playlist['songs'] ?? [],
+          );
+          for (final removed in removedSongs) {
+            final id = removed.song['id']?.toString() ?? '';
+            final key = 'playlist-song:$playlistId:$id';
+            if (_ownsEntity(key, operationId) &&
+                !songs.any((song) => song['id']?.toString() == id)) {
+              songs.insert(
+                removed.index < songs.length ? removed.index : songs.length,
+                removed.song,
+              );
+            }
+          }
+          return {...playlist, 'songs': songs, 'songCount': songs.length};
+        }).toList(),
+      );
       rethrow;
+    } finally {
+      for (final key in entityKeys) {
+        _releaseEntity(key, operationId);
+      }
     }
   }
 
   Future<void> deletePlaylist(String token, String playlistId) async {
     if (playlistId.isEmpty) return;
-    final oldPlaylists = state.userPlaylists;
+    final originalIndex = state.userPlaylists.indexWhere(
+      (playlist) => playlist['id']?.toString() == playlistId,
+    );
+    if (originalIndex < 0) return;
+    final deletedPlaylist = state.userPlaylists[originalIndex];
+    final entityKey = 'playlist:$playlistId';
+    final operationId = _claimEntities([entityKey]);
     final updatedPlaylists = state.userPlaylists
         .where((playlist) => playlist['id']?.toString() != playlistId)
         .toList();
-    if (updatedPlaylists.length == oldPlaylists.length) return;
 
     state = state.copyWith(userPlaylists: updatedPlaylists);
 
     try {
-      await _libraryService.saveLibrary(
+      await _enqueueRemoteMutation(
         token,
-        likedSongs: state.likedSongs.map((s) => s.toJson()).toList(),
-        userPlaylists: updatedPlaylists,
-        themeMode: state.themeMode,
+        (committed) => _candidateLibrary(
+          committed,
+          userPlaylists: committed.userPlaylists
+              .where((playlist) => playlist['id']?.toString() != playlistId)
+              .toList(),
+        ),
       );
-    } catch (e) {
-      state = state.copyWith(userPlaylists: oldPlaylists);
+    } catch (_) {
+      if (_ownsEntity(entityKey, operationId) &&
+          !state.userPlaylists.any(
+            (playlist) => playlist['id']?.toString() == playlistId,
+          )) {
+        final restored = [...state.userPlaylists];
+        restored.insert(
+          originalIndex < restored.length ? originalIndex : restored.length,
+          deletedPlaylist,
+        );
+        state = state.copyWith(userPlaylists: restored);
+      }
       rethrow;
+    } finally {
+      _releaseEntity(entityKey, operationId);
     }
   }
 

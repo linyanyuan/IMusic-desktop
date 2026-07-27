@@ -925,17 +925,28 @@ class _SongRowState extends ConsumerState<_SongRow> {
       return;
     }
 
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('正在添加到歌单...'),
+        duration: Duration(seconds: 30),
+      ),
+    );
+
     try {
       await ref
           .read(libraryProvider.notifier)
           .addSongToPlaylist(token, playlistId, widget.song);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
         const SnackBar(content: Text('已添加到歌单'), duration: Duration(seconds: 2)),
       );
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
         const SnackBar(content: Text('添加失败'), duration: Duration(seconds: 2)),
       );
     }

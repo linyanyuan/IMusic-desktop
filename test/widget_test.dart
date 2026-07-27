@@ -789,6 +789,7 @@ void main() {
   testWidgets('search song context menu adds the song to a playlist', (
     tester,
   ) async {
+    final resolver = Completer<Map<String, dynamic>>();
     final playlist = {
       ..._localPlaylist,
       'songs': <Map<String, dynamic>>[],
@@ -800,6 +801,7 @@ void main() {
         userPlaylists: [playlist],
         themeMode: 'light',
       ),
+      playbackResolver: (song) => resolver.future,
     );
     addTearDown(container.dispose);
     container
@@ -833,11 +835,25 @@ void main() {
     expect(find.text('添加到歌单'), findsOneWidget);
     await tester.tap(find.text('旅行歌单').last);
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump(const Duration(milliseconds: 1));
 
     final updated = container.read(libraryProvider).userPlaylists.single;
     final songs = updated['songs'] as List;
     expect(songs.single['id'], 'search-song-2');
+    expect(find.text('正在添加到歌单...'), findsOneWidget);
+
+    resolver.complete({
+      ...Song(
+        id: 'search-song-2',
+        title: '右键歌曲',
+        artist: '歌手 B',
+        source: 'Bilibili',
+        duration: '4:20',
+      ).toJson(),
+      'playbackId': 'bilibili:BVcontext:p1',
+    });
+    await tester.pumpAndSettle();
+    expect(find.text('已添加到歌单'), findsOneWidget);
   });
 
   testWidgets('search song context menu marks an existing playlist song', (
@@ -2647,13 +2663,19 @@ Future<void> _pumpSearchScreen(
 
 Future<ProviderContainer> _authenticatedShellContainer({
   RemoteLibrary? remoteLibrary,
-}) => _shellContainer(authenticated: true, remoteLibrary: remoteLibrary);
+  PlaybackMetadataResolver? playbackResolver,
+}) => _shellContainer(
+  authenticated: true,
+  remoteLibrary: remoteLibrary,
+  playbackResolver: playbackResolver,
+);
 
 Future<ProviderContainer> _shellContainer({
   required bool authenticated,
   RemoteLibrary? remoteLibrary,
   MusicProvider musicProvider = const _FakeMusicProvider(),
   AuthService? authService,
+  PlaybackMetadataResolver? playbackResolver,
   List<Override> extraOverrides = const [],
 }) async {
   SharedPreferences.setMockInitialValues(
@@ -2666,8 +2688,12 @@ Future<ProviderContainer> _shellContainer({
         (ref) => AuthNotifier(authService ?? _FakeAuthService(), prefs, ref),
       ),
       libraryProvider.overrideWith(
-        (ref) =>
-            LibraryNotifier(_FakeLibraryService(remoteLibrary), ref, prefs),
+        (ref) => LibraryNotifier(
+          _FakeLibraryService(remoteLibrary),
+          ref,
+          prefs,
+          playbackResolver: playbackResolver,
+        ),
       ),
       musicServiceProvider.overrideWithValue(
         MusicService(provider: musicProvider),

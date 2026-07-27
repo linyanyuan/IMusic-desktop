@@ -1042,7 +1042,8 @@ class _SongRowState extends ConsumerState<_SongRow> {
           )
         else
           ...playlists.map((playlist) {
-            final name = _nonEmptyText(playlist['name']) ??
+            final name =
+                _nonEmptyText(playlist['name']) ??
                 _nonEmptyText(playlist['title']) ??
                 '未命名歌单';
             final alreadyAdded = playlistContainsSong(playlist, widget.song);
@@ -1134,17 +1135,28 @@ class _SongRowState extends ConsumerState<_SongRow> {
       return;
     }
 
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('正在添加到歌单...'),
+        duration: Duration(seconds: 30),
+      ),
+    );
+
     try {
       await ref
           .read(libraryProvider.notifier)
           .addSongToPlaylist(token, playlistId, widget.song);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
         SnackBar(content: Text('已添加到歌单'), duration: Duration(seconds: 2)),
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
         SnackBar(content: Text('添加失败'), duration: Duration(seconds: 2)),
       );
     }
@@ -1204,10 +1216,10 @@ Playlist? _localUserPlaylist(WidgetRef ref, String playlistId) {
           )
           .toList() ??
       [];
-  final title = _nonEmptyText(data['name']) ??
-      _nonEmptyText(data['title']) ??
-      '未命名歌单';
-  final subtitle = _nonEmptyText(data['description']) ??
+  final title =
+      _nonEmptyText(data['name']) ?? _nonEmptyText(data['title']) ?? '未命名歌单';
+  final subtitle =
+      _nonEmptyText(data['description']) ??
       _nonEmptyText(data['subtitle']) ??
       '';
 

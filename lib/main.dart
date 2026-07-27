@@ -73,21 +73,7 @@ Future<void> main(List<String> args) async {
             prefs,
             playbackResolver: (song) async {
               final service = ref.read(musicServiceProvider);
-              service.rememberSong(song.toJson());
-              final playUrl = await service.getPlayUrl(song.id);
-              return {
-                ...song.toJson(),
-                if (playUrl.resolvedId.isNotEmpty)
-                  'playbackId': playUrl.resolvedId,
-                if (playUrl.lyrics.isNotEmpty) 'lyrics': playUrl.lyrics,
-                'playbackSource': 'bilibili',
-                'playbackSourceLabel': 'B站',
-                if (playUrl.resolvedId.isNotEmpty) ...{
-                  'playbackSourceId': playUrl.resolvedId,
-                  'sourceId': playUrl.resolvedId,
-                  'bvid': _bvidFromPlaybackId(playUrl.resolvedId),
-                },
-              };
+              return service.resolvePlaybackMetadata(song);
             },
           ),
         ),
@@ -95,12 +81,6 @@ Future<void> main(List<String> args) async {
       child: const DeepVibeApp(),
     ),
   );
-}
-
-String _bvidFromPlaybackId(String playbackId) {
-  if (!playbackId.startsWith('bilibili:')) return '';
-  final parts = playbackId.split(':');
-  return parts.length >= 2 ? parts[1] : '';
 }
 
 /// Configure the lyrics child window: frameless, transparent background,

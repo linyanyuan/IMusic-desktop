@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -6,6 +8,284 @@ import 'package:deepvibe_desktop/core/models/song.dart';
 import 'package:deepvibe_desktop/services/library_service.dart';
 
 void main() {
+  test(
+    'addSongToPlaylist updates local state before playback metadata resolves',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final resolver = Completer<Map<String, dynamic>>();
+      final service = _RecordingLibraryService();
+      final container = ProviderContainer(
+        overrides: [
+          libraryProvider.overrideWith(
+            (ref) => LibraryNotifier(
+              service,
+              ref,
+              prefs,
+              playbackResolver: (song) => resolver.future,
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      container
+          .read(libraryProvider.notifier)
+          .setLibraryFromLogin(
+            const RemoteLibrary(
+              likedSongs: [],
+              userPlaylists: [
+                {'id': 'playlist-1', 'name': '测试歌单', 'songs': []},
+              ],
+              themeMode: 'light',
+            ),
+          );
+      final song = Song(
+        id: 'meting:song-fast-add',
+        title: '立即出现',
+        artist: '歌手',
+        source: 'tencent',
+        duration: '3:00',
+      );
+
+      final add = container
+          .read(libraryProvider.notifier)
+          .addSongToPlaylist('token', 'playlist-1', song);
+      await Future<void>.delayed(Duration.zero);
+
+      final localSongs =
+          container.read(libraryProvider).userPlaylists.single['songs'] as List;
+      expect(localSongs.single['id'], 'meting:song-fast-add');
+
+      resolver.complete({
+        ...song.toJson(),
+        'playbackId': 'bilibili:BVfastadd:p1',
+      });
+      await add;
+    },
+  );
+
+  test(
+    'remote library mutations exclude later pending optimistic changes',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final service = _ControlledLibraryService();
+      final container = ProviderContainer(
+        overrides: [
+          libraryProvider.overrideWith(
+            (ref) => LibraryNotifier(service, ref, prefs),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      container
+          .read(libraryProvider.notifier)
+          .setLibraryFromLogin(
+            const RemoteLibrary(
+              likedSongs: [],
+              userPlaylists: [
+                {'id': 'playlist-1', 'name': '测试歌单', 'songs': []},
+              ],
+              themeMode: 'light',
+            ),
+          );
+      final notifier = container.read(libraryProvider.notifier);
+
+      final addA = notifier.addSongToPlaylist(
+        'token',
+        'playlist-1',
+        _testSong('song-a'),
+      );
+      await _flushMicrotasks();
+      final addB = notifier.addSongToPlaylist(
+        'token',
+        'playlist-1',
+        _testSong('song-b'),
+      );
+      await _flushMicrotasks();
+
+      expect(service.saves, hasLength(1));
+      expect(_savedSongIds(service.saves[0]), ['song-a']);
+      expect(_localSongIds(container), ['song-a', 'song-b']);
+
+      service.saves[0].succeed();
+      await addA;
+      await _flushMicrotasks();
+      expect(service.saves, hasLength(2));
+      expect(_savedSongIds(service.saves[1]), ['song-a', 'song-b']);
+
+      service.saves[1].fail(StateError('save B failed'));
+      await expectLater(addB, throwsStateError);
+      expect(_localSongIds(container), ['song-a']);
+
+      final addC = notifier.addSongToPlaylist(
+        'token',
+        'playlist-1',
+        _testSong('song-c'),
+      );
+      await _flushMicrotasks();
+      expect(service.saves, hasLength(3));
+      expect(_savedSongIds(service.saves[2]), ['song-a', 'song-c']);
+      service.saves[2].succeed();
+      await addC;
+      expect(_localSongIds(container), ['song-a', 'song-c']);
+    },
+  );
+
+  test('failed enriched add does not remove a later re-add', () async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final service = _ControlledLibraryService();
+    final container = ProviderContainer(
+      overrides: [
+        libraryProvider.overrideWith(
+          (ref) => LibraryNotifier(service, ref, prefs),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    container
+        .read(libraryProvider.notifier)
+        .setLibraryFromLogin(
+          const RemoteLibrary(
+            likedSongs: [],
+            userPlaylists: [
+              {'id': 'playlist-1', 'name': '测试歌单', 'songs': []},
+            ],
+            themeMode: 'light',
+          ),
+        );
+    final notifier = container.read(libraryProvider.notifier);
+    final song = Song(
+      id: 'bilibili:BVrepeat:1',
+      title: '重复歌曲',
+      artist: 'UP',
+      source: 'bilibili',
+      duration: '3:00',
+    );
+
+    final first = notifier.addSongToPlaylist('token', 'playlist-1', song);
+    await _flushMicrotasks();
+    final second = notifier.addSongToPlaylist('token', 'playlist-1', song);
+    await _flushMicrotasks();
+
+    expect(service.saves, hasLength(1));
+    service.saves[0].fail(StateError('first failed'));
+    await expectLater(first, throwsStateError);
+    await _flushMicrotasks();
+    expect(service.saves, hasLength(2));
+    expect(_localSongIds(container), ['bilibili:BVrepeat:p1']);
+
+    service.saves[1].succeed();
+    await second;
+    expect(_localSongIds(container), ['bilibili:BVrepeat:p1']);
+  });
+
+  test('failed removal preserves a later successful mutation', () async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final service = _ControlledLibraryService();
+    final container = ProviderContainer(
+      overrides: [
+        libraryProvider.overrideWith(
+          (ref) => LibraryNotifier(service, ref, prefs),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    container
+        .read(libraryProvider.notifier)
+        .setLibraryFromLogin(
+          const RemoteLibrary(
+            likedSongs: [],
+            userPlaylists: [
+              {
+                'id': 'playlist-1',
+                'name': '测试歌单',
+                'songs': [
+                  {'id': 'song-a', 'title': 'A'},
+                ],
+              },
+            ],
+            themeMode: 'light',
+          ),
+        );
+    final notifier = container.read(libraryProvider.notifier);
+
+    final remove = notifier.removeSongsFromPlaylist('token', 'playlist-1', {
+      'song-a',
+    });
+    await _flushMicrotasks();
+    final add = notifier.addSongToPlaylist(
+      'token',
+      'playlist-1',
+      _testSong('song-b'),
+    );
+    await _flushMicrotasks();
+
+    expect(service.saves, hasLength(1));
+    service.saves[0].fail(StateError('remove failed'));
+    await expectLater(remove, throwsStateError);
+    await _flushMicrotasks();
+    expect(service.saves, hasLength(2));
+    expect(_savedSongIds(service.saves[1]), ['song-a', 'song-b']);
+    service.saves[1].succeed();
+    await add;
+    expect(_localSongIds(container), ['song-a', 'song-b']);
+  });
+
+  test('removing an optimistic song cancels its pending remote add', () async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final resolver = Completer<Map<String, dynamic>>();
+    final service = _ControlledLibraryService();
+    final container = ProviderContainer(
+      overrides: [
+        libraryProvider.overrideWith(
+          (ref) => LibraryNotifier(
+            service,
+            ref,
+            prefs,
+            playbackResolver: (song) => resolver.future,
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    container
+        .read(libraryProvider.notifier)
+        .setLibraryFromLogin(
+          const RemoteLibrary(
+            likedSongs: [],
+            userPlaylists: [
+              {'id': 'playlist-1', 'name': '测试歌单', 'songs': []},
+            ],
+            themeMode: 'light',
+          ),
+        );
+    final notifier = container.read(libraryProvider.notifier);
+    final song = _testSong('song-pending');
+
+    final add = notifier.addSongToPlaylist('token', 'playlist-1', song);
+    await _flushMicrotasks();
+    final remove = notifier.removeSongsFromPlaylist('token', 'playlist-1', {
+      'song-pending',
+    });
+    await _flushMicrotasks();
+
+    expect(service.saves, hasLength(1));
+    service.saves.single.succeed();
+    await remove;
+    resolver.complete({
+      ...song.toJson(),
+      'playbackId': 'bilibili:BVpending:p1',
+    });
+    await add;
+
+    expect(service.saves, hasLength(1));
+    expect(_localSongIds(container), isEmpty);
+  });
+
   test(
     'toggleLike preserves existing user playlists in the save payload',
     () async {
@@ -656,6 +936,70 @@ void main() {
       expect(saved['cid'], '222');
     },
   );
+}
+
+Song _testSong(String id) =>
+    Song(id: id, title: id, artist: '测试歌手', source: 'test', duration: '3:00');
+
+Future<void> _flushMicrotasks() async {
+  await Future<void>.delayed(Duration.zero);
+  await Future<void>.delayed(Duration.zero);
+}
+
+List<String> _localSongIds(ProviderContainer container) {
+  final songs =
+      container.read(libraryProvider).userPlaylists.single['songs'] as List;
+  return songs.map((song) => (song as Map)['id'].toString()).toList();
+}
+
+List<String> _savedSongIds(_PendingLibrarySave save) {
+  final songs = save.userPlaylists.single['songs'] as List;
+  return songs.map((song) => (song as Map)['id'].toString()).toList();
+}
+
+class _ControlledLibraryService extends LibraryService {
+  final saves = <_PendingLibrarySave>[];
+
+  @override
+  Future<RemoteLibrary> saveLibrary(
+    String token, {
+    required List<Map<String, dynamic>> likedSongs,
+    required List<Map<String, dynamic>> userPlaylists,
+    String themeMode = 'dark',
+  }) {
+    final save = _PendingLibrarySave(
+      likedSongs: likedSongs,
+      userPlaylists: userPlaylists,
+      themeMode: themeMode,
+    );
+    saves.add(save);
+    return save.completer.future;
+  }
+}
+
+class _PendingLibrarySave {
+  _PendingLibrarySave({
+    required this.likedSongs,
+    required this.userPlaylists,
+    required this.themeMode,
+  });
+
+  final List<Map<String, dynamic>> likedSongs;
+  final List<Map<String, dynamic>> userPlaylists;
+  final String themeMode;
+  final Completer<RemoteLibrary> completer = Completer<RemoteLibrary>();
+
+  void succeed() {
+    completer.complete(
+      RemoteLibrary(
+        likedSongs: likedSongs,
+        userPlaylists: userPlaylists,
+        themeMode: themeMode,
+      ),
+    );
+  }
+
+  void fail(Object error) => completer.completeError(error);
 }
 
 class _RecordingLibraryService extends LibraryService {
