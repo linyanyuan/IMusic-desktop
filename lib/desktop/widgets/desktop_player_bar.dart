@@ -51,6 +51,11 @@ class DesktopPlayerBar extends ConsumerWidget {
               c: c,
               position: position,
               duration: duration,
+              isLoading: playbackStatus == 'loading',
+              enabled:
+                  currentSong != null &&
+                  playbackStatus != 'loading' &&
+                  playbackStatus != 'error',
               onSeek: (pos) => _seek(ref, pos),
             ),
           ),
@@ -333,12 +338,16 @@ class _ProgressBar extends StatefulWidget {
   final DeepVibeColors c;
   final Duration position;
   final Duration duration;
+  final bool isLoading;
+  final bool enabled;
   final ValueChanged<Duration> onSeek;
 
   const _ProgressBar({
     required this.c,
     required this.position,
     required this.duration,
+    required this.isLoading,
+    required this.enabled,
     required this.onSeek,
   });
 
@@ -364,48 +373,63 @@ class _ProgressBarState extends State<_ProgressBar> {
 
     return MouseRegion(
       key: const ValueKey('player-progress-hit-area'),
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _isHovering = true),
-      onExit: (_) => setState(() => _isHovering = false),
+      cursor: widget.enabled
+          ? SystemMouseCursors.click
+          : SystemMouseCursors.basic,
+      onEnter: widget.enabled
+          ? (_) => setState(() => _isHovering = true)
+          : null,
+      onExit: widget.enabled
+          ? (_) => setState(() => _isHovering = false)
+          : null,
       child: GestureDetector(
         behavior: HitTestBehavior.translucent,
-        onHorizontalDragStart: (details) {
-          setState(() {
-            _isDragging = true;
-            _dragValue = frac;
-          });
-        },
-        onHorizontalDragUpdate: (details) {
-          if (!_isDragging) return;
-          final box = context.findRenderObject() as RenderBox?;
-          if (box == null) return;
-          final width = box.size.width;
-          setState(() {
-            _dragValue = (details.localPosition.dx / width).clamp(0.0, 1.0);
-          });
-        },
-        onHorizontalDragEnd: (_) {
-          if (total > 0) {
-            final newPosition = Duration(
-              milliseconds: (_dragValue * total).round(),
-            );
-            widget.onSeek(newPosition);
-          }
-          setState(() => _isDragging = false);
-        },
-        onTapDown: (details) {
-          if (total <= 0) return;
-          final box = context.findRenderObject() as RenderBox?;
-          if (box == null) return;
-          final clickFrac = (details.localPosition.dx / box.size.width).clamp(
-            0.0,
-            1.0,
-          );
-          final newPosition = Duration(
-            milliseconds: (clickFrac * total).round(),
-          );
-          widget.onSeek(newPosition);
-        },
+        onHorizontalDragStart: widget.enabled
+            ? (details) {
+                setState(() {
+                  _isDragging = true;
+                  _dragValue = frac;
+                });
+              }
+            : null,
+        onHorizontalDragUpdate: widget.enabled
+            ? (details) {
+                if (!_isDragging) return;
+                final box = context.findRenderObject() as RenderBox?;
+                if (box == null) return;
+                final width = box.size.width;
+                setState(() {
+                  _dragValue = (details.localPosition.dx / width).clamp(
+                    0.0,
+                    1.0,
+                  );
+                });
+              }
+            : null,
+        onHorizontalDragEnd: widget.enabled
+            ? (_) {
+                if (total > 0) {
+                  final newPosition = Duration(
+                    milliseconds: (_dragValue * total).round(),
+                  );
+                  widget.onSeek(newPosition);
+                }
+                setState(() => _isDragging = false);
+              }
+            : null,
+        onTapDown: widget.enabled
+            ? (details) {
+                if (total <= 0) return;
+                final box = context.findRenderObject() as RenderBox?;
+                if (box == null) return;
+                final clickFrac = (details.localPosition.dx / box.size.width)
+                    .clamp(0.0, 1.0);
+                final newPosition = Duration(
+                  milliseconds: (clickFrac * total).round(),
+                );
+                widget.onSeek(newPosition);
+              }
+            : null,
         child: SizedBox(
           height: 12,
           child: Align(
@@ -414,6 +438,32 @@ class _ProgressBarState extends State<_ProgressBar> {
               builder: (context, constraints) {
                 final width = constraints.maxWidth;
                 final thumbPosition = (width * displayValue).clamp(0.0, width);
+
+                if (widget.isLoading) {
+                  return Stack(
+                    children: [
+                      Container(
+                        height: 3,
+                        decoration: BoxDecoration(
+                          color: widget.c.divider,
+                          borderRadius: BorderRadius.circular(1.5),
+                        ),
+                      ),
+                      _IndeterminateProgressTrack(c: widget.c),
+                    ],
+                  );
+                }
+
+                if (!widget.enabled) {
+                  return Container(
+                    key: const ValueKey('player-progress-empty-track'),
+                    height: 3,
+                    decoration: BoxDecoration(
+                      color: widget.c.divider,
+                      borderRadius: BorderRadius.circular(1.5),
+                    ),
+                  );
+                }
 
                 return Stack(
                   alignment: Alignment.topLeft,
@@ -438,6 +488,7 @@ class _ProgressBarState extends State<_ProgressBar> {
                     ),
                     if (total > 0 && thumbSize > 0)
                       Positioned(
+                        key: const ValueKey('player-progress-thumb'),
                         top: (trackHeight - thumbSize) / 2,
                         left: thumbPosition - thumbSize / 2,
                         child: AnimatedContainer(
@@ -463,6 +514,68 @@ class _ProgressBarState extends State<_ProgressBar> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _IndeterminateProgressTrack extends StatefulWidget {
+  final DeepVibeColors c;
+
+  const _IndeterminateProgressTrack({required this.c});
+
+  @override
+  State<_IndeterminateProgressTrack> createState() =>
+      _IndeterminateProgressTrackState();
+}
+
+class _IndeterminateProgressTrackState
+    extends State<_IndeterminateProgressTrack>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      key: const ValueKey('player-progress-indeterminate-track'),
+      borderRadius: BorderRadius.circular(1.5),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final segmentWidth = constraints.maxWidth * 0.28;
+          return AnimatedBuilder(
+            animation: _controller,
+            builder: (context, child) {
+              final left =
+                  _controller.value * (constraints.maxWidth + segmentWidth) -
+                  segmentWidth;
+              return Stack(
+                children: [
+                  Positioned(
+                    left: left,
+                    width: segmentWidth,
+                    height: 3,
+                    child: ColoredBox(color: widget.c.accent),
+                  ),
+                ],
+              );
+            },
+          );
+        },
       ),
     );
   }

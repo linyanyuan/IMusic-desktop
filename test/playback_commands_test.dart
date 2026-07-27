@@ -220,8 +220,10 @@ void main() {
     await tester.pump();
 
     expect(provider.requestedIds, ['mr-chu']);
-    expect(container.read(currentSongProvider)?['id'], 'luv');
-    expect(container.read(currentSongIndexProvider), 0);
+    expect(audioPlatform.calls, contains('stop'));
+    expect(container.read(currentSongProvider)?['id'], 'mr-chu');
+    expect(container.read(currentSongProvider)?['status'], 'loading');
+    expect(container.read(currentSongIndexProvider), 1);
 
     provider.fail(StateError('play url timeout'));
     await playback;
@@ -232,7 +234,7 @@ void main() {
     expect(container.read(currentSongIndexProvider), 1);
   });
 
-  testWidgets('new song is shown as loading after previous playback stops', (
+  testWidgets('new playback stops the current song before URL resolution', (
     tester,
   ) async {
     final provider = _ControlledPlaybackProvider();
@@ -292,7 +294,11 @@ void main() {
     );
     await tester.pump();
 
-    expect(container.read(currentSongProvider)?['id'], 'luv');
+    expect(provider.requestedIds, ['mr-chu']);
+    expect(audioPlatform.calls, contains('stop'));
+    expect(container.read(currentSongProvider)?['id'], 'mr-chu');
+    expect(container.read(currentSongProvider)?['status'], 'loading');
+    expect(container.read(currentSongIndexProvider), 1);
 
     provider.succeed(const PlaybackUrl('https://example.test/mr-chu.mp3'));
     await playback;

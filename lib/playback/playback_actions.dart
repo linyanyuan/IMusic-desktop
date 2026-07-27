@@ -91,11 +91,6 @@ Future<void> startSongPlayback(
   final requestSerial = ++playbackRequestSerial;
   ++lyricsRequestSerial;
 
-  final previousSong = ref.read(currentSongProvider);
-  final previousStatus = previousSong?['status']?.toString();
-  final keepPreviousPlaybackVisible =
-      previousStatus == 'playing' || previousStatus == 'paused';
-
   // Check if song already has lyrics
   final initialLyrics = song['lyrics']?.toString().trim() ?? '';
   final initialLyricsStatus = initialLyrics.isEmpty
@@ -117,11 +112,15 @@ Future<void> startSongPlayback(
     };
   }
 
-  if (!keepPreviousPlaybackVisible) {
-    showRequestedSongLoading();
-  }
+  showRequestedSongLoading();
 
   try {
+    final player = ref.read(audioPlayerProvider);
+    await player.stop();
+    previousPlaybackStopped = true;
+
+    if (requestSerial != playbackRequestSerial) return;
+
     // Remember songs for cache
     final musicService = ref.read(musicServiceProvider);
     musicService.rememberSongs(queue);
@@ -132,14 +131,6 @@ Future<void> startSongPlayback(
 
     // Check if this request is still current
     if (requestSerial != playbackRequestSerial) return;
-
-    // Load and play audio
-    final player = ref.read(audioPlayerProvider);
-    await player.stop();
-    previousPlaybackStopped = true;
-
-    if (requestSerial != playbackRequestSerial) return;
-    showRequestedSongLoading();
 
     // Windows audioplayers doesn't support custom headers
     // Download to a stable local cache file if headers are required.

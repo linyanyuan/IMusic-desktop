@@ -81,6 +81,85 @@ void main() {
     await gesture.removePointer();
   });
 
+  testWidgets('player progress is indeterminate while a song is loading', (
+    tester,
+  ) async {
+    final container = _containerWithSong();
+    addTearDown(container.dispose);
+    container.read(currentSongProvider.notifier).state = {
+      ...container.read(currentSongProvider)!,
+      'status': 'loading',
+    };
+
+    await _pumpPlayerBar(tester, container);
+
+    expect(
+      find.byKey(const ValueKey('player-progress-indeterminate-track')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('player-progress-active-track')),
+      findsNothing,
+    );
+    final gesture = tester.widget<GestureDetector>(
+      find.descendant(
+        of: find.byKey(const ValueKey('player-progress-hit-area')),
+        matching: find.byType(GestureDetector),
+      ),
+    );
+    expect(gesture.onTapDown, isNull);
+    expect(gesture.onHorizontalDragStart, isNull);
+  });
+
+  testWidgets('player progress is empty and disabled after playback error', (
+    tester,
+  ) async {
+    final container = _containerWithSong();
+    addTearDown(container.dispose);
+    container.read(currentSongProvider.notifier).state = {
+      ...container.read(currentSongProvider)!,
+      'status': 'error',
+    };
+
+    await _pumpPlayerBar(tester, container);
+
+    expect(
+      find.byKey(const ValueKey('player-progress-empty-track')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('player-progress-active-track')),
+      findsNothing,
+    );
+    expect(find.byKey(const ValueKey('player-progress-thumb')), findsNothing);
+    final gesture = tester.widget<GestureDetector>(
+      find.descendant(
+        of: find.byKey(const ValueKey('player-progress-hit-area')),
+        matching: find.byType(GestureDetector),
+      ),
+    );
+    expect(gesture.onTapDown, isNull);
+    expect(gesture.onHorizontalDragStart, isNull);
+  });
+
+  testWidgets('player progress is empty when there is no current song', (
+    tester,
+  ) async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    await _pumpPlayerBar(tester, container);
+
+    expect(
+      find.byKey(const ValueKey('player-progress-empty-track')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('player-progress-active-track')),
+      findsNothing,
+    );
+  });
+
   testWidgets(
     'volume popup opens on hover and closes when pointer leaves vertical range',
     (tester) async {
