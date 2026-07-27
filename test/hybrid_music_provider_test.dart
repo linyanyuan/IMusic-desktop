@@ -69,6 +69,20 @@ void main() {
     expect(playUrl.lyrics, '[00:00.00]B站字幕歌词');
   });
 
+  test('Hybrid lyrics prefer direct Bilibili CC subtitles', () async {
+    final provider = HybridMusicProvider(
+      metadata: const _UnusedProvider(),
+      playback: const _PlaybackProviderWithLyrics(),
+    );
+
+    final lyrics = await provider.getLyrics(const {
+      'id': 'bilibili:BVwithcc:p1',
+      'title': '带字幕的视频',
+    });
+
+    expect(lyrics, '[00:00.00]B站字幕歌词');
+  });
+
   test('searchMetadataSongs returns only metadata songs', () async {
     final provider = HybridMusicProvider(
       metadata: const _MetadataProvider(
@@ -97,11 +111,7 @@ void main() {
       playback: const _ScopedPlaybackProvider(
         results: {
           '热歌': [
-            {
-              'id': 'bilibili:BVxxx',
-              'title': 'B站视频',
-              'resultType': 'song',
-            },
+            {'id': 'bilibili:BVxxx', 'title': 'B站视频', 'resultType': 'song'},
           ],
         },
       ),
@@ -119,11 +129,7 @@ void main() {
       metadata: const _MetadataProvider(
         searchResults: {
           '华语': [
-            {
-              'id': 'meting:tencent:1',
-              'title': '元数据歌曲',
-              'resultType': 'song',
-            },
+            {'id': 'meting:tencent:1', 'title': '元数据歌曲', 'resultType': 'song'},
           ],
         },
         details: {},
@@ -131,11 +137,7 @@ void main() {
       playback: const _ScopedPlaybackProvider(
         results: {
           '华语': [
-            {
-              'id': 'bilibili:BVsong',
-              'title': 'B站单曲',
-              'resultType': 'song',
-            },
+            {'id': 'bilibili:BVsong', 'title': 'B站单曲', 'resultType': 'song'},
             {
               'id': 'bilibili:BVpl',
               'title': '华语合集',
@@ -161,11 +163,116 @@ void main() {
       'bilibili:BVpl',
       'bilibili:BVpl2',
     ]);
-    expect(
-      results.every((item) => item['resultType'] == 'playlist'),
-      isTrue,
-    );
+    expect(results.every((item) => item['resultType'] == 'playlist'), isTrue);
   });
+
+  test('playback matching reuses cached metadata search results', () async {
+    final metadata = _CountingMetadataProvider();
+    final playback = _ResolvingPlaybackProvider();
+    final provider = HybridMusicProvider(
+      metadata: metadata,
+      playback: playback,
+    );
+    provider.rememberSongs(const [
+      {
+        'id': 'meting:tencent:cached-song',
+        'title': '缓存歌曲',
+        'artist': '缓存歌手',
+        'resultType': 'song',
+      },
+    ]);
+
+    final playUrl = await provider.getPlayUrl('meting:tencent:cached-song');
+
+    expect(metadata.detailCalls, 0);
+    expect(playback.searchQueries, ['缓存歌手 缓存歌曲']);
+    expect(playUrl.resolvedId, 'bilibili:BVcached:p1');
+  });
+}
+
+class _CountingMetadataProvider implements MusicProvider {
+  int detailCalls = 0;
+
+  @override
+  void rememberSongs(Iterable<Map<String, dynamic>> songs) {}
+
+  @override
+  Future<String> getLyrics(Map<String, dynamic> song) async => '';
+
+  @override
+  Future<Map<String, dynamic>> getSongDetail(String id) async {
+    detailCalls++;
+    return {'id': id};
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> searchSongs(String query) async =>
+      const [];
+
+  @override
+  Future<List<Map<String, dynamic>>> getRecommendedSongs() async => const [];
+
+  @override
+  Future<List<Map<String, dynamic>>> getHotPlaylists({
+    int? limit,
+    int? offset,
+  }) async => const [];
+
+  @override
+  Future<Map<String, dynamic>> getPlaylist(String id, {int? limit}) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<PlaybackUrl> getPlayUrl(String id) {
+    throw UnimplementedError();
+  }
+}
+
+class _ResolvingPlaybackProvider implements MusicProvider {
+  final searchQueries = <String>[];
+
+  @override
+  void rememberSongs(Iterable<Map<String, dynamic>> songs) {}
+
+  @override
+  Future<String> getLyrics(Map<String, dynamic> song) async => '';
+
+  @override
+  Future<List<Map<String, dynamic>>> searchSongs(String query) async {
+    searchQueries.add(query);
+    return const [
+      {
+        'id': 'bilibili:BVcached:p1',
+        'title': '缓存歌曲',
+        'artist': '缓存歌手',
+        'resultType': 'song',
+      },
+    ];
+  }
+
+  @override
+  Future<PlaybackUrl> getPlayUrl(String id) async =>
+      PlaybackUrl('https://example.test/audio.m4s', resolvedId: id);
+
+  @override
+  Future<List<Map<String, dynamic>>> getRecommendedSongs() async => const [];
+
+  @override
+  Future<List<Map<String, dynamic>>> getHotPlaylists({
+    int? limit,
+    int? offset,
+  }) async => const [];
+
+  @override
+  Future<Map<String, dynamic>> getPlaylist(String id, {int? limit}) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<Map<String, dynamic>> getSongDetail(String id) {
+    throw UnimplementedError();
+  }
 }
 
 class _MetadataProvider implements MusicProvider {
@@ -257,7 +364,8 @@ class _PlaybackProviderWithLyrics implements MusicProvider {
   void rememberSongs(Iterable<Map<String, dynamic>> songs) {}
 
   @override
-  Future<String> getLyrics(Map<String, dynamic> song) async => '';
+  Future<String> getLyrics(Map<String, dynamic> song) async =>
+      '[00:00.00]B站字幕歌词';
 
   @override
   Future<List<Map<String, dynamic>>> searchSongs(String query) async =>

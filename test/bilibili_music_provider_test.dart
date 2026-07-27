@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:deepvibe_desktop/services/bilibili_music_provider.dart';
+import 'package:deepvibe_desktop/services/music_provider.dart';
 
 void main() {
   test('hot playlists page is based on the requested page size', () async {
@@ -119,6 +120,99 @@ void main() {
 
     expect(results.single['id'], 'bilibili:BVfallback');
     expect(fallbackAdapter.requests.single.path, contains('/search/type'));
+  });
+
+  test('play URL resolution does not wait for subtitles', () async {
+    final adapter = _JsonAdapter((options) {
+      return switch (options.path) {
+        '/x/player/pagelist' => {
+          'data': [
+            {'page': 1, 'cid': 111},
+          ],
+        },
+        '/x/player/playurl' => {
+          'data': {
+            'dash': {
+              'audio': [
+                {
+                  'bandwidth': 128000,
+                  'baseUrl': 'https://example.test/audio.m4s',
+                },
+              ],
+            },
+          },
+        },
+        _ => <String, dynamic>{},
+      };
+    });
+    final provider = BilibiliMusicProvider(dio: _dio(adapter));
+
+    final playUrl = await provider.getPlayUrl('bilibili:BVfast:p1');
+
+    expect(playUrl, isA<PlaybackUrl>());
+    expect(playUrl.lyrics, isEmpty);
+    expect(adapter.requests.map((request) => request.path), [
+      '/x/player/pagelist',
+      '/x/player/playurl',
+    ]);
+  });
+
+  test('lyrics reuse the CID resolved for playback', () async {
+    final adapter = _JsonAdapter((options) {
+      return switch (options.path) {
+        '/x/player/pagelist' => {
+          'data': [
+            {'page': 1, 'cid': 111},
+          ],
+        },
+        '/x/player/playurl' => {
+          'data': {
+            'durl': [
+              {'url': 'https://example.test/audio.m4s'},
+            ],
+          },
+        },
+        '/x/player/v2' => {
+          'data': {
+            'subtitle': {
+              'subtitles': [
+                {'subtitle_url': 'https://example.test/subtitle.json'},
+              ],
+            },
+          },
+        },
+        _ => <String, dynamic>{},
+      };
+    });
+    final subtitleAdapter = _JsonAdapter((options) {
+      return {
+        'body': [
+          {'content': '第一句'},
+          {'content': '第二句'},
+        ],
+      };
+    });
+    final provider = BilibiliMusicProvider(
+      dio: _dio(adapter),
+      subtitleDio: _dio(subtitleAdapter),
+    );
+
+    await provider.getPlayUrl('bilibili:BVfast:p1');
+    final lyrics = await provider.getLyrics(const {'id': 'bilibili:BVfast:p1'});
+
+    expect(lyrics, '第一句\n第二句');
+    expect(
+      adapter.requests.where((request) => request.path == '/x/player/pagelist'),
+      hasLength(1),
+    );
+    expect(
+      adapter.requests.map((request) => request.path),
+      containsAllInOrder([
+        '/x/player/pagelist',
+        '/x/player/playurl',
+        '/x/player/v2',
+      ]),
+    );
   });
 }
 

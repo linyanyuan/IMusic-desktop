@@ -9,6 +9,7 @@ class BilibiliMusicProvider implements MusicProvider {
   BilibiliMusicProvider({
     Dio? dio,
     Dio? gatewayDio,
+    Dio? subtitleDio,
     Duration recommendationTimeout = const Duration(seconds: 3),
   }) : _dio =
            dio ??
@@ -34,6 +35,7 @@ class BilibiliMusicProvider implements MusicProvider {
                sendTimeout: recommendationTimeout,
              ),
            ),
+       _subtitleDio = subtitleDio ?? Dio(),
        _recommendationTimeout = recommendationTimeout;
 
   static const _defaultHeaders = {
@@ -47,7 +49,9 @@ class BilibiliMusicProvider implements MusicProvider {
 
   final Dio _dio;
   final Dio _gatewayDio;
+  final Dio _subtitleDio;
   final Duration _recommendationTimeout;
+  final Map<String, String> _cidByPlaybackId = {};
 
   /// Expose dio instance for downloading audio with headers
   Dio get dio => _dio;
@@ -384,10 +388,8 @@ class BilibiliMusicProvider implements MusicProvider {
       }
 
       print('[BilibiliMusicProvider] CID: $cid');
-
-      // Get lyrics (CC subtitles)
-      print('[BilibiliMusicProvider] 获取歌词...');
-      final lyrics = await _getLyrics(bvid, cid);
+      _cidByPlaybackId[id] = cid;
+      _cidByPlaybackId['bilibili:$bvid:p$page'] = cid;
 
       // Get play URL
       print('[BilibiliMusicProvider] 获取播放 URL...');
@@ -488,7 +490,6 @@ class BilibiliMusicProvider implements MusicProvider {
           'Referer': 'https://www.bilibili.com/video/$bvid',
           'User-Agent': _defaultHeaders['User-Agent']!,
         },
-        lyrics: lyrics,
         resolvedId: id,
       );
     } catch (e) {
@@ -531,8 +532,7 @@ class BilibiliMusicProvider implements MusicProvider {
       }
 
       // Download subtitle content
-      final subtitleDio = Dio();
-      final subtitleResponse = await subtitleDio.get<Map<String, dynamic>>(
+      final subtitleResponse = await _subtitleDio.get<Map<String, dynamic>>(
         subtitleUrl,
       );
 
@@ -554,8 +554,40 @@ class BilibiliMusicProvider implements MusicProvider {
 
   @override
   Future<String> getLyrics(Map<String, dynamic> song) async {
-    // Return cached lyrics from song object
-    return song['lyrics']?.toString().trim() ?? '';
+    final existing = song['lyrics']?.toString().trim() ?? '';
+    if (existing.isNotEmpty) return existing;
+
+    final playbackId =
+        song['playbackId']?.toString().trim() ??
+        song['id']?.toString().trim() ??
+        '';
+    if (playbackId.isEmpty) return '';
+
+    final bvid = song['bvid']?.toString().trim().isNotEmpty == true
+        ? song['bvid'].toString().trim()
+        : _extractBvid(playbackId);
+    final parts = playbackId.split(':');
+    final page = parts.length > 2 ? _parsePage(parts[2]) : 1;
+    var cid = song['cid']?.toString().trim() ?? '';
+    if (cid.isEmpty) cid = _cidByPlaybackId[playbackId] ?? '';
+
+    if (cid.isEmpty) {
+      final pagesResponse = await _dio.get<Map<String, dynamic>>(
+        '/x/player/pagelist',
+        queryParameters: {'bvid': bvid, 'jsonp': 'jsonp'},
+      );
+      final pages = (pagesResponse.data?['data'] as List?) ?? [];
+      cid =
+          pages
+              .whereType<Map<String, dynamic>>()
+              .elementAtOrNull(page - 1)?['cid']
+              ?.toString() ??
+          '';
+      if (cid.isEmpty) return '';
+      _cidByPlaybackId[playbackId] = cid;
+    }
+
+    return _getLyrics(bvid, cid);
   }
 
   String _extractBvid(String id) {

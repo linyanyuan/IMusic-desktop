@@ -255,7 +255,11 @@ class HybridMusicProvider implements MusicProvider {
 
     // For meting songs: get metadata, resolve Bilibili playback
     try {
-      final detail = _mergeCachedDetail(id, await metadata.getSongDetail(id));
+      final cached = _songCache[id];
+      final detail =
+          cached != null && _hasUsefulText(cached['title'], unknown: '未知歌曲')
+          ? cached
+          : _mergeCachedDetail(id, await metadata.getSongDetail(id));
       final playbackId = detail['playbackId']?.toString();
       final resolvedId = playbackId?.isNotEmpty == true
           ? playbackId!
@@ -292,7 +296,10 @@ class HybridMusicProvider implements MusicProvider {
       return detail['lyrics']?.toString().trim() ?? '';
     }
 
-    // For Bilibili songs: reverse search metadata
+    // For Bilibili songs: prefer direct CC subtitles, then reverse metadata.
+    final directLyrics = await playback.getLyrics(song).catchError((_) => '');
+    if (directLyrics.trim().isNotEmpty) return directLyrics.trim();
+
     final quotedTitles = extractQuotedSongTitles(
       song['title']?.toString() ?? '',
     );
