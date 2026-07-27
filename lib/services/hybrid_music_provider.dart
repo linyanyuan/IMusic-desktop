@@ -9,7 +9,7 @@ import '../shared/collection_lyrics.dart';
 ///
 /// For meting songs: fetches metadata, then resolves Bilibili playback ID
 /// For Bilibili songs: uses direct playback, but lyrics come from reverse metadata search
-class HybridMusicProvider implements MusicProvider {
+class HybridMusicProvider implements MusicProvider, PlaylistSummaryProvider {
   HybridMusicProvider({required this.metadata, required this.playback})
     : _songCache = {};
 
@@ -231,6 +231,11 @@ class HybridMusicProvider implements MusicProvider {
         : await playback.getPlaylist(id, limit: limit);
     _cachePlaylistSongs(playlist);
     return playlist;
+  }
+
+  @override
+  Future<PlaylistSummary> getPlaylistSummary(Map<String, dynamic> playlist) {
+    return playback.getPlaylistSummary(playlist);
   }
 
   @override

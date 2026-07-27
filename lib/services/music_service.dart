@@ -81,8 +81,9 @@ class MusicService {
       return switch (scope) {
         MusicSearchScope.all => provider.searchSongs(query),
         MusicSearchScope.metadataSongs => provider.searchMetadataSongs(query),
-        MusicSearchScope.bilibiliPlaylists =>
-          provider.searchBilibiliPlaylists(query),
+        MusicSearchScope.bilibiliPlaylists => provider.searchBilibiliPlaylists(
+          query,
+        ),
       };
     }
     return provider.searchSongs(query);
@@ -123,6 +124,10 @@ class MusicService {
     } catch (e) {
       return null;
     }
+  }
+
+  Future<PlaylistSummary> getPlaylistSummary(Song playlist) {
+    return _provider.getPlaylistSummary(playlist.toJson());
   }
 
   /// Get song detail
@@ -266,6 +271,7 @@ class MusicService {
       songCount: songCount,
       isFavorite: isFavorite,
       isCached: isCached,
+      extra: Map<String, dynamic>.from(data),
     );
   }
 

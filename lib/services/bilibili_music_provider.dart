@@ -5,7 +5,7 @@ import '../shared/collection_lyrics.dart';
 import 'music_provider.dart';
 
 /// Bilibili music provider - provides playback URLs and search from Bilibili
-class BilibiliMusicProvider implements MusicProvider {
+class BilibiliMusicProvider implements MusicProvider, PlaylistSummaryProvider {
   BilibiliMusicProvider({
     Dio? dio,
     Dio? gatewayDio,
@@ -323,6 +323,48 @@ class BilibiliMusicProvider implements MusicProvider {
       };
     } catch (e) {
       throw Exception('获取歌单失败: $e');
+    }
+  }
+
+  @override
+  Future<PlaylistSummary> getPlaylistSummary(
+    Map<String, dynamic> playlist,
+  ) async {
+    final id =
+        playlist['playbackId']?.toString().trim() ??
+        playlist['id']?.toString().trim() ??
+        '';
+    final bvid = _extractBvid(id);
+    if (bvid.isEmpty) return const PlaylistSummary.unavailable();
+
+    try {
+      final response = await _dio.get<Map<String, dynamic>>(
+        '/x/player/pagelist',
+        queryParameters: {'bvid': bvid, 'jsonp': 'jsonp'},
+      );
+      final pages =
+          (response.data?['data'] as List?)
+              ?.whereType<Map<String, dynamic>>()
+              .toList() ??
+          const <Map<String, dynamic>>[];
+      if (pages.isEmpty) return const PlaylistSummary.unavailable();
+
+      final durationSeconds = pages.fold<int>(
+        0,
+        (total, page) => total + (page['duration'] as int? ?? 0),
+      );
+      final kind = pages.length > 1
+          ? PlaylistSummaryKind.multiPage
+          : durationSeconds >= 20 * 60
+          ? PlaylistSummaryKind.singleLongCollection
+          : PlaylistSummaryKind.singlePageCollection;
+      return PlaylistSummary(
+        kind: kind,
+        songCount: pages.length,
+        durationSeconds: durationSeconds,
+      );
+    } catch (_) {
+      return const PlaylistSummary.unavailable();
     }
   }
 

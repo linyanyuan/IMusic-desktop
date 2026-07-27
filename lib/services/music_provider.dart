@@ -13,6 +13,35 @@ class PlaybackUrl {
   final String resolvedId;
 }
 
+enum PlaylistSummaryKind {
+  multiPage,
+  singleLongCollection,
+  singlePageCollection,
+}
+
+class PlaylistSummary {
+  const PlaylistSummary({
+    required this.kind,
+    required this.songCount,
+    required this.durationSeconds,
+  }) : available = true;
+
+  const PlaylistSummary.unavailable()
+    : available = false,
+      kind = null,
+      songCount = 0,
+      durationSeconds = 0;
+
+  final bool available;
+  final PlaylistSummaryKind? kind;
+  final int songCount;
+  final int durationSeconds;
+}
+
+abstract interface class PlaylistSummaryProvider {
+  Future<PlaylistSummary> getPlaylistSummary(Map<String, dynamic> playlist);
+}
+
 /// Abstract music provider interface
 abstract class MusicProvider {
   /// Remember songs for future reference (caching)
@@ -40,4 +69,16 @@ abstract class MusicProvider {
 
   /// Get playback URL
   Future<PlaybackUrl> getPlayUrl(String id);
+}
+
+extension MusicProviderPlaylistSummary on MusicProvider {
+  Future<PlaylistSummary> getPlaylistSummary(
+    Map<String, dynamic> playlist,
+  ) async {
+    final provider = this;
+    if (provider is PlaylistSummaryProvider) {
+      return (provider as PlaylistSummaryProvider).getPlaylistSummary(playlist);
+    }
+    return const PlaylistSummary.unavailable();
+  }
 }

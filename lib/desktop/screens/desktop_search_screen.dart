@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -7,6 +10,7 @@ import '../../core/models/playlist.dart';
 import '../../services/auth_service.dart';
 import '../../services/library_service.dart';
 import '../../services/music_service.dart';
+import '../../services/music_provider.dart';
 import '../../playback/playback_actions.dart';
 import '../../playback/playback_providers.dart';
 import '../desktop_app_shell.dart';
@@ -54,7 +58,7 @@ class _DesktopSearchScreenState extends ConsumerState<DesktopSearchScreen> {
   MusicSearchScope _scopeForTab(SearchTab tab) => switch (tab) {
     SearchTab.songs => MusicSearchScope.metadataSongs,
     SearchTab.playlists => MusicSearchScope.bilibiliPlaylists,
-    SearchTab.all || SearchTab.artists => MusicSearchScope.all,
+    SearchTab.all => MusicSearchScope.all,
   };
 
   Future<void> _search(String q) async {
@@ -82,13 +86,79 @@ class _DesktopSearchScreenState extends ConsumerState<DesktopSearchScreen> {
       final results = await musicService.searchSongs(query, scope: scope);
       print('[SearchScreen] 搜索结果: ${results.length} 首');
       if (!mounted || requestId != _searchRequestId) return;
-      ref.read(searchResultsProvider.notifier).state = results;
+      final visibleResults = results
+          .where(
+            (song) =>
+                song.resultType == 'song' || song.resultType == 'playlist',
+          )
+          .map(
+            (song) => song.isPlaylist
+                ? song.copyWith(
+                    extra: {...song.extra, 'playlistSummaryState': 'loading'},
+                  )
+                : song,
+          )
+          .toList();
+      ref.read(searchResultsProvider.notifier).state = visibleResults;
       ref.read(searchLoadingProvider.notifier).state = false;
+      unawaited(
+        _enrichPlaylistResults(
+          visibleResults,
+          requestId: requestId,
+          musicService: musicService,
+        ),
+      );
     } catch (e) {
       print('[SearchScreen] 搜索失败: $e');
       if (!mounted || requestId != _searchRequestId) return;
       ref.read(searchLoadingProvider.notifier).state = false;
     }
+  }
+
+  Future<void> _enrichPlaylistResults(
+    List<Song> results, {
+    required int requestId,
+    required MusicService musicService,
+  }) async {
+    final playlists = results.where((song) => song.isPlaylist).toList();
+    var nextIndex = 0;
+
+    Future<void> worker() async {
+      while (nextIndex < playlists.length) {
+        final playlist = playlists[nextIndex++];
+        final summary = await musicService.getPlaylistSummary(playlist);
+        if (!mounted || requestId != _searchRequestId) return;
+
+        final current = ref.read(searchResultsProvider);
+        final index = current.indexWhere(
+          (song) => song.id == playlist.id && song.isPlaylist,
+        );
+        if (index < 0) continue;
+
+        final existing = current[index];
+        final count = summary.kind == PlaylistSummaryKind.multiPage
+            ? summary.songCount
+            : existing.songCount > 1
+            ? existing.songCount
+            : summary.songCount;
+        final updated = existing.copyWith(
+          songCount: count,
+          extra: {
+            ...existing.extra,
+            'playlistSummaryState': summary.available ? 'ready' : 'unavailable',
+            'playlistSummaryKind': summary.kind?.name,
+            'playlistSummaryDurationSeconds': summary.durationSeconds,
+          },
+        );
+        ref.read(searchResultsProvider.notifier).state = [
+          ...current.take(index),
+          updated,
+          ...current.skip(index + 1),
+        ];
+      }
+    }
+
+    await Future.wait(List.generate(min(4, playlists.length), (_) => worker()));
   }
 
   void _onTabChanged(SearchTab tab) {
@@ -121,11 +191,7 @@ class _DesktopSearchScreenState extends ConsumerState<DesktopSearchScreen> {
             loading: loading,
             onSearch: () => _search(_controller.text),
           ),
-          _Tabs(
-            c: c,
-            tab: tab,
-            onTabChanged: _onTabChanged,
-          ),
+          _Tabs(c: c, tab: tab, onTabChanged: _onTabChanged),
           Expanded(
             child: loading
                 ? Center(
@@ -148,7 +214,7 @@ class _DesktopSearchScreenState extends ConsumerState<DesktopSearchScreen> {
   }
 }
 
-enum SearchTab { all, songs, playlists, artists }
+enum SearchTab { all, songs, playlists }
 
 class _SearchBar extends StatelessWidget {
   final TextEditingController controller;
@@ -189,7 +255,7 @@ class _SearchBar extends StatelessWidget {
                 onSubmitted: (_) => onSearch(),
                 style: TextStyle(color: c.textPrimary, fontSize: 15),
                 decoration: InputDecoration(
-                  hintText: '搜索歌曲、歌单、艺人',
+                  hintText: '搜索歌曲、歌单',
                   hintStyle: TextStyle(color: c.textMuted),
                   border: InputBorder.none,
                   isDense: true,
@@ -290,7 +356,6 @@ class _Tabs extends StatelessWidget {
     SearchTab.all => '全部',
     SearchTab.songs => '歌曲',
     SearchTab.playlists => '歌单',
-    SearchTab.artists => '艺人',
   };
 }
 
@@ -372,7 +437,7 @@ class _Results extends ConsumerWidget {
               return Playlist(
                 id: song.id,
                 title: song.title,
-                subtitle: song.artist,
+                subtitle: _playlistSubtitle(song),
                 source: song.source,
                 songCount: song.songCount,
                 coverUrl: song.coverUrl,
@@ -398,6 +463,60 @@ class _Results extends ConsumerWidget {
         ],
       ],
     );
+  }
+
+  String _playlistSubtitle(Song song) {
+    final state = song.extra['playlistSummaryState']?.toString();
+    final kind = song.extra['playlistSummaryKind']?.toString();
+    final summaryDuration =
+        song.extra['playlistSummaryDurationSeconds'] as int? ?? 0;
+    final durationSeconds = summaryDuration > 0
+        ? summaryDuration
+        : _songDurationSeconds(song);
+    String detail;
+
+    if (state == 'ready' && kind == PlaylistSummaryKind.multiPage.name) {
+      detail = '${song.songCount} 首歌曲 · 分P合集';
+    } else if ((state == 'ready' &&
+            kind == PlaylistSummaryKind.singleLongCollection.name) ||
+        (state == 'loading' && durationSeconds >= 20 * 60)) {
+      detail = '歌曲集合 · ${_formatDuration(durationSeconds)}';
+    } else if (state == 'loading' && song.songCount <= 1) {
+      detail = '正在获取曲目数...';
+    } else if (song.songCount > 1) {
+      detail = '${song.songCount} 首歌曲 · 歌曲集合';
+    } else {
+      detail = '歌曲集合';
+    }
+
+    return [
+      song.artist,
+      detail,
+    ].where((part) => part.trim().isNotEmpty).join(' · ');
+  }
+
+  int _songDurationSeconds(Song song) {
+    final rawDuration = song.extra['duration'];
+    if (rawDuration is num) return rawDuration.round() ~/ 1000;
+    final parts = song.duration
+        .split(':')
+        .map((part) => int.tryParse(part) ?? 0)
+        .toList();
+    if (parts.length == 2) return parts[0] * 60 + parts[1];
+    if (parts.length == 3) {
+      return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    }
+    return 0;
+  }
+
+  String _formatDuration(int totalSeconds) {
+    final hours = totalSeconds ~/ 3600;
+    final minutes = (totalSeconds % 3600) ~/ 60;
+    final seconds = totalSeconds % 60;
+    if (hours > 0) {
+      return '$hours:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+    }
+    return '$minutes:${seconds.toString().padLeft(2, '0')}';
   }
 }
 

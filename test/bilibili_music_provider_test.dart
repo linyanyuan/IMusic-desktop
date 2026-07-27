@@ -214,6 +214,58 @@ void main() {
       ]),
     );
   });
+
+  test('playlist summary classifies Bilibili page layouts', () async {
+    final adapter = _JsonAdapter((options) {
+      final bvid = options.queryParameters['bvid'];
+      return switch (bvid) {
+        'BVmulti' => {
+          'data': [
+            {'page': 1, 'duration': 180},
+            {'page': 2, 'duration': 200},
+            {'page': 3, 'duration': 220},
+          ],
+        },
+        'BVlong' => {
+          'data': [
+            {'page': 1, 'duration': 5130},
+          ],
+        },
+        'BVshort' => {
+          'data': [
+            {'page': 1, 'duration': 600},
+          ],
+        },
+        _ => {'data': <Map<String, dynamic>>[]},
+      };
+    });
+    final provider = BilibiliMusicProvider(dio: _dio(adapter));
+
+    final multi = await provider.getPlaylistSummary(const {
+      'id': 'bilibili:BVmulti',
+    });
+    final long = await provider.getPlaylistSummary(const {
+      'id': 'bilibili:BVlong',
+    });
+    final short = await provider.getPlaylistSummary(const {
+      'id': 'bilibili:BVshort',
+    });
+    final unavailable = await provider.getPlaylistSummary(const {
+      'id': 'bilibili:BVmissing',
+    });
+
+    expect(multi.available, isTrue);
+    expect(multi.kind, PlaylistSummaryKind.multiPage);
+    expect(multi.songCount, 3);
+    expect(long.kind, PlaylistSummaryKind.singleLongCollection);
+    expect(long.durationSeconds, 5130);
+    expect(short.kind, PlaylistSummaryKind.singlePageCollection);
+    expect(unavailable.available, isFalse);
+    expect(
+      adapter.requests.every((request) => request.path == '/x/player/pagelist'),
+      isTrue,
+    );
+  });
 }
 
 Dio _dio(HttpClientAdapter adapter) {

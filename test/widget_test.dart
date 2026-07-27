@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/gestures.dart';
@@ -559,6 +560,113 @@ void main() {
     expect(provider.queries, ['林俊杰']);
     expect(container.read(searchQueryProvider), '林俊杰');
     expect(find.text('按钮搜索结果'), findsOneWidget);
+  });
+
+  testWidgets(
+    'playlist search results are enriched without blocking initial display',
+    (tester) async {
+      final multiSummary = Completer<PlaylistSummary>();
+      final longSummary = Completer<PlaylistSummary>();
+      final provider = _ProgressivePlaylistSearchProvider(
+        results: const [
+          {
+            'id': 'bilibili:BVmulti',
+            'title': '分P歌单',
+            'artist': '音乐UP',
+            'source': 'bilibili',
+            'duration': 600000,
+            'resultType': 'playlist',
+          },
+          {
+            'id': 'bilibili:BVlong',
+            'title': '长音频歌曲合集',
+            'artist': '长音频UP',
+            'source': 'bilibili',
+            'duration': 5130000,
+            'resultType': 'playlist',
+          },
+        ],
+        summaries: {
+          'bilibili:BVmulti': multiSummary.future,
+          'bilibili:BVlong': longSummary.future,
+        },
+      );
+      final container = ProviderContainer(
+        overrides: [
+          musicServiceProvider.overrideWithValue(
+            MusicService(provider: provider),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await _pumpSearchScreen(tester, container);
+      await tester.enterText(find.byType(TextField), '合集');
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('分P歌单'), findsOneWidget);
+      expect(find.text('音乐UP · 正在获取曲目数...'), findsOneWidget);
+      expect(find.text('长音频UP · 歌曲集合 · 1:25:30'), findsOneWidget);
+
+      multiSummary.complete(
+        const PlaylistSummary(
+          kind: PlaylistSummaryKind.multiPage,
+          songCount: 12,
+          durationSeconds: 2400,
+        ),
+      );
+      longSummary.complete(
+        const PlaylistSummary(
+          kind: PlaylistSummaryKind.singleLongCollection,
+          songCount: 1,
+          durationSeconds: 5130,
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('音乐UP · 12 首歌曲 · 分P合集'), findsOneWidget);
+      expect(find.text('长音频UP · 歌曲集合 · 1:25:30'), findsOneWidget);
+    },
+  );
+
+  testWidgets('search exposes only all songs and playlists tabs', (
+    tester,
+  ) async {
+    final provider = _SearchRecordingMusicProvider({
+      '混合': [
+        {
+          'id': 'meting-artist:unused',
+          'title': '不应展示的艺人结果',
+          'artist': '艺人',
+          'resultType': 'artist',
+        },
+      ],
+    });
+    final container = ProviderContainer(
+      overrides: [
+        musicServiceProvider.overrideWithValue(
+          MusicService(provider: provider),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await _pumpSearchScreen(tester, container);
+
+    expect(find.text('全部'), findsOneWidget);
+    expect(find.text('歌曲'), findsOneWidget);
+    expect(find.text('歌单'), findsOneWidget);
+    expect(find.text('艺人'), findsNothing);
+
+    await tester.enterText(find.byType(TextField), '混合');
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pumpAndSettle();
+
+    expect(find.text('不应展示的艺人结果'), findsNothing);
+    expect(find.text('未找到相关内容'), findsOneWidget);
   });
 
   testWidgets('search results highlight the currently playing song', (
@@ -2492,6 +2600,26 @@ class _SearchRecordingMusicProvider extends _FakeMusicProvider {
   Future<List<Map<String, dynamic>>> searchSongs(String query) async {
     queries.add(query);
     return resultsByQuery[query] ?? const [];
+  }
+}
+
+class _ProgressivePlaylistSearchProvider extends _FakeMusicProvider
+    implements PlaylistSummaryProvider {
+  _ProgressivePlaylistSearchProvider({
+    required this.results,
+    required this.summaries,
+  });
+
+  final List<Map<String, dynamic>> results;
+  final Map<String, Future<PlaylistSummary>> summaries;
+
+  @override
+  Future<List<Map<String, dynamic>>> searchSongs(String query) async => results;
+
+  @override
+  Future<PlaylistSummary> getPlaylistSummary(Map<String, dynamic> playlist) {
+    return summaries[playlist['id']?.toString()] ??
+        Future.value(const PlaylistSummary.unavailable());
   }
 }
 
