@@ -513,6 +513,32 @@ void main() {
     expect(find.text('当前队列为空'), findsOneWidget);
   });
 
+  testWidgets('right rail highlights an equivalent Bilibili p1 queue song', (
+    tester,
+  ) async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    container.read(currentSongProvider.notifier).state = const {
+      'id': 'bilibili:BVqueueCurrent:p1',
+      'title': '队列当前歌曲',
+      'status': 'playing',
+    };
+    container.read(playbackQueueProvider.notifier).state = const [
+      {
+        'id': 'bilibili:BVqueueCurrent',
+        'title': '队列当前歌曲',
+        'artist': 'UP',
+        'duration': 180000,
+      },
+    ];
+    container.read(rightRailTabProvider.notifier).state = RightRailTab.queue;
+
+    await _pumpRightRail(tester, container);
+
+    final title = tester.widgetList<Text>(find.text('队列当前歌曲')).last;
+    expect(title.style?.fontWeight, FontWeight.w600);
+  });
+
   testWidgets('search waits for enter before querying', (tester) async {
     final provider = _SearchRecordingMusicProvider({
       '周杰伦': [
@@ -755,7 +781,7 @@ void main() {
         duration: '3:10',
       ),
       Song(
-        id: 'song-2',
+        id: 'bilibili:BVcurrent',
         title: '正在播放的歌',
         artist: '歌手 B',
         source: 'Bilibili',
@@ -763,7 +789,7 @@ void main() {
       ),
     ];
     container.read(currentSongProvider.notifier).state = const {
-      'id': 'song-2',
+      'id': 'bilibili:BVcurrent:p1',
       'title': '正在播放的歌',
       'artist': '歌手 B',
       'status': 'playing',
@@ -975,6 +1001,72 @@ void main() {
     expect(playlistItem.enabled, isFalse);
   });
 
+  testWidgets('cancelled search playlist add does not report success', (
+    tester,
+  ) async {
+    final resolver = Completer<Map<String, dynamic>>();
+    final playlist = {
+      ..._localPlaylist,
+      'songs': <Map<String, dynamic>>[],
+      'songCount': 0,
+    };
+    final container = await _authenticatedShellContainer(
+      remoteLibrary: RemoteLibrary(
+        likedSongs: const [],
+        userPlaylists: [playlist],
+        themeMode: 'light',
+      ),
+      playbackResolver: (song) => resolver.future,
+    );
+    addTearDown(container.dispose);
+    container
+        .read(libraryProvider.notifier)
+        .setLibraryFromLogin(
+          RemoteLibrary(
+            likedSongs: const [],
+            userPlaylists: [playlist],
+            themeMode: 'light',
+          ),
+        );
+    container.read(searchQueryProvider.notifier).state = '测试';
+    final song = Song(
+      id: 'cancelled-search-song',
+      title: '撤销歌曲',
+      artist: '歌手 C',
+      source: 'Bilibili',
+      duration: '3:30',
+    );
+    container.read(searchResultsProvider.notifier).state = [song];
+
+    await _pumpSearchScreen(tester, container);
+    await tester.tapAt(
+      tester.getCenter(
+        find.byKey(const ValueKey('search-row-cancelled-search-song')),
+      ),
+      buttons: kSecondaryMouseButton,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('旅行歌单').last);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(find.text('正在添加到歌单...'), findsOneWidget);
+
+    await container.read(libraryProvider.notifier).removeSongsFromPlaylist(
+      'test-token',
+      'local-playlist-1',
+      {'cancelled-search-song'},
+    );
+    resolver.complete({
+      ...song.toJson(),
+      'playbackId': 'bilibili:BVcancelled:p1',
+    });
+    await tester.pumpAndSettle();
+
+    expect(find.text('正在添加到歌单...'), findsNothing);
+    expect(find.text('已添加到歌单'), findsNothing);
+    expect(find.text('添加失败'), findsNothing);
+  });
+
   testWidgets('search song context menu marks an existing playlist song', (
     tester,
   ) async {
@@ -1143,6 +1235,50 @@ void main() {
     );
     expect(find.text('路上听'), findsOneWidget);
     expect(find.text('路歌'), findsOneWidget);
+  });
+
+  testWidgets('playlist detail highlights an equivalent Bilibili p1 song', (
+    tester,
+  ) async {
+    final playlist = {
+      ..._localPlaylist,
+      'songs': [
+        {
+          ..._localPlaylistSong,
+          'id': 'bilibili:BVdetailCurrent',
+          'title': '详情当前歌曲',
+        },
+      ],
+      'songCount': 1,
+    };
+    final container = await _authenticatedShellContainer(
+      remoteLibrary: RemoteLibrary(
+        likedSongs: const [],
+        userPlaylists: [playlist],
+        themeMode: 'light',
+      ),
+    );
+    addTearDown(container.dispose);
+    container
+        .read(libraryProvider.notifier)
+        .setLibraryFromLogin(
+          RemoteLibrary(
+            likedSongs: const [],
+            userPlaylists: [playlist],
+            themeMode: 'light',
+          ),
+        );
+    container.read(playlistDetailProvider.notifier).state = 'local-playlist-1';
+    container.read(currentSongProvider.notifier).state = const {
+      'id': 'bilibili:BVdetailCurrent',
+      'title': '详情当前歌曲',
+      'status': 'playing',
+    };
+
+    await _pumpPlaylistDetailScreen(tester, container);
+
+    final title = tester.widget<Text>(find.text('详情当前歌曲'));
+    expect(title.style?.fontWeight, FontWeight.w600);
   });
 
   testWidgets('focus mode returns to playlist detail with selected playlist', (
@@ -1431,6 +1567,57 @@ void main() {
     expect(container.read(libraryProvider).userPlaylists, isEmpty);
     expect(container.read(deskRouteProvider), DeskRoute.profile);
     expect(container.read(playlistDetailProvider), isNull);
+  });
+
+  testWidgets('account switch cancellation does not report playlist deletion', (
+    tester,
+  ) async {
+    final service = _PendingWidgetLibraryService();
+    final container = await _authenticatedShellContainer(
+      remoteLibrary: RemoteLibrary(
+        likedSongs: const [],
+        userPlaylists: [_localPlaylist],
+        themeMode: 'light',
+      ),
+      libraryService: service,
+    );
+    addTearDown(container.dispose);
+    container
+        .read(libraryProvider.notifier)
+        .setLibraryFromLogin(
+          RemoteLibrary(
+            likedSongs: const [],
+            userPlaylists: [_localPlaylist],
+            themeMode: 'light',
+          ),
+        );
+    container.read(deskRouteProvider.notifier).state = DeskRoute.playlistDetail;
+    container.read(playlistDetailProvider.notifier).state = 'local-playlist-1';
+    container.read(playlistBackRouteProvider.notifier).state =
+        DeskRoute.profile;
+
+    await _pumpPlaylistDetailScreen(tester, container);
+    await tester.tap(find.byKey(const ValueKey('playlist-delete-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('删除'));
+    await tester.pump();
+    expect(service.saveCount, 1);
+
+    container
+        .read(libraryProvider.notifier)
+        .setLibraryFromLogin(
+          const RemoteLibrary(
+            likedSongs: [],
+            userPlaylists: [],
+            themeMode: 'dark',
+          ),
+        );
+    service.succeed();
+    await tester.pumpAndSettle();
+
+    expect(container.read(deskRouteProvider), DeskRoute.playlistDetail);
+    expect(find.textContaining('已删除歌单'), findsNothing);
+    expect(find.text('删除失败'), findsOneWidget);
   });
 
   testWidgets('lyrics loading falls back after timeout timestamp', (
@@ -2784,10 +2971,12 @@ Future<void> _pumpSearchScreen(
 Future<ProviderContainer> _authenticatedShellContainer({
   RemoteLibrary? remoteLibrary,
   PlaybackMetadataResolver? playbackResolver,
+  LibraryService? libraryService,
 }) => _shellContainer(
   authenticated: true,
   remoteLibrary: remoteLibrary,
   playbackResolver: playbackResolver,
+  libraryService: libraryService,
 );
 
 Future<ProviderContainer> _shellContainer({
@@ -2796,6 +2985,7 @@ Future<ProviderContainer> _shellContainer({
   MusicProvider musicProvider = const _FakeMusicProvider(),
   AuthService? authService,
   PlaybackMetadataResolver? playbackResolver,
+  LibraryService? libraryService,
   List<Override> extraOverrides = const [],
 }) async {
   SharedPreferences.setMockInitialValues(
@@ -2809,7 +2999,7 @@ Future<ProviderContainer> _shellContainer({
       ),
       libraryProvider.overrideWith(
         (ref) => LibraryNotifier(
-          _FakeLibraryService(remoteLibrary),
+          libraryService ?? _FakeLibraryService(remoteLibrary),
           ref,
           prefs,
           playbackResolver: playbackResolver,
@@ -2927,6 +3117,45 @@ class _FakeLibraryService extends LibraryService {
       likedSongs: likedSongs,
       userPlaylists: userPlaylists,
       themeMode: themeMode,
+    );
+  }
+}
+
+class _PendingWidgetLibraryService extends LibraryService {
+  final _save = Completer<RemoteLibrary>();
+  var saveCount = 0;
+  List<Map<String, dynamic>> _likedSongs = const [];
+  List<Map<String, dynamic>> _userPlaylists = const [];
+  String _themeMode = 'light';
+
+  @override
+  Future<RemoteLibrary> getLibrary(String token) async => const RemoteLibrary(
+    likedSongs: [],
+    userPlaylists: [],
+    themeMode: 'light',
+  );
+
+  @override
+  Future<RemoteLibrary> saveLibrary(
+    String token, {
+    required List<Map<String, dynamic>> likedSongs,
+    required List<Map<String, dynamic>> userPlaylists,
+    String themeMode = 'dark',
+  }) {
+    saveCount++;
+    _likedSongs = likedSongs;
+    _userPlaylists = userPlaylists;
+    _themeMode = themeMode;
+    return _save.future;
+  }
+
+  void succeed() {
+    _save.complete(
+      RemoteLibrary(
+        likedSongs: _likedSongs,
+        userPlaylists: _userPlaylists,
+        themeMode: _themeMode,
+      ),
     );
   }
 }

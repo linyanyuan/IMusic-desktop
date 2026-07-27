@@ -580,7 +580,6 @@ class _SongsTable extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final currentSong = ref.watch(currentSongProvider);
-    final currentSongId = currentSong?['id']?.toString();
 
     return Container(
       decoration: BoxDecoration(
@@ -595,7 +594,9 @@ class _SongsTable extends ConsumerWidget {
             song: songs[i],
             index: i + 1,
             c: c,
-            isCurrent: songs[i].id == currentSongId,
+            isCurrent:
+                currentSong != null &&
+                songsShareIdentity(songs[i].toJson(), currentSong),
             onTap: () {
               if (songs[i].isPlaylist) {
                 navigateDeskRoute(
@@ -967,6 +968,9 @@ class _SongRowState extends ConsumerState<_SongRow> {
       messenger.showSnackBar(
         const SnackBar(content: Text('已添加到歌单'), duration: Duration(seconds: 2)),
       );
+    } on LibraryMutationCancelled {
+      if (!mounted) return;
+      messenger.hideCurrentSnackBar();
     } catch (_) {
       if (!mounted) return;
       messenger.hideCurrentSnackBar();

@@ -847,7 +847,8 @@ class _SongRowState extends ConsumerState<_SongRow> {
       (song) => songsShareIdentity(song.toJson(), widget.song.toJson()),
     );
     final isCurrent =
-        currentSong != null && currentSong['id']?.toString() == widget.song.id;
+        currentSong != null &&
+        songsShareIdentity(currentSong, widget.song.toJson());
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
@@ -1154,6 +1155,9 @@ class _SongRowState extends ConsumerState<_SongRow> {
       messenger.showSnackBar(
         SnackBar(content: Text('已添加到歌单'), duration: Duration(seconds: 2)),
       );
+    } on LibraryMutationCancelled {
+      if (!mounted) return;
+      messenger.hideCurrentSnackBar();
     } catch (e) {
       if (!mounted) return;
       messenger.hideCurrentSnackBar();

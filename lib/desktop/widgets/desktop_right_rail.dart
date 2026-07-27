@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/theme.dart';
+import '../../core/song_identity.dart';
 import '../../playback/playback_providers.dart';
 import '../../playback/playback_actions.dart';
 import '../../shared/lyrics_parser.dart';
@@ -333,7 +334,6 @@ class _QueuePanel extends ConsumerWidget {
         : DeepVibeColors.light;
     final queue = ref.watch(playbackQueueProvider);
     final currentSong = ref.watch(currentSongProvider);
-    final currentId = currentSong?['id']?.toString();
 
     if (queue.isEmpty) {
       return Center(
@@ -349,7 +349,8 @@ class _QueuePanel extends ConsumerWidget {
       itemCount: queue.length,
       itemBuilder: (context, i) {
         final song = queue[i];
-        final current = song['id']?.toString() == currentId;
+        final current =
+            currentSong != null && songsShareIdentity(song, currentSong);
         return _QueueRow(
           song: song,
           current: current,

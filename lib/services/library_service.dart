@@ -8,6 +8,15 @@ import '../core/song_identity.dart';
 typedef PlaybackMetadataResolver =
     Future<Map<String, dynamic>> Function(Song song);
 
+class LibraryMutationCancelled implements Exception {
+  const LibraryMutationCancelled([this.message = 'Library mutation cancelled']);
+
+  final String message;
+
+  @override
+  String toString() => 'LibraryMutationCancelled: $message';
+}
+
 /// Library service matching mobile API
 class LibraryService {
   final Dio _dio;
@@ -140,6 +149,7 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
   int _libraryGeneration = 0;
   int _nextOperationId = 0;
   final Map<String, int> _entityOwners = {};
+  final Map<String, Future<void>> _likeMutationTails = {};
 
   LibraryNotifier(
     this._libraryService,
@@ -217,19 +227,17 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
   }
 
   void clearAccountLibrary() {
-    _libraryGeneration++;
+    _startLibraryGeneration();
     state = state.copyWith(likedSongs: const [], userPlaylists: const []);
     _committedLibrary = RemoteLibrary(
       likedSongs: const [],
       userPlaylists: const [],
       themeMode: state.themeMode,
     );
-    _entityOwners.clear();
   }
 
   void _applyRemoteLibrary(RemoteLibrary library, {bool? isLoading}) {
-    _libraryGeneration++;
-    _entityOwners.clear();
+    _startLibraryGeneration();
     final likedSongs = library.likedSongs
         .map((song) => _withMobilePlaybackFields(song))
         .toList();
@@ -251,13 +259,22 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     );
   }
 
+  void _startLibraryGeneration() {
+    _libraryGeneration++;
+    _mutationTail = Future<void>.value();
+    _entityOwners.clear();
+    _likeMutationTails.clear();
+  }
+
   Future<void> _enqueueRemoteMutation(
     String token,
     RemoteLibrary Function(RemoteLibrary committed) buildCandidate,
   ) {
     final generation = _libraryGeneration;
     final operation = _mutationTail.then((_) async {
-      if (generation != _libraryGeneration) return;
+      if (generation != _libraryGeneration) {
+        throw const LibraryMutationCancelled('Account library changed');
+      }
       final candidate = buildCandidate(_committedLibrary);
       await _libraryService.saveLibrary(
         token,
@@ -265,12 +282,14 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
         userPlaylists: candidate.userPlaylists,
         themeMode: candidate.themeMode,
       );
-      if (generation != _libraryGeneration) return;
+      if (generation != _libraryGeneration) {
+        throw const LibraryMutationCancelled('Account library changed');
+      }
       _committedLibrary = candidate;
     });
     _mutationTail = operation.then<void>(
       (_) {},
-      onError: (Object _, StackTrace __) {},
+      onError: (Object _, StackTrace _) {},
     );
     return operation;
   }
@@ -305,8 +324,49 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
 
   /// Toggle like status for a song
   /// Saves the updated library to the server via PUT /library
-  Future<void> toggleLike(String token, Song song) async {
+  Future<void> toggleLike(String token, Song song) {
+    final identities = songIdentityValues(song.toJson());
+    if (identities.isEmpty) {
+      return Future<void>.error(
+        ArgumentError.value(song.id, 'song.id', 'Song identity is required'),
+      );
+    }
     final generation = _libraryGeneration;
+    final entityKey = 'like:${identities.first}';
+    final previous = _likeMutationTails[entityKey] ?? Future<void>.value();
+    final recoveredPrevious = previous.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
+    );
+    late final Future<void> operation;
+    operation = recoveredPrevious
+        .then((_) => _toggleLikeNow(token, song, entityKey, generation))
+        .then<void>(
+          (_) {
+            if (identical(_likeMutationTails[entityKey], operation)) {
+              _likeMutationTails.remove(entityKey);
+            }
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            if (identical(_likeMutationTails[entityKey], operation)) {
+              _likeMutationTails.remove(entityKey);
+            }
+            Error.throwWithStackTrace(error, stackTrace);
+          },
+        );
+    _likeMutationTails[entityKey] = operation;
+    return operation;
+  }
+
+  Future<void> _toggleLikeNow(
+    String token,
+    Song song,
+    String entityKey,
+    int generation,
+  ) async {
+    if (generation != _libraryGeneration) {
+      throw const LibraryMutationCancelled('Account library changed');
+    }
     final rawSong = song.toJson();
     final isLiked = state.likedSongs.any(
       (item) => songsShareIdentity(item.toJson(), rawSong),
@@ -316,12 +376,11 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
             (item) => songsShareIdentity(item.toJson(), rawSong),
           )
         : null;
-    final entityKey = 'like:${songIdentityValues(rawSong).first}';
     final operationId = _claimEntities([entityKey]);
     final resolved = isLiked ? song : await _resolvePlaybackMetadata(song);
     if (generation != _libraryGeneration) {
       _releaseEntity(entityKey, operationId);
-      return;
+      throw const LibraryMutationCancelled('Account library changed');
     }
     final resolvedMap = resolved.toJson();
 
@@ -597,7 +656,7 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
       for (final key in entityKeys) {
         _releaseEntity(key, operationId);
       }
-      return;
+      throw const LibraryMutationCancelled('Song add was cancelled');
     }
     entityKeys.add(parentEntityKey);
     _entityOwners[parentEntityKey] = operationId;

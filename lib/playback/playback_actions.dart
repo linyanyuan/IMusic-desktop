@@ -11,6 +11,8 @@ import '../core/models/song.dart';
 /// Request serial numbers to prevent old requests from overwriting new ones
 int playbackRequestSerial = 0;
 int lyricsRequestSerial = 0;
+final Expando<Future<void>> _playbackSourceMutationTails =
+    Expando<Future<void>>('playbackSourceMutationTail');
 
 /// Lyrics status constants
 const lyricsStatusLoading = 'loading';
@@ -160,15 +162,28 @@ Future<void> startSongPlayback(
     // Check again after download
     if (requestSerial != playbackRequestSerial) return;
 
-    // Set source from URL or local file
-    await player.setSource(
-      sourceUrl.startsWith('http')
-          ? UrlSource(sourceUrl)
-          : DeviceFileSource(sourceUrl),
+    final previousSourceMutation =
+        _playbackSourceMutationTails[player] ?? Future<void>.value();
+    final sourceMutation = previousSourceMutation.then((_) async {
+      if (requestSerial != playbackRequestSerial) return false;
+      await player.setSource(
+        sourceUrl.startsWith('http')
+            ? UrlSource(sourceUrl)
+            : DeviceFileSource(sourceUrl),
+      );
+      if (requestSerial != playbackRequestSerial) return false;
+      await player.resume();
+      if (requestSerial != playbackRequestSerial) {
+        await player.stop();
+        return false;
+      }
+      return true;
+    });
+    _playbackSourceMutationTails[player] = sourceMutation.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
     );
-    if (requestSerial != playbackRequestSerial) return;
-    await player.resume();
-    if (requestSerial != playbackRequestSerial) return;
+    if (!await sourceMutation) return;
 
     // Merge lyrics: prefer PlaybackUrl.lyrics > currentSong.lyrics > initialLyrics
     final current = ref.read(currentSongProvider);
