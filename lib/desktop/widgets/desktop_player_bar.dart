@@ -54,8 +54,7 @@ class DesktopPlayerBar extends ConsumerWidget {
               isLoading: playbackStatus == 'loading',
               enabled:
                   currentSong != null &&
-                  playbackStatus != 'loading' &&
-                  playbackStatus != 'error',
+                  (playbackStatus == 'playing' || playbackStatus == 'paused'),
               onSeek: (pos) => _seek(ref, pos),
             ),
           ),

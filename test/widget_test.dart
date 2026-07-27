@@ -161,6 +161,28 @@ void main() {
     );
   });
 
+  testWidgets('player progress is empty after playback completes', (
+    tester,
+  ) async {
+    final container = _containerWithSong();
+    addTearDown(container.dispose);
+    container.read(currentSongProvider.notifier).state = {
+      ...container.read(currentSongProvider)!,
+      'status': 'completed',
+    };
+
+    await _pumpPlayerBar(tester, container);
+
+    expect(
+      find.byKey(const ValueKey('player-progress-empty-track')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('player-progress-active-track')),
+      findsNothing,
+    );
+  });
+
   testWidgets(
     'volume popup opens on hover and closes when pointer leaves vertical range',
     (tester) async {
@@ -632,6 +654,54 @@ void main() {
     },
   );
 
+  testWidgets('playlist enrichment resumes after returning to search', (
+    tester,
+  ) async {
+    final summary = Completer<PlaylistSummary>();
+    final provider = _ProgressivePlaylistSearchProvider(
+      results: const [
+        {
+          'id': 'bilibili:BVresume',
+          'title': '返回后补全',
+          'artist': '音乐UP',
+          'source': 'bilibili',
+          'duration': 600000,
+          'resultType': 'playlist',
+        },
+      ],
+      summaries: {'bilibili:BVresume': summary.future},
+    );
+    final container = ProviderContainer(
+      overrides: [
+        musicServiceProvider.overrideWithValue(
+          MusicService(provider: provider),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await _pumpSearchScreen(tester, container);
+    await tester.enterText(find.byType(TextField), '合集');
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('音乐UP · 正在获取曲目数...'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    summary.complete(
+      const PlaylistSummary(
+        kind: PlaylistSummaryKind.multiPage,
+        songCount: 8,
+        durationSeconds: 1800,
+      ),
+    );
+    await tester.pump();
+
+    await _pumpSearchScreen(tester, container);
+    await tester.pump();
+    expect(find.text('音乐UP · 8 首歌曲 · 分P合集'), findsOneWidget);
+  });
+
   testWidgets('search exposes only all songs and playlists tabs', (
     tester,
   ) async {
@@ -786,6 +856,45 @@ void main() {
     );
   });
 
+  testWidgets('search like state recognizes normalized Bilibili p1 ids', (
+    tester,
+  ) async {
+    final likedSong = Song(
+      id: 'bilibili:BVliked:p1',
+      title: '已喜欢',
+      artist: 'UP',
+      source: 'bilibili',
+      duration: '3:00',
+      isFavorite: true,
+    );
+    final container = await _authenticatedShellContainer(
+      remoteLibrary: RemoteLibrary(
+        likedSongs: [likedSong.toJson()],
+        userPlaylists: const [],
+        themeMode: 'light',
+      ),
+    );
+    addTearDown(container.dispose);
+    container.read(searchQueryProvider.notifier).state = '测试';
+    container.read(searchResultsProvider.notifier).state = [
+      Song(
+        id: 'bilibili:BVliked',
+        title: '已喜欢',
+        artist: 'UP',
+        source: 'bilibili',
+        duration: '3:00',
+      ),
+    ];
+
+    await _pumpSearchScreen(tester, container);
+
+    final heart = find.byKey(const ValueKey('search-like-bilibili:BVliked'));
+    final icon = tester.widget<Icon>(
+      find.descendant(of: heart, matching: find.byType(Icon)),
+    );
+    expect(icon.icon, Icons.favorite);
+  });
+
   testWidgets('search song context menu adds the song to a playlist', (
     tester,
   ) async {
@@ -854,6 +963,16 @@ void main() {
     });
     await tester.pumpAndSettle();
     expect(find.text('已添加到歌单'), findsOneWidget);
+
+    await tester.tapAt(
+      tester.getCenter(find.byKey(const ValueKey('search-row-search-song-2'))),
+      buttons: kSecondaryMouseButton,
+    );
+    await tester.pumpAndSettle();
+    final playlistItem = tester.widget<PopupMenuItem>(
+      find.widgetWithText(PopupMenuItem, '旅行歌单'),
+    );
+    expect(playlistItem.enabled, isFalse);
   });
 
   testWidgets('search song context menu marks an existing playlist song', (
@@ -2424,6 +2543,7 @@ ProviderContainer _containerWithSong() {
     'artist': '测试歌手',
     'sourceLabel': '酷狗音乐',
     'playbackSourceLabel': 'B站',
+    'status': 'playing',
   };
   container.read(playbackDurationProvider.future);
   return container;

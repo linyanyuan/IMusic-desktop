@@ -314,6 +314,80 @@ void main() {
     await tester.pump();
   });
 
+  testWidgets('stale playback cannot replace a newer song after resume', (
+    tester,
+  ) async {
+    final provider = _MultiControlledPlaybackProvider();
+    final resumeGate = Completer<void>();
+    final audioPlatform = _FakeAudioplayersPlatform(resumeGate: resumeGate);
+    final globalPlatform = _FakeGlobalAudioPlatform();
+    final previousAudioPlatform = AudioplayersPlatformInterface.instance;
+    final previousGlobalPlatform = GlobalAudioplayersPlatformInterface.instance;
+    AudioplayersPlatformInterface.instance = audioPlatform;
+    GlobalAudioplayersPlatformInterface.instance = globalPlatform;
+    addTearDown(() async {
+      AudioplayersPlatformInterface.instance = previousAudioPlatform;
+      GlobalAudioplayersPlatformInterface.instance = previousGlobalPlatform;
+      await audioPlatform.disposeControllers();
+      await globalPlatform.dispose();
+    });
+    final container = ProviderContainer(
+      overrides: [
+        musicServiceProvider.overrideWithValue(
+          MusicService(provider: provider),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    late WidgetRef capturedRef;
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: Consumer(
+          builder: (context, ref, _) {
+            capturedRef = ref;
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+
+    const firstSong = {'id': 'first', 'title': 'First'};
+    const secondSong = {'id': 'second', 'title': 'Second'};
+    final first = startSongPlayback(
+      capturedRef,
+      song: firstSong,
+      index: 0,
+      queue: const [firstSong],
+    );
+    await tester.pump();
+    provider.succeedFor('first');
+    await tester.pump();
+    await tester.pump();
+    expect(audioPlatform.calls, contains('resume'));
+
+    final second = startSongPlayback(
+      capturedRef,
+      song: secondSong,
+      index: 0,
+      queue: const [secondSong],
+    );
+    await tester.pump();
+    expect(container.read(currentSongProvider)?['id'], 'second');
+    expect(container.read(currentSongProvider)?['status'], 'loading');
+
+    resumeGate.complete();
+    await first;
+
+    expect(container.read(currentSongProvider)?['id'], 'second');
+    expect(container.read(currentSongProvider)?['status'], 'loading');
+
+    provider.succeedFor('second');
+    await second;
+    await container.read(audioPlayerProvider).stop();
+  });
+
   testWidgets(
     'playback failure after stopping previous song shows requested error',
     (tester) async {
@@ -426,11 +500,31 @@ class _ControlledPlaybackProvider implements MusicProvider {
   }
 }
 
+class _MultiControlledPlaybackProvider extends _ControlledPlaybackProvider {
+  final _playUrls = <String, Completer<PlaybackUrl>>{};
+
+  void succeedFor(String id) {
+    _playUrls
+        .putIfAbsent(id, Completer<PlaybackUrl>.new)
+        .complete(PlaybackUrl('https://example.test/$id.mp3'));
+  }
+
+  @override
+  Future<PlaybackUrl> getPlayUrl(String id) {
+    return _playUrls.putIfAbsent(id, Completer<PlaybackUrl>.new).future;
+  }
+}
+
 class _FakeAudioplayersPlatform extends AudioplayersPlatformInterface {
-  _FakeAudioplayersPlatform({this.failSetSource = false, this.onSetSourceUrl});
+  _FakeAudioplayersPlatform({
+    this.failSetSource = false,
+    this.onSetSourceUrl,
+    this.resumeGate,
+  });
 
   final bool failSetSource;
   final void Function()? onSetSourceUrl;
+  final Completer<void>? resumeGate;
   final calls = <String>[];
   final _events = <String, StreamController<AudioEvent>>{};
 
@@ -466,6 +560,7 @@ class _FakeAudioplayersPlatform extends AudioplayersPlatformInterface {
   @override
   Future<void> resume(String playerId) async {
     calls.add('resume');
+    await resumeGate?.future;
   }
 
   @override

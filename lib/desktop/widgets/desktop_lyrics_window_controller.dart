@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/song.dart';
+import '../../core/song_identity.dart';
 import '../../lyrics_window/lyrics_window_channel.dart';
 import '../../lyrics_window/lyrics_window_manager.dart';
 import '../../playback/playback_actions.dart';
@@ -123,10 +124,14 @@ class _DesktopLyricsWindowControllerState
     final auth = ref.read(authProvider);
     final library = ref.read(libraryProvider);
     final lyricsText = _windowLyricsText(song);
-    final songId = song?['id']?.toString() ?? '';
     final isFavorite =
-        songId.isNotEmpty &&
-        library.likedSongs.any((item) => item.id == songId);
+        song != null &&
+        library.likedSongs.any(
+          (item) => songsShareIdentity(
+            item.toJson(),
+            Map<String, dynamic>.from(song),
+          ),
+        );
 
     unawaited(
       manager.sendLyricsData(

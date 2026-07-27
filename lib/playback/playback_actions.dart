@@ -166,7 +166,9 @@ Future<void> startSongPlayback(
           ? UrlSource(sourceUrl)
           : DeviceFileSource(sourceUrl),
     );
+    if (requestSerial != playbackRequestSerial) return;
     await player.resume();
+    if (requestSerial != playbackRequestSerial) return;
 
     // Merge lyrics: prefer PlaybackUrl.lyrics > currentSong.lyrics > initialLyrics
     final current = ref.read(currentSongProvider);

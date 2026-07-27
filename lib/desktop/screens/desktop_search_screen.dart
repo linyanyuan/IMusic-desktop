@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/theme.dart';
 import '../../core/models/song.dart';
 import '../../core/models/playlist.dart';
+import '../../core/song_identity.dart';
 import '../../services/auth_service.dart';
 import '../../services/library_service.dart';
 import '../../services/music_service.dart';
@@ -45,6 +46,26 @@ class _DesktopSearchScreenState extends ConsumerState<DesktopSearchScreen> {
     final savedQuery = ref.read(searchQueryProvider);
     if (savedQuery.isNotEmpty) {
       _controller.text = savedQuery;
+    }
+    final pendingResults = ref
+        .read(searchResultsProvider)
+        .where(
+          (song) => song.extra['playlistSummaryState']?.toString() == 'loading',
+        )
+        .toList();
+    if (pendingResults.isNotEmpty) {
+      final requestId = ++_searchRequestId;
+      final musicService = ref.read(musicServiceProvider);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || requestId != _searchRequestId) return;
+        unawaited(
+          _enrichPlaylistResults(
+            pendingResults,
+            requestId: requestId,
+            musicService: musicService,
+          ),
+        );
+      });
     }
   }
 
@@ -675,7 +696,10 @@ class _SongRowState extends ConsumerState<_SongRow> {
       library = ref.watch(libraryProvider);
     } catch (_) {}
     final isFavorite =
-        library?.likedSongs.any((song) => song.id == widget.song.id) ?? false;
+        library?.likedSongs.any(
+          (song) => songsShareIdentity(song.toJson(), widget.song.toJson()),
+        ) ??
+        false;
     final rowColor = widget.isCurrent
         ? widget.c.accent.withValues(alpha: _hover ? 0.12 : 0.08)
         : _hover

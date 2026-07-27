@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../core/models/song.dart';
+import '../core/song_identity.dart';
 
 typedef PlaybackMetadataResolver =
     Future<Map<String, dynamic>> Function(Song song);
@@ -136,6 +137,7 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     themeMode: 'light',
   );
   Future<void> _mutationTail = Future<void>.value();
+  int _libraryGeneration = 0;
   int _nextOperationId = 0;
   final Map<String, int> _entityOwners = {};
 
@@ -176,11 +178,22 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
 
   /// Load the account library from the server.
   Future<void> loadLibrary(String token) async {
+    final generation = _libraryGeneration;
+    final mutationMarker = _nextOperationId;
+    final hadPendingMutation = _entityOwners.isNotEmpty;
     state = state.copyWith(isLoading: true);
     try {
       final library = await _libraryService.getLibrary(token);
+      if (generation != _libraryGeneration) return;
+      if (hadPendingMutation ||
+          mutationMarker != _nextOperationId ||
+          _entityOwners.isNotEmpty) {
+        state = state.copyWith(isLoading: false);
+        return;
+      }
       _applyRemoteLibrary(library, isLoading: false);
     } catch (e) {
+      if (generation != _libraryGeneration) return;
       state = state.copyWith(isLoading: false);
       rethrow;
     }
@@ -200,10 +213,11 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
 
   /// Load library from login response.
   void setLibraryFromLogin(RemoteLibrary library) {
-    _applyRemoteLibrary(library);
+    _applyRemoteLibrary(library, isLoading: false);
   }
 
   void clearAccountLibrary() {
+    _libraryGeneration++;
     state = state.copyWith(likedSongs: const [], userPlaylists: const []);
     _committedLibrary = RemoteLibrary(
       likedSongs: const [],
@@ -214,6 +228,8 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
   }
 
   void _applyRemoteLibrary(RemoteLibrary library, {bool? isLoading}) {
+    _libraryGeneration++;
+    _entityOwners.clear();
     final likedSongs = library.likedSongs
         .map((song) => _withMobilePlaybackFields(song))
         .toList();
@@ -239,7 +255,9 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     String token,
     RemoteLibrary Function(RemoteLibrary committed) buildCandidate,
   ) {
+    final generation = _libraryGeneration;
     final operation = _mutationTail.then((_) async {
+      if (generation != _libraryGeneration) return;
       final candidate = buildCandidate(_committedLibrary);
       await _libraryService.saveLibrary(
         token,
@@ -247,6 +265,7 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
         userPlaylists: candidate.userPlaylists,
         themeMode: candidate.themeMode,
       );
+      if (generation != _libraryGeneration) return;
       _committedLibrary = candidate;
     });
     _mutationTail = operation.then<void>(
@@ -287,21 +306,39 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
   /// Toggle like status for a song
   /// Saves the updated library to the server via PUT /library
   Future<void> toggleLike(String token, Song song) async {
-    final isLiked = state.likedSongs.any((s) => s.id == song.id);
+    final generation = _libraryGeneration;
+    final rawSong = song.toJson();
+    final isLiked = state.likedSongs.any(
+      (item) => songsShareIdentity(item.toJson(), rawSong),
+    );
     final removedSong = isLiked
-        ? state.likedSongs.firstWhere((item) => item.id == song.id)
+        ? state.likedSongs.firstWhere(
+            (item) => songsShareIdentity(item.toJson(), rawSong),
+          )
         : null;
-    final resolved = isLiked ? song : await _resolvePlaybackMetadata(song);
-    final entityKey = 'like:${song.id}';
+    final entityKey = 'like:${songIdentityValues(rawSong).first}';
     final operationId = _claimEntities([entityKey]);
+    final resolved = isLiked ? song : await _resolvePlaybackMetadata(song);
+    if (generation != _libraryGeneration) {
+      _releaseEntity(entityKey, operationId);
+      return;
+    }
+    final resolvedMap = resolved.toJson();
 
     if (isLiked) {
       state = state.copyWith(
-        likedSongs: state.likedSongs.where((s) => s.id != song.id).toList(),
+        likedSongs: state.likedSongs
+            .where((item) => !songsShareIdentity(item.toJson(), rawSong))
+            .toList(),
       );
     } else {
       state = state.copyWith(
-        likedSongs: [...state.likedSongs, resolved.copyWith(isFavorite: true)],
+        likedSongs: [
+          ...state.likedSongs.where(
+            (item) => !songsShareIdentity(item.toJson(), resolvedMap),
+          ),
+          resolved.copyWith(isFavorite: true),
+        ],
       );
     }
 
@@ -312,11 +349,11 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
           committed,
           likedSongs: isLiked
               ? committed.likedSongs
-                    .where((item) => item['id']?.toString() != song.id)
+                    .where((item) => !songsShareIdentity(item, rawSong))
                     .toList()
               : [
                   ...committed.likedSongs.where(
-                    (item) => item['id']?.toString() != resolved.id,
+                    (item) => !songsShareIdentity(item, resolvedMap),
                   ),
                   resolved.copyWith(isFavorite: true).toJson(),
                 ],
@@ -330,12 +367,17 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
                   ...state.likedSongs,
                   if (removedSong != null &&
                       !state.likedSongs.any(
-                        (item) => item.id == removedSong.id,
+                        (item) => songsShareIdentity(
+                          item.toJson(),
+                          removedSong.toJson(),
+                        ),
                       ))
                     removedSong,
                 ]
               : state.likedSongs
-                    .where((item) => item.id != resolved.id)
+                    .where(
+                      (item) => !songsShareIdentity(item.toJson(), resolvedMap),
+                    )
                     .toList(),
         );
       }
@@ -526,7 +568,7 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     final optimisticPlaylists = state.userPlaylists.map((playlist) {
       if (playlist['id']?.toString() == playlistId) {
         final songs = List<Map<String, dynamic>>.from(playlist['songs'] ?? []);
-        if (!songs.any((s) => s['id']?.toString() == song.id)) {
+        if (!songs.any((item) => songsShareIdentity(item, rawSong))) {
           songs.add(rawSong);
           inserted = true;
         }
@@ -536,6 +578,7 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     }).toList();
     if (!inserted) return;
 
+    final parentEntityKey = 'playlist:$playlistId';
     final entityKeys = <String>{'playlist-song:$playlistId:${song.id}'};
     final operationId = _claimEntities(entityKeys);
     state = state.copyWith(userPlaylists: optimisticPlaylists);
@@ -556,6 +599,8 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
       }
       return;
     }
+    entityKeys.add(parentEntityKey);
+    _entityOwners[parentEntityKey] = operationId;
 
     final updatedPlaylists = state.userPlaylists.map((playlist) {
       if (playlist['id']?.toString() != playlistId) return playlist;
@@ -568,24 +613,24 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     state = state.copyWith(userPlaylists: updatedPlaylists);
 
     try {
-      await _enqueueRemoteMutation(
-        token,
-        (committed) => _candidateLibrary(
-          committed,
-          userPlaylists: committed.userPlaylists.map((playlist) {
-            if (playlist['id']?.toString() != playlistId) return playlist;
-            final songs = List<Map<String, dynamic>>.from(
-              playlist['songs'] ?? [],
-            );
-            if (!songs.any(
-              (item) => item['id']?.toString() == resolvedSong.id,
-            )) {
-              songs.add(resolvedMap);
-            }
-            return {...playlist, 'songs': songs, 'songCount': songs.length};
-          }).toList(),
-        ),
-      );
+      await _enqueueRemoteMutation(token, (committed) {
+        var foundPlaylist = false;
+        final userPlaylists = committed.userPlaylists.map((playlist) {
+          if (playlist['id']?.toString() != playlistId) return playlist;
+          foundPlaylist = true;
+          final songs = List<Map<String, dynamic>>.from(
+            playlist['songs'] ?? [],
+          );
+          if (!songs.any((item) => songsShareIdentity(item, resolvedMap))) {
+            songs.add(resolvedMap);
+          }
+          return {...playlist, 'songs': songs, 'songCount': songs.length};
+        }).toList();
+        if (!foundPlaylist) {
+          throw StateError('Playlist no longer exists');
+        }
+        return _candidateLibrary(committed, userPlaylists: userPlaylists);
+      });
     } catch (_) {
       state = state.copyWith(
         userPlaylists: state.userPlaylists.map((playlist) {
@@ -596,6 +641,16 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
           return {...playlist, 'songs': songs, 'songCount': songs.length};
         }).toList(),
       );
+      if (_ownsEntity(parentEntityKey, operationId) &&
+          !_committedLibrary.userPlaylists.any(
+            (playlist) => playlist['id']?.toString() == playlistId,
+          )) {
+        state = state.copyWith(
+          userPlaylists: state.userPlaylists
+              .where((playlist) => playlist['id']?.toString() != playlistId)
+              .toList(),
+        );
+      }
       rethrow;
     } finally {
       for (final key in entityKeys) {

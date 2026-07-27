@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/theme.dart';
 import '../../core/models/song.dart';
 import '../../core/models/playlist.dart';
+import '../../core/song_identity.dart';
 import '../../services/music_service.dart';
 import '../../services/library_service.dart';
 import '../../services/auth_service.dart';
@@ -824,7 +825,7 @@ class _SongRowState extends ConsumerState<_SongRow> {
     final isLiked = ref
         .read(libraryProvider)
         .likedSongs
-        .any((song) => song.id == widget.song.id);
+        .any((song) => songsShareIdentity(song.toJson(), widget.song.toJson()));
     try {
       await ref
           .read(libraryProvider.notifier)
@@ -843,7 +844,7 @@ class _SongRowState extends ConsumerState<_SongRow> {
     final currentSong = ref.watch(currentSongProvider);
     final library = ref.watch(libraryProvider);
     final isFavorite = library.likedSongs.any(
-      (song) => song.id == widget.song.id,
+      (song) => songsShareIdentity(song.toJson(), widget.song.toJson()),
     );
     final isCurrent =
         currentSong != null && currentSong['id']?.toString() == widget.song.id;
