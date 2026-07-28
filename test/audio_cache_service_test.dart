@@ -43,6 +43,45 @@ void main() {
     },
   );
 
+  test('findCached returns path only when usable file exists', () async {
+    final dir = await Directory.systemTemp.createTemp('deepvibe-cache-find-');
+    addTearDown(() => dir.delete(recursive: true));
+    var downloadCount = 0;
+    final service = AudioCacheService(
+      downloader: (_, outputPath, __) async {
+        downloadCount += 1;
+        await File(outputPath).writeAsString('audio-bytes');
+      },
+    );
+    const playUrl = PlaybackUrl(
+      'https://example.test/audio.m4s',
+      resolvedId: 'bilibili:BVfind:p1',
+    );
+
+    expect(
+      await service.findCached(playUrl: playUrl, cacheDirectory: dir.path),
+      isNull,
+    );
+    expect(downloadCount, 0);
+
+    await service.getOrDownload(playUrl: playUrl, cacheDirectory: dir.path);
+    expect(downloadCount, 1);
+
+    final hit = await service.findCached(
+      playUrl: playUrl,
+      cacheDirectory: dir.path,
+    );
+    expect(hit, isNotNull);
+    expect(await File(hit!).exists(), isTrue);
+    expect(downloadCount, 1);
+
+    await service.invalidate(playUrl: playUrl, cacheDirectory: dir.path);
+    expect(
+      await service.findCached(playUrl: playUrl, cacheDirectory: dir.path),
+      isNull,
+    );
+  });
+
   test('audio cache cleanup only removes generated audio files', () async {
     final dir = await Directory.systemTemp.createTemp('deepvibe-cache-clean-');
     addTearDown(() => dir.delete(recursive: true));

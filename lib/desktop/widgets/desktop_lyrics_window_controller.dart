@@ -88,7 +88,7 @@ class _DesktopLyricsWindowControllerState
 
     final open = ref.watch(desktopLyricsWindowOpenProvider);
     final song = ref.watch(currentSongProvider);
-    final isPlaying = ref.watch(playbackPlayingProvider).value ?? false;
+    final isPlaying = ref.watch(playbackPlayingProvider).valueOrNull ?? false;
     _scheduleLyricsRetry(open ? song : null, isPlaying);
 
     return const SizedBox.shrink();
@@ -139,7 +139,7 @@ class _DesktopLyricsWindowControllerState
         positionMs: position.inMilliseconds,
         fontSize: settings.lyricsFontSize,
         colorValue: settings.lyricsColorValue,
-        isPlaying: ref.read(playbackPlayingProvider).value ?? false,
+        isPlaying: ref.read(playbackPlayingProvider).valueOrNull ?? false,
         isFavorite: isFavorite,
         canFavorite: song != null && auth.isLoggedIn,
       ),

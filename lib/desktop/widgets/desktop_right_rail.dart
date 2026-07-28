@@ -214,7 +214,7 @@ class _LyricsPanelState extends ConsumerState<_LyricsPanel> {
 
     final song = ref.watch(currentSongProvider);
     final positionAsync = ref.watch(playbackPositionProvider);
-    final position = positionAsync.value ?? Duration.zero;
+    final position = positionAsync.valueOrNull ?? Duration.zero;
 
     if (song == null) {
       return Center(

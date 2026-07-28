@@ -12,8 +12,9 @@ import 'hybrid_music_provider.dart';
 /// Music service provider - singleton instance
 ///
 /// Uses HybridMusicProvider to combine:
-/// - Metadata (lyrics, song info) from Meting/Default
-/// - Playback URLs from Bilibili
+/// - Song-tab: GDStudio search/play when available
+/// - Metadata (lyrics, song info) from Meting/Default as fallback
+/// - Playback URLs from Bilibili as fallback / playlists
 final musicServiceProvider = Provider<MusicService>((ref) {
   return MusicService(
     provider: HybridMusicProvider(
@@ -59,12 +60,16 @@ class MusicService {
   }
 
   /// Search songs / playlists according to [scope].
+  ///
+  /// [page] is 1-based. Callers that want "load more" should append pages
+  /// themselves (this method returns only the requested page).
   Future<List<Song>> searchSongs(
     String query, {
     MusicSearchScope scope = MusicSearchScope.all,
+    int page = 1,
   }) async {
     try {
-      final results = await _searchRaw(query, scope);
+      final results = await _searchRaw(query, scope, page: page);
       _cacheResults(results);
       return results.map(_toSong).toList();
     } catch (e) {
@@ -74,19 +79,21 @@ class MusicService {
 
   Future<List<Map<String, dynamic>>> _searchRaw(
     String query,
-    MusicSearchScope scope,
-  ) async {
+    MusicSearchScope scope, {
+    int page = 1,
+  }) async {
+    final safePage = page < 1 ? 1 : page;
     final provider = _provider;
     if (provider is HybridMusicProvider) {
       return switch (scope) {
-        MusicSearchScope.all => provider.searchSongs(query),
-        MusicSearchScope.metadataSongs => provider.searchMetadataSongs(query),
-        MusicSearchScope.bilibiliPlaylists => provider.searchBilibiliPlaylists(
-          query,
-        ),
+        MusicSearchScope.all => provider.searchSongs(query, page: safePage),
+        MusicSearchScope.metadataSongs =>
+          provider.searchMetadataSongs(query, page: safePage),
+        MusicSearchScope.bilibiliPlaylists =>
+          provider.searchBilibiliPlaylists(query, page: safePage),
       };
     }
-    return provider.searchSongs(query);
+    return provider.searchSongs(query, page: safePage);
   }
 
   /// Get recommended songs

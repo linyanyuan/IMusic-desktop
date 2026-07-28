@@ -21,7 +21,13 @@ import '../playlist_song_status.dart';
 final searchQueryProvider = StateProvider<String>((ref) => '');
 final searchResultsProvider = StateProvider<List<Song>>((ref) => []);
 final searchLoadingProvider = StateProvider<bool>((ref) => false);
+final searchLoadingMoreProvider = StateProvider<bool>((ref) => false);
+final searchPageProvider = StateProvider<int>((ref) => 1);
+final searchHasMoreProvider = StateProvider<bool>((ref) => false);
 final searchTabProvider = StateProvider<SearchTab>((ref) => SearchTab.all);
+
+/// Hint used to decide whether another page is likely available.
+const kSearchPageSizeHint = 20;
 
 /// PRD §7.1: 搜索页 — search bar with Ctrl+F hint, tabs All/Songs/Playlists/Artists,
 /// song table, empty/loading/error states. Tech doc §8.1: search is purely local
@@ -91,6 +97,9 @@ class _DesktopSearchScreenState extends ConsumerState<DesktopSearchScreen> {
 
     ref.read(searchQueryProvider.notifier).state = query;
     ref.read(searchLoadingProvider.notifier).state = true;
+    ref.read(searchLoadingMoreProvider.notifier).state = false;
+    ref.read(searchPageProvider.notifier).state = 1;
+    ref.read(searchHasMoreProvider.notifier).state = false;
     ref.read(searchResultsProvider.notifier).state = [];
 
     if (query.isEmpty) {
@@ -103,24 +112,19 @@ class _DesktopSearchScreenState extends ConsumerState<DesktopSearchScreen> {
     final musicService = ref.read(musicServiceProvider);
 
     try {
-      print('[SearchScreen] 开始搜索...');
-      final results = await musicService.searchSongs(query, scope: scope);
+      print('[SearchScreen] 开始搜索 page=1...');
+      final results = await musicService.searchSongs(
+        query,
+        scope: scope,
+        page: 1,
+      );
       print('[SearchScreen] 搜索结果: ${results.length} 首');
       if (!mounted || requestId != _searchRequestId) return;
-      final visibleResults = results
-          .where(
-            (song) =>
-                song.resultType == 'song' || song.resultType == 'playlist',
-          )
-          .map(
-            (song) => song.isPlaylist
-                ? song.copyWith(
-                    extra: {...song.extra, 'playlistSummaryState': 'loading'},
-                  )
-                : song,
-          )
-          .toList();
+      final visibleResults = _toVisibleResults(results);
       ref.read(searchResultsProvider.notifier).state = visibleResults;
+      ref.read(searchPageProvider.notifier).state = 1;
+      ref.read(searchHasMoreProvider.notifier).state =
+          results.length >= kSearchPageSizeHint;
       ref.read(searchLoadingProvider.notifier).state = false;
       unawaited(
         _enrichPlaylistResults(
@@ -133,7 +137,84 @@ class _DesktopSearchScreenState extends ConsumerState<DesktopSearchScreen> {
       print('[SearchScreen] 搜索失败: $e');
       if (!mounted || requestId != _searchRequestId) return;
       ref.read(searchLoadingProvider.notifier).state = false;
+      ref.read(searchHasMoreProvider.notifier).state = false;
     }
+  }
+
+  Future<void> _loadMore() async {
+    final query = ref.read(searchQueryProvider).trim();
+    if (query.isEmpty) return;
+    if (ref.read(searchLoadingProvider) || ref.read(searchLoadingMoreProvider)) {
+      return;
+    }
+    if (!ref.read(searchHasMoreProvider)) return;
+
+    final tab = ref.read(searchTabProvider);
+    final scope = _scopeForTab(tab);
+    final nextPage = ref.read(searchPageProvider) + 1;
+    final requestId = _searchRequestId;
+    final musicService = ref.read(musicServiceProvider);
+
+    ref.read(searchLoadingMoreProvider.notifier).state = true;
+    print('[SearchScreen] 加载更多 page=$nextPage query=$query scope=$scope');
+
+    try {
+      final results = await musicService.searchSongs(
+        query,
+        scope: scope,
+        page: nextPage,
+      );
+      if (!mounted || requestId != _searchRequestId) return;
+
+      final existing = ref.read(searchResultsProvider);
+      final existingIds = existing.map((s) => s.id).toSet();
+      final visibleResults = _toVisibleResults(results);
+      final newItems = visibleResults
+          .where((song) => !existingIds.contains(song.id))
+          .toList();
+
+      if (newItems.isEmpty) {
+        ref.read(searchHasMoreProvider.notifier).state = false;
+        ref.read(searchLoadingMoreProvider.notifier).state = false;
+        print('[SearchScreen] 加载更多无新结果，结束分页');
+        return;
+      }
+
+      ref.read(searchResultsProvider.notifier).state = [
+        ...existing,
+        ...newItems,
+      ];
+      ref.read(searchPageProvider.notifier).state = nextPage;
+      ref.read(searchHasMoreProvider.notifier).state =
+          results.length >= kSearchPageSizeHint;
+      ref.read(searchLoadingMoreProvider.notifier).state = false;
+      unawaited(
+        _enrichPlaylistResults(
+          newItems,
+          requestId: requestId,
+          musicService: musicService,
+        ),
+      );
+    } catch (e) {
+      print('[SearchScreen] 加载更多失败: $e');
+      if (!mounted || requestId != _searchRequestId) return;
+      ref.read(searchLoadingMoreProvider.notifier).state = false;
+    }
+  }
+
+  List<Song> _toVisibleResults(List<Song> results) {
+    return results
+        .where(
+          (song) => song.resultType == 'song' || song.resultType == 'playlist',
+        )
+        .map(
+          (song) => song.isPlaylist
+              ? song.copyWith(
+                  extra: {...song.extra, 'playlistSummaryState': 'loading'},
+                )
+              : song,
+        )
+        .toList();
   }
 
   Future<void> _enrichPlaylistResults(
@@ -198,6 +279,8 @@ class _DesktopSearchScreenState extends ConsumerState<DesktopSearchScreen> {
 
     final tab = ref.watch(searchTabProvider);
     final loading = ref.watch(searchLoadingProvider);
+    final loadingMore = ref.watch(searchLoadingMoreProvider);
+    final hasMore = ref.watch(searchHasMoreProvider);
     final searchResults = ref.watch(searchResultsProvider);
     final query = ref.watch(searchQueryProvider);
 
@@ -227,7 +310,14 @@ class _DesktopSearchScreenState extends ConsumerState<DesktopSearchScreen> {
                   )
                 : query.isEmpty
                 ? _EmptyState(c: c)
-                : _Results(c: c, songs: searchResults, tab: tab),
+                : _Results(
+                    c: c,
+                    songs: searchResults,
+                    tab: tab,
+                    hasMore: hasMore,
+                    loadingMore: loadingMore,
+                    onLoadMore: _loadMore,
+                  ),
           ),
         ],
       ),
@@ -273,7 +363,13 @@ class _SearchBar extends StatelessWidget {
                 controller: controller,
                 focusNode: focusNode,
                 textInputAction: TextInputAction.search,
-                onSubmitted: (_) => onSearch(),
+                // Desktop Enter / IME search action.
+                onSubmitted: (_) {
+                  if (!loading) onSearch();
+                },
+                onEditingComplete: () {
+                  if (!loading) onSearch();
+                },
                 style: TextStyle(color: c.textPrimary, fontSize: 15),
                 decoration: InputDecoration(
                   hintText: '搜索歌曲、歌单',
@@ -412,8 +508,18 @@ class _Results extends ConsumerWidget {
   final DeepVibeColors c;
   final List<Song> songs;
   final SearchTab tab;
+  final bool hasMore;
+  final bool loadingMore;
+  final VoidCallback onLoadMore;
 
-  const _Results({required this.c, required this.songs, required this.tab});
+  const _Results({
+    required this.c,
+    required this.songs,
+    required this.tab,
+    required this.hasMore,
+    required this.loadingMore,
+    required this.onLoadMore,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -481,6 +587,14 @@ class _Results extends ConsumerWidget {
           const SizedBox(height: 12),
           _SongsTable(songs: songResults, c: c),
           const SizedBox(height: 32),
+        ],
+        if (hasMore || loadingMore) ...[
+          _LoadMoreBar(
+            c: c,
+            loading: loadingMore,
+            onLoadMore: onLoadMore,
+          ),
+          const SizedBox(height: 16),
         ],
       ],
     );
@@ -571,6 +685,54 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
+class _LoadMoreBar extends StatelessWidget {
+  final DeepVibeColors c;
+  final bool loading;
+  final VoidCallback onLoadMore;
+
+  const _LoadMoreBar({
+    required this.c,
+    required this.loading,
+    required this.onLoadMore,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: TextButton(
+        key: const ValueKey('search-load-more-button'),
+        onPressed: loading ? null : onLoadMore,
+        style: TextButton.styleFrom(
+          foregroundColor: c.accent,
+          disabledForegroundColor: c.textMuted,
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+            side: BorderSide(color: c.border),
+          ),
+        ),
+        child: loading
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation(c.accent),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  const Text('加载中...'),
+                ],
+              )
+            : const Text('加载更多'),
+      ),
+    );
+  }
+}
+
 class _SongsTable extends ConsumerWidget {
   final List<Song> songs;
   final DeepVibeColors c;
@@ -608,23 +770,15 @@ class _SongsTable extends ConsumerWidget {
               }
 
               final musicService = ref.read(musicServiceProvider);
-              // Convert Song objects to Map format for playback actions
-              final queueMaps = songs
-                  .map(
-                    (s) =>
-                        musicService.getCachedSongMap(s.id) ??
-                        {
-                          'id': s.id,
-                          'title': s.title,
-                          'artist': s.artist,
-                          'source': s.source,
-                          'duration': _parseDuration(s.duration),
-                          'coverUrl': s.coverUrl,
-                          'resultType': s.resultType,
-                          'sourceLabel': s.sourceLabel,
-                        },
-                  )
-                  .toList();
+              // Prefer full cached maps (gdstudio/meting fields). Fallback keeps
+              // Song.extra so playback ids like gdstudio:joox:… survive.
+              final queueMaps = songs.map((s) {
+                final cached = musicService.getCachedSongMap(s.id);
+                if (cached != null) return Map<String, dynamic>.from(cached);
+                final map = Map<String, dynamic>.from(s.toJson());
+                map['duration'] = _parseDuration(s.duration);
+                return map;
+              }).toList();
 
               startSongPlayback(
                 ref,

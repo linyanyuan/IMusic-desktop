@@ -32,15 +32,19 @@ class DefaultMusicProvider implements MusicProvider {
   void rememberSongs(Iterable<Map<String, dynamic>> songs) {}
 
   @override
-  Future<List<Map<String, dynamic>>> searchSongs(String query) async {
+  Future<List<Map<String, dynamic>>> searchSongs(
+    String query, {
+    int page = 1,
+  }) async {
     final keywords = query.trim();
     if (keywords.isEmpty) return [];
+    final safePage = page < 1 ? 1 : page;
 
     final response = await _dio.get<dynamic>(
       '/$_source/search/songs',
       queryParameters: {
         'q': keywords,
-        'page': 1,
+        'page': safePage,
         'page_size': 30,
       },
     );

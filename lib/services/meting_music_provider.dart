@@ -35,9 +35,14 @@ class MetingMusicProvider implements MusicProvider {
   void rememberSongs(Iterable<Map<String, dynamic>> songs) {}
 
   @override
-  Future<List<Map<String, dynamic>>> searchSongs(String query) async {
+  Future<List<Map<String, dynamic>>> searchSongs(
+    String query, {
+    int page = 1,
+  }) async {
     final keywords = query.trim();
     if (keywords.isEmpty) return [];
+    // Upstream meting search has no stable paging; only page 1 is useful.
+    if (page > 1) return const [];
 
     // Search tencent first
     final tencent = await _searchVendor('tencent', keywords);

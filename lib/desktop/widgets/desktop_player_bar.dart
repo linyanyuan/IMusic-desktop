@@ -33,9 +33,11 @@ class DesktopPlayerBar extends ConsumerWidget {
     final durationAsync = ref.watch(playbackDurationProvider);
     final mode = ref.watch(playbackModeProvider);
 
-    final isPlaying = isPlayingAsync.value ?? false;
-    final position = positionAsync.value ?? Duration.zero;
-    final duration = durationAsync.value ?? Duration.zero;
+    // Use valueOrNull: AsyncValue.value rethrows when the stream has errored
+    // (e.g. after a failed setSource), which blanked the whole player shell.
+    final isPlaying = isPlayingAsync.valueOrNull ?? false;
+    final position = positionAsync.valueOrNull ?? Duration.zero;
+    final duration = durationAsync.valueOrNull ?? Duration.zero;
 
     return Container(
       key: const ValueKey('desktop-player-bar'),
@@ -51,10 +53,14 @@ class DesktopPlayerBar extends ConsumerWidget {
               c: c,
               position: position,
               duration: duration,
-              isLoading: playbackStatus == 'loading',
+              // Hide spinner once the engine is actually playing, even if the
+              // song map still says "loading" (slow setSource/status race).
+              isLoading: playbackStatus == 'loading' && !isPlaying,
               enabled:
                   currentSong != null &&
-                  (playbackStatus == 'playing' || playbackStatus == 'paused'),
+                  (isPlaying ||
+                      playbackStatus == 'playing' ||
+                      playbackStatus == 'paused'),
               onSeek: (pos) => _seek(ref, pos),
             ),
           ),
@@ -83,12 +89,20 @@ class DesktopPlayerBar extends ConsumerWidget {
                                     : null,
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(4),
-                                  child: currentSong?['coverUrl'] != null
+                                  child:
+                                      (currentSong?['coverUrl']
+                                                  ?.toString()
+                                                  .trim()
+                                                  .isNotEmpty ??
+                                              false)
                                       ? NetworkCoverImage(
                                           imageUrl: currentSong!['coverUrl']
                                               ?.toString(),
                                           size: 48,
-                                          colorSeed: currentSong['id'].hashCode,
+                                          colorSeed:
+                                              (currentSong['id']?.toString() ??
+                                                      '')
+                                                  .hashCode,
                                         )
                                       : Container(
                                           width: 48,
@@ -439,17 +453,23 @@ class _ProgressBarState extends State<_ProgressBar> {
                 final thumbPosition = (width * displayValue).clamp(0.0, width);
 
                 if (widget.isLoading) {
-                  return Stack(
-                    children: [
-                      Container(
-                        height: 3,
-                        decoration: BoxDecoration(
-                          color: widget.c.divider,
-                          borderRadius: BorderRadius.circular(1.5),
+                  return SizedBox(
+                    key: const ValueKey('player-progress-loading-slot'),
+                    height: 5,
+                    width: width,
+                    child: Stack(
+                      children: [
+                        Container(
+                          height: 5,
+                          width: width,
+                          decoration: BoxDecoration(
+                            color: widget.c.divider,
+                            borderRadius: BorderRadius.circular(2.5),
+                          ),
                         ),
-                      ),
-                      _IndeterminateProgressTrack(c: widget.c),
-                    ],
+                        _IndeterminateProgressTrack(c: widget.c),
+                      ],
+                    ),
                   );
                 }
 
@@ -552,22 +572,24 @@ class _IndeterminateProgressTrackState
   Widget build(BuildContext context) {
     return ClipRRect(
       key: const ValueKey('player-progress-indeterminate-track'),
-      borderRadius: BorderRadius.circular(1.5),
+      borderRadius: BorderRadius.circular(2.5),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final segmentWidth = constraints.maxWidth * 0.28;
+          final trackWidth = constraints.maxWidth;
+          final segmentWidth = trackWidth * 0.14;
           return AnimatedBuilder(
             animation: _controller,
             builder: (context, child) {
               final left =
-                  _controller.value * (constraints.maxWidth + segmentWidth) -
+                  _controller.value * (trackWidth + segmentWidth) -
                   segmentWidth;
               return Stack(
                 children: [
                   Positioned(
+                    key: const ValueKey('player-progress-indeterminate-segment'),
                     left: left,
                     width: segmentWidth,
-                    height: 3,
+                    height: 5,
                     child: ColoredBox(color: widget.c.accent),
                   ),
                 ],

@@ -22,15 +22,18 @@ class FallbackMusicProvider implements MusicProvider {
   }
 
   @override
-  Future<List<Map<String, dynamic>>> searchSongs(String query) async {
+  Future<List<Map<String, dynamic>>> searchSongs(
+    String query, {
+    int page = 1,
+  }) async {
     try {
-      final songs = await primary.searchSongs(query);
+      final songs = await primary.searchSongs(query, page: page);
       if (songs.isNotEmpty) return songs;
     } catch (_) {
       // Fall through to fallback when primary is unavailable
     }
     try {
-      return await fallback.searchSongs(query);
+      return await fallback.searchSongs(query, page: page);
     } catch (_) {
       return [];
     }

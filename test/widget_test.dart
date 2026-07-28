@@ -102,6 +102,22 @@ void main() {
       find.byKey(const ValueKey('player-progress-active-track')),
       findsNothing,
     );
+
+    final slot = tester.getSize(
+      find.byKey(const ValueKey('player-progress-loading-slot')),
+    );
+    expect(slot.width, greaterThan(0));
+    expect(slot.height, greaterThanOrEqualTo(4));
+
+    final segmentFinder = find.byKey(
+      const ValueKey('player-progress-indeterminate-segment'),
+    );
+    expect(segmentFinder, findsOneWidget);
+    final firstLeft = tester.getTopLeft(segmentFinder).dx;
+    await tester.pump(const Duration(milliseconds: 300));
+    final secondLeft = tester.getTopLeft(segmentFinder).dx;
+    expect(secondLeft, isNot(equals(firstLeft)));
+
     final gesture = tester.widget<GestureDetector>(
       find.descendant(
         of: find.byKey(const ValueKey('player-progress-hit-area')),
@@ -110,6 +126,30 @@ void main() {
     );
     expect(gesture.onTapDown, isNull);
     expect(gesture.onHorizontalDragStart, isNull);
+  });
+
+  testWidgets('first-click loading shows indeterminate track without prior song', (
+    tester,
+  ) async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    container.read(currentSongProvider.notifier).state = const {
+      'id': 'first-click',
+      'title': 'First Click',
+      'status': 'loading',
+    };
+
+    await _pumpPlayerBar(tester, container);
+
+    expect(
+      find.byKey(const ValueKey('player-progress-indeterminate-track')),
+      findsOneWidget,
+    );
+    final size = tester.getSize(
+      find.byKey(const ValueKey('player-progress-loading-slot')),
+    );
+    expect(size.width, greaterThan(0));
+    expect(size.height, greaterThanOrEqualTo(4));
   });
 
   testWidgets('player progress is empty and disabled after playback error', (
@@ -2866,7 +2906,7 @@ class _FakeMusicProvider implements MusicProvider {
   void rememberSongs(Iterable<Map<String, dynamic>> songs) {}
 
   @override
-  Future<List<Map<String, dynamic>>> searchSongs(String query) async =>
+  Future<List<Map<String, dynamic>>> searchSongs(String query, {int page = 1}) async =>
       const [];
 
   @override
@@ -2920,7 +2960,7 @@ class _SearchRecordingMusicProvider extends _FakeMusicProvider {
   _SearchRecordingMusicProvider(this.resultsByQuery);
 
   @override
-  Future<List<Map<String, dynamic>>> searchSongs(String query) async {
+  Future<List<Map<String, dynamic>>> searchSongs(String query, {int page = 1}) async {
     queries.add(query);
     return resultsByQuery[query] ?? const [];
   }
@@ -2937,7 +2977,7 @@ class _ProgressivePlaylistSearchProvider extends _FakeMusicProvider
   final Map<String, Future<PlaylistSummary>> summaries;
 
   @override
-  Future<List<Map<String, dynamic>>> searchSongs(String query) async => results;
+  Future<List<Map<String, dynamic>>> searchSongs(String query, {int page = 1}) async => results;
 
   @override
   Future<PlaylistSummary> getPlaylistSummary(Map<String, dynamic> playlist) {
