@@ -7,18 +7,21 @@ import '../services/library_service.dart';
 import '../services/app_settings.dart';
 import '../services/audio_cache_service.dart';
 import '../core/models/song.dart';
+import 'playback_track.dart';
+
+export 'playback_track.dart'
+    show
+        lyricsStatusLoading,
+        lyricsStatusLoaded,
+        lyricsStatusEmpty,
+        lyricsStatusTimeout,
+        lyricsTimeoutAtKey,
+        lyricsLoadingStartedAtKey;
 
 /// Request serial numbers to prevent old requests from overwriting new ones
 int playbackRequestSerial = 0;
 int lyricsRequestSerial = 0;
 
-/// Lyrics status constants
-const lyricsStatusLoading = 'loading';
-const lyricsStatusLoaded = 'loaded';
-const lyricsStatusEmpty = 'empty';
-const lyricsStatusTimeout = 'timeout';
-const lyricsTimeoutAtKey = 'lyricsTimedOutAt';
-const lyricsLoadingStartedAtKey = 'lyricsLoadingStartedAt';
 Duration lyricsLoadTimeout = const Duration(seconds: 15);
 Duration lyricsTimeoutNoticeDuration = const Duration(seconds: 6);
 
@@ -26,11 +29,16 @@ bool shouldShowLyricsTimeoutNotice(
   Map<String, dynamic>? song, {
   DateTime? now,
 }) {
-  if (song == null || song['lyricsStatus']?.toString() != lyricsStatusTimeout) {
+  if (song == null) {
     return false;
   }
 
-  final timeoutAt = int.tryParse(song[lyricsTimeoutAtKey]?.toString() ?? '');
+  final track = PlaybackTrack.fromJson(song);
+  if (!track.isLyricsTimeout) {
+    return false;
+  }
+
+  final timeoutAt = track.lyricsTimedOutAt;
   if (timeoutAt == null) return true;
 
   final elapsed = (now ?? DateTime.now()).millisecondsSinceEpoch - timeoutAt;
@@ -38,12 +46,16 @@ bool shouldShowLyricsTimeoutNotice(
 }
 
 bool isLyricsLoadingExpired(Map<String, dynamic>? song, {DateTime? now}) {
-  if (song == null || song['lyricsStatus']?.toString() != lyricsStatusLoading) {
+  if (song == null) {
     return false;
   }
-  final startedAt = int.tryParse(
-    song[lyricsLoadingStartedAtKey]?.toString() ?? '',
-  );
+
+  final track = PlaybackTrack.fromJson(song);
+  if (!track.isLyricsLoading) {
+    return false;
+  }
+
+  final startedAt = track.lyricsLoadingStartedAt;
   if (startedAt == null) return false;
   final elapsed = (now ?? DateTime.now()).millisecondsSinceEpoch - startedAt;
   return elapsed >= lyricsLoadTimeout.inMilliseconds;
@@ -53,16 +65,17 @@ void requestLyricsForCurrentSong(WidgetRef ref) {
   final song = ref.read(currentSongProvider);
   if (song == null) return;
 
-  final lyrics = song['lyrics']?.toString().trim() ?? '';
-  if (lyrics.isNotEmpty) return;
+  final track = PlaybackTrack.fromJson(song);
+  if (track.lyrics.trim().isNotEmpty) return;
 
   final lyricSerial = ++lyricsRequestSerial;
-  ref.read(currentSongProvider.notifier).state = {
-    ...song,
-    'lyricsStatus': lyricsStatusLoading,
-    lyricsLoadingStartedAtKey: DateTime.now().millisecondsSinceEpoch,
-    lyricsTimeoutAtKey: null,
-  };
+  ref.read(currentSongProvider.notifier).state = track
+      .copyWith(
+        lyricsStatus: LyricsStatus.loading,
+        lyricsLoadingStartedAt: DateTime.now().millisecondsSinceEpoch,
+        lyricsTimedOutAt: null,
+      )
+      .toJson();
 
   unawaited(
     loadLyricsForCurrentSong(
@@ -92,29 +105,31 @@ Future<void> startSongPlayback(
   ++lyricsRequestSerial;
 
   final previousSong = ref.read(currentSongProvider);
-  final previousStatus = previousSong?['status']?.toString();
+  final previousTrack = previousSong == null
+      ? null
+      : PlaybackTrack.fromJson(previousSong);
   final keepPreviousPlaybackVisible =
-      previousStatus == 'playing' || previousStatus == 'paused';
+      previousTrack?.isPlaying == true || previousTrack?.isPaused == true;
+  final requestedTrack = PlaybackTrack.fromJson(song);
 
   // Check if song already has lyrics
-  final initialLyrics = song['lyrics']?.toString().trim() ?? '';
+  final initialLyrics = requestedTrack.lyrics.trim();
   final initialLyricsStatus = initialLyrics.isEmpty
-      ? lyricsStatusLoading
-      : lyricsStatusLoaded;
+      ? LyricsStatus.loading
+      : LyricsStatus.loaded;
   var previousPlaybackStopped = false;
 
   void showRequestedSongLoading() {
     ref.read(playbackQueueProvider.notifier).state = queue;
     ref.read(currentSongIndexProvider.notifier).state = index;
-    ref.read(currentSongProvider.notifier).state = {
-      ...song,
-      'status': 'loading',
-      'lyricsStatus': initialLyricsStatus,
-      lyricsLoadingStartedAtKey: initialLyrics.isEmpty
-          ? DateTime.now().millisecondsSinceEpoch
-          : null,
-      lyricsTimeoutAtKey: null,
-    };
+    ref.read(currentSongProvider.notifier).state = requestedTrack
+        .withLoading(
+          lyricsStatus: initialLyricsStatus,
+          lyricsLoadingStartedAt: initialLyrics.isEmpty
+              ? DateTime.now().millisecondsSinceEpoch
+              : null,
+        )
+        .toJson();
   }
 
   if (!keepPreviousPlaybackVisible) {
@@ -128,7 +143,7 @@ Future<void> startSongPlayback(
     musicService.rememberSongs([song]);
 
     // Get playback URL
-    final playUrl = await musicService.getPlayUrl(song['id'].toString());
+    final playUrl = await musicService.getPlayUrl(requestedTrack.id ?? 'null');
 
     // Check if this request is still current
     if (requestSerial != playbackRequestSerial) return;
@@ -179,8 +194,11 @@ Future<void> startSongPlayback(
 
     // Merge lyrics: prefer PlaybackUrl.lyrics > currentSong.lyrics > initialLyrics
     final current = ref.read(currentSongProvider);
-    final currentLyrics = current?['id']?.toString() == song['id']?.toString()
-        ? (current?['lyrics']?.toString() ?? '')
+    final currentTrack = current == null
+        ? null
+        : PlaybackTrack.fromJson(current);
+    final currentLyrics = currentTrack?.sameSongAs(requestedTrack) == true
+        ? currentTrack?.lyrics ?? ''
         : '';
     final resolvedLyrics = playUrl.lyrics.trim().isNotEmpty
         ? playUrl.lyrics
@@ -189,20 +207,20 @@ Future<void> startSongPlayback(
         : initialLyrics;
 
     // Build enriched song data
-    final enriched = {
-      ...song,
-      'status': 'playing',
-      'playUrl': playUrl.url,
-      'lyrics': resolvedLyrics,
-      'lyricsStatus': resolvedLyrics.trim().isEmpty
-          ? lyricsStatusLoading
-          : lyricsStatusLoaded,
-      lyricsLoadingStartedAtKey: resolvedLyrics.trim().isEmpty
+    var enrichedTrack = requestedTrack.withPlaying(
+      playUrl: playUrl.url,
+      lyrics: resolvedLyrics,
+      lyricsStatus: resolvedLyrics.trim().isEmpty
+          ? LyricsStatus.loading
+          : LyricsStatus.loaded,
+      lyricsLoadingStartedAt: resolvedLyrics.trim().isEmpty
           ? DateTime.now().millisecondsSinceEpoch
           : null,
-      lyricsTimeoutAtKey: null,
-      if (playUrl.resolvedId.isNotEmpty) 'playbackId': playUrl.resolvedId,
-    };
+    );
+    if (playUrl.resolvedId.isNotEmpty) {
+      enrichedTrack = enrichedTrack.copyWith(playbackId: playUrl.resolvedId);
+    }
+    final enriched = enrichedTrack.toJson();
 
     // Update providers
     ref.read(playbackQueueProvider.notifier).state = queue;
@@ -245,15 +263,14 @@ Future<void> startSongPlayback(
 
       ref.read(playbackQueueProvider.notifier).state = queue;
       ref.read(currentSongIndexProvider.notifier).state = index;
-      ref.read(currentSongProvider.notifier).state = {
-        ...song,
-        'status': 'error',
-        'lyricsStatus': initialLyricsStatus,
-        lyricsLoadingStartedAtKey: initialLyrics.isEmpty
-            ? DateTime.now().millisecondsSinceEpoch
-            : null,
-        lyricsTimeoutAtKey: null,
-      };
+      ref.read(currentSongProvider.notifier).state = requestedTrack
+          .withPlaybackError(
+            lyricsStatus: initialLyricsStatus,
+            lyricsLoadingStartedAt: initialLyrics.isEmpty
+                ? DateTime.now().millisecondsSinceEpoch
+                : null,
+          )
+          .toJson();
     }
   }
 }
@@ -266,7 +283,8 @@ Future<void> loadLyricsForCurrentSong(
   required int requestSerial,
   required int lyricsSerial,
 }) async {
-  print('[PlaybackActions] 开始加载歌词: ${song['title']}');
+  final requestedTrack = PlaybackTrack.fromJson(song);
+  print('[PlaybackActions] 开始加载歌词: ${requestedTrack.title}');
 
   try {
     final musicService = ref.read(musicServiceProvider);
@@ -281,22 +299,25 @@ Future<void> loadLyricsForCurrentSong(
     }
 
     final current = ref.read(currentSongProvider);
-    if (current == null ||
-        current['id']?.toString() != song['id']?.toString()) {
+    final currentTrack = current == null
+        ? null
+        : PlaybackTrack.fromJson(current);
+    if (currentTrack == null || !currentTrack.sameSongAs(requestedTrack)) {
       print('[PlaybackActions] 当前歌曲已变化，放弃更新');
       return;
     }
 
-    final currentLyrics = current['lyrics']?.toString().trim() ?? '';
-    final resolvedSong = {
-      ...current,
-      if (lyrics.trim().isNotEmpty) 'lyrics': lyrics,
-      'lyricsStatus': lyrics.trim().isEmpty
-          ? (currentLyrics.isNotEmpty ? lyricsStatusLoaded : lyricsStatusEmpty)
-          : lyricsStatusLoaded,
-      lyricsLoadingStartedAtKey: null,
-      lyricsTimeoutAtKey: null,
-    };
+    final currentLyrics = currentTrack.lyrics.trim();
+    final resolvedTrack = lyrics.trim().isEmpty
+        ? currentTrack.copyWith(
+            lyricsStatus: currentLyrics.isNotEmpty
+                ? LyricsStatus.loaded
+                : LyricsStatus.empty,
+            lyricsLoadingStartedAt: null,
+            lyricsTimedOutAt: null,
+          )
+        : currentTrack.withLyricsLoaded(lyrics: lyrics);
+    final resolvedSong = resolvedTrack.toJson();
 
     ref.read(currentSongProvider.notifier).state = resolvedSong;
 
@@ -320,22 +341,21 @@ Future<void> loadLyricsForCurrentSong(
     }
 
     final current = ref.read(currentSongProvider);
-    if (current == null ||
-        current['id']?.toString() != song['id']?.toString()) {
+    final currentTrack = current == null
+        ? null
+        : PlaybackTrack.fromJson(current);
+    if (currentTrack == null || !currentTrack.sameSongAs(requestedTrack)) {
       return;
     }
 
-    final currentLyrics = current['lyrics']?.toString().trim() ?? '';
-    ref.read(currentSongProvider.notifier).state = {
-      ...current,
-      'lyricsStatus': currentLyrics.isEmpty
-          ? lyricsStatusTimeout
-          : lyricsStatusLoaded,
-      lyricsLoadingStartedAtKey: null,
-      lyricsTimeoutAtKey: currentLyrics.isEmpty
-          ? DateTime.now().millisecondsSinceEpoch
-          : null,
-    };
+    final currentLyrics = currentTrack.lyrics.trim();
+    ref.read(currentSongProvider.notifier).state = currentLyrics.isEmpty
+        ? currentTrack
+              .withLyricsTimeout(
+                timedOutAt: DateTime.now().millisecondsSinceEpoch,
+              )
+              .toJson()
+        : currentTrack.withLyricsLoaded().toJson();
   } catch (e) {
     print('[PlaybackActions] 歌词加载失败: $e');
 
@@ -345,19 +365,16 @@ Future<void> loadLyricsForCurrentSong(
     }
 
     final current = ref.read(currentSongProvider);
-    if (current == null ||
-        current['id']?.toString() != song['id']?.toString()) {
+    final currentTrack = current == null
+        ? null
+        : PlaybackTrack.fromJson(current);
+    if (currentTrack == null || !currentTrack.sameSongAs(requestedTrack)) {
       return;
     }
 
-    final currentLyrics = current['lyrics']?.toString().trim() ?? '';
-    ref.read(currentSongProvider.notifier).state = {
-      ...current,
-      'lyricsStatus': currentLyrics.isEmpty
-          ? lyricsStatusEmpty
-          : lyricsStatusLoaded,
-      lyricsLoadingStartedAtKey: null,
-      lyricsTimeoutAtKey: null,
-    };
+    final currentLyrics = currentTrack.lyrics.trim();
+    ref.read(currentSongProvider.notifier).state = currentLyrics.isEmpty
+        ? currentTrack.withLyricsEmpty().toJson()
+        : currentTrack.withLyricsLoaded().toJson();
   }
 }
