@@ -11,8 +11,6 @@ import '../core/models/song.dart';
 /// Request serial numbers to prevent old requests from overwriting new ones
 int playbackRequestSerial = 0;
 int lyricsRequestSerial = 0;
-final Expando<Future<void>> _playbackSourceMutationTails =
-    Expando<Future<void>>('playbackSourceMutationTail');
 
 /// Lyrics status constants
 const lyricsStatusLoading = 'loading';
@@ -114,13 +112,14 @@ Future<void> startSongPlayback(
     };
   }
 
+  // Always show loading immediately (including the first click after launch).
   showRequestedSongLoading();
 
   try {
+    // Stop current audio first so rapid clicks feel responsive.
     final player = ref.read(audioPlayerProvider);
     await player.stop();
     previousPlaybackStopped = true;
-
     if (requestSerial != playbackRequestSerial) return;
 
     // Remember songs for cache
@@ -129,13 +128,24 @@ Future<void> startSongPlayback(
     musicService.rememberSongs([song]);
 
     // Get playback URL
-    final playUrl = await musicService.getPlayUrl(song['id'].toString());
+    final songId = song['id'].toString();
+    final playUrl = await musicService.getPlayUrl(songId);
 
     // Check if this request is still current
     if (requestSerial != playbackRequestSerial) return;
 
-    // Windows audioplayers doesn't support custom headers
-    // Download to a stable local cache file if headers are required.
+    // Prefer cached metadata (e.g. GDStudio coverUrl filled after search/play).
+    final cachedSong = musicService.getCachedSongMap(songId);
+    final songWithMeta = {
+      if (cachedSong != null) ...cachedSong,
+      ...song,
+      if ((song['coverUrl']?.toString().trim().isEmpty ?? true) &&
+          (cachedSong?['coverUrl']?.toString().trim().isNotEmpty ?? false))
+        'coverUrl': cachedSong!['coverUrl'],
+    };
+
+    // Windows audioplayers doesn't support custom headers.
+    // Download to a stable local cache file if headers are required (Bilibili).
     String sourceUrl = playUrl.url;
     if (playUrl.headers.isNotEmpty) {
       print('[PlaybackActions] 检测到需要 headers，准备本地缓存');
@@ -162,28 +172,22 @@ Future<void> startSongPlayback(
     // Check again after download
     if (requestSerial != playbackRequestSerial) return;
 
-    final previousSourceMutation =
-        _playbackSourceMutationTails[player] ?? Future<void>.value();
-    final sourceMutation = previousSourceMutation.then((_) async {
-      if (requestSerial != playbackRequestSerial) return false;
-      await player.setSource(
-        sourceUrl.startsWith('http')
-            ? UrlSource(sourceUrl)
-            : DeviceFileSource(sourceUrl),
-      );
-      if (requestSerial != playbackRequestSerial) return false;
-      await player.resume();
-      if (requestSerial != playbackRequestSerial) {
-        await player.stop();
-        return false;
-      }
-      return true;
-    });
-    _playbackSourceMutationTails[player] = sourceMutation.then<void>(
-      (_) {},
-      onError: (Object _, StackTrace _) {},
+    // Set source from URL or local file
+    await player.setSource(
+      sourceUrl.startsWith('http')
+          ? UrlSource(sourceUrl)
+          : DeviceFileSource(sourceUrl),
     );
-    if (!await sourceMutation) return;
+    if (requestSerial != playbackRequestSerial) return;
+
+    // Start playback; do not let a hung resume leave the UI on "loading"
+    // forever if the engine already moved on.
+    try {
+      await player.resume().timeout(const Duration(seconds: 8));
+    } on TimeoutException {
+      print('[PlaybackActions] resume 超时，继续以当前播放器状态收尾');
+    }
+    if (requestSerial != playbackRequestSerial) return;
 
     // Merge lyrics: prefer PlaybackUrl.lyrics > currentSong.lyrics > initialLyrics
     final current = ref.read(currentSongProvider);
@@ -196,9 +200,9 @@ Future<void> startSongPlayback(
         ? currentLyrics
         : initialLyrics;
 
-    // Build enriched song data
+    // Build enriched song data — flip status off loading as soon as we resume.
     final enriched = {
-      ...song,
+      ...songWithMeta,
       'status': 'playing',
       'playUrl': playUrl.url,
       'lyrics': resolvedLyrics,

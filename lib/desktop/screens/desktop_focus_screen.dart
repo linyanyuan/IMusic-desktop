@@ -165,7 +165,7 @@ class _FocusContentState extends ConsumerState<_FocusContent> {
   @override
   Widget build(BuildContext context) {
     final positionAsync = ref.watch(playbackPositionProvider);
-    final position = positionAsync.value ?? Duration.zero;
+    final position = positionAsync.valueOrNull ?? Duration.zero;
 
     return Row(
       children: [

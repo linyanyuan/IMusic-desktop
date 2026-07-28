@@ -93,7 +93,7 @@ class _EchoLyricsProvider implements MusicProvider {
   }
 
   @override
-  Future<List<Map<String, dynamic>>> searchSongs(String query) async =>
+  Future<List<Map<String, dynamic>>> searchSongs(String query, {int page = 1}) async =>
       const [];
 
   @override

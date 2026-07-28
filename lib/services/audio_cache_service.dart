@@ -69,6 +69,39 @@ class AudioCacheService {
   AudioCacheService({AudioDownloader? downloader})
     : _downloader = downloader ?? _defaultDownloader;
 
+  /// Read-only cache lookup. Returns a usable local path or null.
+  /// Does not download.
+  Future<String?> findCached({
+    required PlaybackUrl playUrl,
+    required String cacheDirectory,
+  }) async {
+    final dir = await _resolveCacheDirectory(cacheDirectory);
+    final cacheFile = File(
+      _joinPath(dir.path, _cacheFileName(_cacheIdentity(playUrl))),
+    );
+    if (!await _hasUsableFile(cacheFile)) return null;
+    await cacheFile.setLastModified(DateTime.now());
+    return cacheFile.path;
+  }
+
+  /// Delete the cache entry for [playUrl] if present.
+  Future<void> invalidate({
+    required PlaybackUrl playUrl,
+    required String cacheDirectory,
+  }) async {
+    final dir = await _resolveCacheDirectory(cacheDirectory);
+    final cacheFile = File(
+      _joinPath(dir.path, _cacheFileName(_cacheIdentity(playUrl))),
+    );
+    if (await cacheFile.exists()) {
+      await cacheFile.delete();
+    }
+    final partialFile = File('${cacheFile.path}.part');
+    if (await partialFile.exists()) {
+      await partialFile.delete();
+    }
+  }
+
   Future<AudioCacheResult> getOrDownload({
     required PlaybackUrl playUrl,
     required String cacheDirectory,

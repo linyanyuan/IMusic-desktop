@@ -62,14 +62,22 @@ class BilibiliMusicProvider implements MusicProvider, PlaylistSummaryProvider {
   }
 
   @override
-  Future<List<Map<String, dynamic>>> searchSongs(String query) async {
+  Future<List<Map<String, dynamic>>> searchSongs(
+    String query, {
+    int page = 1,
+  }) async {
     if (query.trim().isEmpty) return [];
+    final safePage = page < 1 ? 1 : page;
 
     try {
-      print('[BilibiliMusicProvider] searchSongs - 查询: $query');
+      print('[BilibiliMusicProvider] searchSongs - 查询: $query page=$safePage');
       final response = await _dio.get<Map<String, dynamic>>(
         '/x/web-interface/wbi/search/type',
-        queryParameters: {'search_type': 'video', 'keyword': query, 'page': 1},
+        queryParameters: {
+          'search_type': 'video',
+          'keyword': query,
+          'page': safePage,
+        },
       );
 
       print(

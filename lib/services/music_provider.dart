@@ -56,8 +56,13 @@ abstract class MusicProvider {
     return song['lyrics']?.toString().trim() ?? '';
   }
 
-  /// Search songs by query
-  Future<List<Map<String, dynamic>>> searchSongs(String query);
+  /// Search songs by query.
+  ///
+  /// [page] is 1-based. Providers that do not support paging ignore it.
+  Future<List<Map<String, dynamic>>> searchSongs(
+    String query, {
+    int page = 1,
+  });
 
   /// Get recommended songs
   Future<List<Map<String, dynamic>>> getRecommendedSongs();

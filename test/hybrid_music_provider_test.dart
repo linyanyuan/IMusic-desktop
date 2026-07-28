@@ -1,5 +1,7 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:deepvibe_desktop/services/gdstudio_music_client.dart';
 import 'package:deepvibe_desktop/services/hybrid_music_provider.dart';
 import 'package:deepvibe_desktop/services/music_provider.dart';
 
@@ -115,6 +117,8 @@ void main() {
           ],
         },
       ),
+      // Force metadata path (no live GDStudio network in unit tests).
+      gdStudio: _emptyGdStudioClient(),
     );
 
     final results = await provider.searchMetadataSongs('热歌');
@@ -166,27 +170,189 @@ void main() {
     expect(results.every((item) => item['resultType'] == 'playlist'), isTrue);
   });
 
-  test('playback matching reuses cached metadata search results', () async {
-    final metadata = _CountingMetadataProvider();
-    final playback = _ResolvingPlaybackProvider();
+  test('searchMetadataSongs prefers GDStudio when available', () async {
+    final dio = Dio();
+    dio.httpClientAdapter = _SingleResponseAdapter(
+      ResponseBody.fromString(
+        '[{"id":"9","name":"Hit","artist":["Band"],"album":"","url_id":"9","lyric_id":"9","source":"joox"}]',
+        200,
+        headers: {
+          Headers.contentTypeHeader: [Headers.jsonContentType],
+        },
+      ),
+    );
+    final metadata = _ThrowOnSearchMetadataProvider();
     final provider = HybridMusicProvider(
       metadata: metadata,
-      playback: playback,
+      playback: const _UnusedProvider(),
+      gdStudio: GdStudioMusicClient(dio: dio, sources: const ['joox']),
     );
-    provider.rememberSongs(const [
-      {
-        'id': 'meting:tencent:cached-song',
-        'title': '缓存歌曲',
-        'artist': '缓存歌手',
-        'resultType': 'song',
+
+    final songs = await provider.searchMetadataSongs('AOA');
+    expect(songs.single['id'], 'gdstudio:joox:9');
+    expect(metadata.searchCalls, 0);
+  });
+
+  test('searchMetadataSongs falls back to metadata when GDStudio empty', () async {
+    final dio = Dio();
+    dio.httpClientAdapter = _SingleResponseAdapter(
+      ResponseBody.fromString(
+        '[]',
+        200,
+        headers: {
+          Headers.contentTypeHeader: [Headers.jsonContentType],
+        },
+      ),
+    );
+    final metadata = const _MetadataProvider(
+      searchResults: {
+        'AOA': [
+          {
+            'id': 'meting:tencent:1',
+            'title': 'Fallback',
+            'artist': 'X',
+            'resultType': 'song',
+          },
+        ],
       },
-    ]);
+      details: {},
+    );
+    final provider = HybridMusicProvider(
+      metadata: metadata,
+      playback: const _UnusedProvider(),
+      gdStudio: GdStudioMusicClient(dio: dio, sources: const ['joox']),
+    );
 
-    final playUrl = await provider.getPlayUrl('meting:tencent:cached-song');
+    final songs = await provider.searchMetadataSongs('AOA');
+    expect(songs.single['id'], 'meting:tencent:1');
+    expect(songs.single['playbackSource'], 'bilibili');
+  });
 
-    expect(metadata.detailCalls, 0);
-    expect(playback.searchQueries, ['缓存歌手 缓存歌曲']);
-    expect(playUrl.resolvedId, 'bilibili:BVcached:p1');
+  test(
+    'title-only search cache still fetches song detail before Bilibili search',
+    () async {
+      final metadata = _CountingMetadataProvider();
+      final playback = _ResolvingPlaybackProvider();
+      final provider = HybridMusicProvider(
+        metadata: metadata,
+        playback: playback,
+      );
+      provider.rememberSongs(const [
+        {
+          'id': 'meting:tencent:cached-song',
+          'title': '缓存歌曲',
+          'artist': '缓存歌手',
+          'resultType': 'song',
+        },
+      ]);
+
+      final playUrl = await provider.getPlayUrl('meting:tencent:cached-song');
+
+      expect(metadata.detailCalls, 1);
+      expect(playback.searchQueries, ['缓存歌手 缓存歌曲']);
+      expect(playUrl.resolvedId, 'bilibili:BVcached:p1');
+    },
+  );
+
+  test(
+    'detail playbackId skips Bilibili candidate search',
+    () async {
+      final metadata = _MetadataProvider(
+        searchResults: const {},
+        details: const {
+          'meting:tencent:detail-song': {
+            'id': 'meting:tencent:detail-song',
+            'title': '详情歌曲',
+            'artist': '详情歌手',
+            'playbackId': 'bilibili:BVdetail:p1',
+            'lyrics': '[00:00.00]detail',
+          },
+        },
+      );
+      final playback = _ResolvingPlaybackProvider();
+      final provider = HybridMusicProvider(
+        metadata: metadata,
+        playback: playback,
+      );
+
+      final playUrl = await provider.getPlayUrl('meting:tencent:detail-song');
+
+      expect(playback.searchQueries, isEmpty);
+      expect(playUrl.resolvedId, 'bilibili:BVdetail:p1');
+      expect(playUrl.lyrics, '[00:00.00]detail');
+    },
+  );
+
+  test('bestBilibiliMatch hard-excludes instrumental candidates', () {
+    final best = HybridMusicProvider.bestBilibiliMatch(
+      const {'title': '平凡之路', 'artist': '朴树', 'duration': 240000},
+      const [
+        {
+          'id': 'bilibili:BVinstru',
+          'title': '平凡之路 伴奏 off vocal',
+          'artist': '朴树',
+          'duration': 240000,
+        },
+        {
+          'id': 'bilibili:BVofficial',
+          'title': '平凡之路',
+          'artist': '朴树',
+          'duration': 240000,
+        },
+      ],
+    );
+    expect(best?['id'], 'bilibili:BVofficial');
+  });
+
+  test('bestBilibiliMatch returns null when only instrumental remains', () {
+    final best = HybridMusicProvider.bestBilibiliMatch(
+      const {'title': '平凡之路', 'artist': '朴树', 'duration': 240000},
+      const [
+        {
+          'id': 'bilibili:BVinstru',
+          'title': '平凡之路 instrumental',
+          'artist': '朴树',
+          'duration': 240000,
+        },
+      ],
+    );
+    expect(best, isNull);
+  });
+
+  test('instrumental target title allows instrumental candidates', () {
+    final best = HybridMusicProvider.bestBilibiliMatch(
+      const {'title': '夜的钢琴曲 纯音乐', 'artist': '石进', 'duration': 240000},
+      const [
+        {
+          'id': 'bilibili:BVpiano',
+          'title': '夜的钢琴曲 纯音乐',
+          'artist': '石进',
+          'duration': 240000,
+        },
+      ],
+    );
+    expect(best?['id'], 'bilibili:BVpiano');
+  });
+
+  test('soft-downgrade prefers official over live/cover at equal match', () {
+    final best = HybridMusicProvider.bestBilibiliMatch(
+      const {'title': '海阔天空', 'artist': 'Beyond', 'duration': 300000},
+      const [
+        {
+          'id': 'bilibili:BVlive',
+          'title': '海阔天空 live 现场',
+          'artist': 'Beyond',
+          'duration': 300000,
+        },
+        {
+          'id': 'bilibili:BVofficial',
+          'title': '海阔天空',
+          'artist': 'Beyond',
+          'duration': 300000,
+        },
+      ],
+    );
+    expect(best?['id'], 'bilibili:BVofficial');
   });
 
   test(
@@ -230,7 +396,7 @@ class _CountingMetadataProvider implements MusicProvider {
   }
 
   @override
-  Future<List<Map<String, dynamic>>> searchSongs(String query) async =>
+  Future<List<Map<String, dynamic>>> searchSongs(String query, {int page = 1}) async =>
       const [];
 
   @override
@@ -264,7 +430,7 @@ class _ResolvingPlaybackProvider implements MusicProvider {
   Future<String> getLyrics(Map<String, dynamic> song) async => '';
 
   @override
-  Future<List<Map<String, dynamic>>> searchSongs(String query) async {
+  Future<List<Map<String, dynamic>>> searchSongs(String query, {int page = 1}) async {
     searchQueries.add(query);
     return const [
       {
@@ -317,7 +483,7 @@ class _MetadataProvider implements MusicProvider {
   }
 
   @override
-  Future<List<Map<String, dynamic>>> searchSongs(String query) async {
+  Future<List<Map<String, dynamic>>> searchSongs(String query, {int page = 1}) async {
     return searchResults[query] ?? const [];
   }
 
@@ -356,7 +522,7 @@ class _UnusedProvider implements MusicProvider {
   Future<String> getLyrics(Map<String, dynamic> song) async => '';
 
   @override
-  Future<List<Map<String, dynamic>>> searchSongs(String query) async =>
+  Future<List<Map<String, dynamic>>> searchSongs(String query, {int page = 1}) async =>
       const [];
 
   @override
@@ -384,6 +550,78 @@ class _UnusedProvider implements MusicProvider {
   }
 }
 
+class _ThrowOnSearchMetadataProvider implements MusicProvider {
+  int searchCalls = 0;
+
+  @override
+  void rememberSongs(Iterable<Map<String, dynamic>> songs) {}
+
+  @override
+  Future<String> getLyrics(Map<String, dynamic> song) async => '';
+
+  @override
+  Future<List<Map<String, dynamic>>> searchSongs(String query, {int page = 1}) async {
+    searchCalls += 1;
+    throw StateError('metadata search should not run when GDStudio hits');
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> getRecommendedSongs() async => const [];
+
+  @override
+  Future<List<Map<String, dynamic>>> getHotPlaylists({
+    int? limit,
+    int? offset,
+  }) async => const [];
+
+  @override
+  Future<Map<String, dynamic>> getPlaylist(String id, {int? limit}) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<Map<String, dynamic>> getSongDetail(String id) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<PlaybackUrl> getPlayUrl(String id) {
+    throw UnimplementedError();
+  }
+}
+
+class _SingleResponseAdapter implements HttpClientAdapter {
+  _SingleResponseAdapter(this.body);
+
+  final ResponseBody body;
+
+  @override
+  void close({bool force = false}) {}
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<List<int>>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    return body;
+  }
+}
+
+GdStudioMusicClient _emptyGdStudioClient() {
+  final dio = Dio();
+  dio.httpClientAdapter = _SingleResponseAdapter(
+    ResponseBody.fromString(
+      '[]',
+      200,
+      headers: {
+        Headers.contentTypeHeader: [Headers.jsonContentType],
+      },
+    ),
+  );
+  return GdStudioMusicClient(dio: dio, sources: const ['joox']);
+}
+
 class _PlaybackProviderWithLyrics implements MusicProvider {
   const _PlaybackProviderWithLyrics();
 
@@ -395,7 +633,7 @@ class _PlaybackProviderWithLyrics implements MusicProvider {
       '[00:00.00]B站字幕歌词';
 
   @override
-  Future<List<Map<String, dynamic>>> searchSongs(String query) async =>
+  Future<List<Map<String, dynamic>>> searchSongs(String query, {int page = 1}) async =>
       const [];
 
   @override
@@ -439,7 +677,7 @@ class _ScopedPlaybackProvider implements MusicProvider {
   Future<String> getLyrics(Map<String, dynamic> song) async => '';
 
   @override
-  Future<List<Map<String, dynamic>>> searchSongs(String query) async =>
+  Future<List<Map<String, dynamic>>> searchSongs(String query, {int page = 1}) async =>
       results[query] ?? const [];
 
   @override

@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'gdstudio_music_client.dart';
 import 'music_provider.dart';
 import '../shared/collection_lyrics.dart';
 
@@ -6,26 +9,37 @@ import '../shared/collection_lyrics.dart';
 /// This is the main provider that coordinates:
 /// - Metadata (lyrics, song info) from Meting/Default
 /// - Playback URLs from Bilibili
+/// - Preferred song-tab path via GDStudio (search + direct URL), with fallback
 ///
 /// For meting songs: fetches metadata, then resolves Bilibili playback ID
 /// For Bilibili songs: uses direct playback, but lyrics come from reverse metadata search
 class HybridMusicProvider
     implements MusicProvider, PlaylistSummaryProvider, PlaybackIdResolver {
-  HybridMusicProvider({required this.metadata, required this.playback})
-    : _songCache = {};
+  HybridMusicProvider({
+    required this.metadata,
+    required this.playback,
+    GdStudioMusicClient? gdStudio,
+  }) : gdStudio = gdStudio ?? GdStudioMusicClient(),
+       _songCache = {};
 
   final MusicProvider metadata;
   final MusicProvider playback;
+  final GdStudioMusicClient gdStudio;
   final Map<String, Map<String, dynamic>> _songCache;
 
   @override
-  Future<List<Map<String, dynamic>>> searchSongs(String query) async {
+  Future<List<Map<String, dynamic>>> searchSongs(
+    String query, {
+    int page = 1,
+  }) async {
+    final safePage = page < 1 ? 1 : page;
     // Start both searches in parallel
     final metadataFuture = metadata
-        .searchSongs(query)
+        .searchSongs(query, page: safePage)
         .catchError((_) => <Map<String, dynamic>>[]);
     final playbackFuture = _searchPlayback(
       query,
+      page: safePage,
     ).catchError((_) => <Map<String, dynamic>>[]);
 
     // Wait up to 800ms for metadata
@@ -59,10 +73,27 @@ class HybridMusicProvider
     );
   }
 
-  /// Metadata songs only (Meting/Default), marked for Bilibili playback.
-  Future<List<Map<String, dynamic>>> searchMetadataSongs(String query) async {
+  /// Metadata songs tab: prefer GDStudio direct results, else Meting/Default
+  /// (still marked for Bilibili playback as fallback at play time).
+  Future<List<Map<String, dynamic>>> searchMetadataSongs(
+    String query, {
+    int page = 1,
+  }) async {
+    final safePage = page < 1 ? 1 : page;
+    try {
+      final gds = await gdStudio.searchSongs(query, page: safePage);
+      if (gds.isNotEmpty) {
+        print('[Hybrid] 歌曲 tab 使用 GDStudio 结果: ${gds.length} page=$safePage');
+        _cacheSongs(gds);
+        return gds;
+      }
+      print('[Hybrid] GDStudio 搜索为空，回退元数据搜索 page=$safePage');
+    } catch (e) {
+      print('[Hybrid] GDStudio 搜索失败，回退元数据: $e');
+    }
+
     final results = await metadata
-        .searchSongs(query)
+        .searchSongs(query, page: safePage)
         .catchError((_) => <Map<String, dynamic>>[]);
     final songs = results
         .where(_isSongResult)
@@ -79,8 +110,10 @@ class HybridMusicProvider
 
   /// Bilibili playlists only (no metadata songs).
   Future<List<Map<String, dynamic>>> searchBilibiliPlaylists(
-    String query,
-  ) async {
+    String query, {
+    int page = 1,
+  }) async {
+    final safePage = page < 1 ? 1 : page;
     final results = <Map<String, dynamic>>[];
     final seenIds = <String>{};
 
@@ -94,20 +127,25 @@ class HybridMusicProvider
     }
 
     try {
-      addPlaylists(await _searchPlayback(query));
+      addPlaylists(await _searchPlayback(query, page: safePage));
     } catch (_) {}
 
-    if (!_looksLikePlaylistQuery(query) || results.isEmpty) {
+    // Only expand with "歌单" suffix on the first page to avoid duplicate sets.
+    if (safePage == 1 &&
+        (!_looksLikePlaylistQuery(query) || results.isEmpty)) {
       try {
-        addPlaylists(await _searchPlayback('$query 歌单'));
+        addPlaylists(await _searchPlayback('$query 歌单', page: 1));
       } catch (_) {}
     }
 
     return results;
   }
 
-  Future<List<Map<String, dynamic>>> _searchPlayback(String query) async {
-    return (await playback.searchSongs(query))
+  Future<List<Map<String, dynamic>>> _searchPlayback(
+    String query, {
+    int page = 1,
+  }) async {
+    return (await playback.searchSongs(query, page: page))
         .map(
           (song) => {
             ...song,
@@ -262,7 +300,35 @@ class HybridMusicProvider
 
   @override
   Future<PlaybackUrl> getPlayUrl(String id) async {
-    // For pure Bilibili songs, clear lyrics (will be loaded async)
+    // GDStudio song-tab entries: direct URL first, then Bilibili by title.
+    if (GdStudioMusicClient.isGdStudioId(id)) {
+      try {
+        final direct = await gdStudio.getPlayUrl(id);
+        if (direct.url.trim().isNotEmpty) {
+          print('[Hybrid] GDStudio 直链播放: $id');
+          // Cover must not block the play path.
+          unawaited(_ensureGdStudioCover(id));
+          return direct;
+        }
+      } catch (e) {
+        print('[Hybrid] GDStudio 取链失败，回退 B 站: $e');
+      }
+      final cached = _songCache[id] ?? {'id': id};
+      try {
+        final resolvedId = await _resolveBilibiliPlaybackId(cached);
+        final playUrl = await playback.getPlayUrl(resolvedId);
+        return PlaybackUrl(
+          playUrl.url,
+          headers: playUrl.headers,
+          lyrics: playUrl.lyrics,
+          resolvedId: resolvedId,
+        );
+      } catch (e) {
+        throw StateError('无法获取播放地址: ${e.toString()}');
+      }
+    }
+
+    // Pure Bilibili songs
     if (!_isMetingId(id)) {
       final playUrl = await playback.getPlayUrl(id);
       return PlaybackUrl(
@@ -273,16 +339,26 @@ class HybridMusicProvider
       );
     }
 
-    // For meting songs: get metadata, resolve Bilibili playback
+    // For meting songs: detail first, then stable playbackId, then search.
     try {
       final cached = _songCache[id];
-      final detail =
-          cached != null && _hasUsefulText(cached['title'], unknown: '未知歌曲')
-          ? cached
-          : _mergeCachedDetail(id, await metadata.getSongDetail(id));
-      final playbackId = detail['playbackId']?.toString();
-      final resolvedId = playbackId?.isNotEmpty == true
-          ? playbackId!
+      final existingPlaybackId =
+          cached?['playbackId']?.toString().trim() ?? '';
+      Map<String, dynamic> detail;
+      if (existingPlaybackId.isNotEmpty) {
+        // Stable playback id already known — still merge detail for lyrics.
+        detail = cached != null
+            ? _mergeCachedDetail(id, cached)
+            : _mergeCachedDetail(id, await metadata.getSongDetail(id));
+      } else {
+        // Search-cache title alone must not skip detail lookup.
+        detail = _mergeCachedDetail(id, await metadata.getSongDetail(id));
+      }
+      final detailPlaybackId = detail['playbackId']?.toString().trim() ?? '';
+      final resolvedId = detailPlaybackId.isNotEmpty
+          ? detailPlaybackId
+          : existingPlaybackId.isNotEmpty
+          ? existingPlaybackId
           : await _resolveBilibiliPlaybackId(detail);
       final playUrl = await playback.getPlayUrl(resolvedId);
       final lyrics = detail['lyrics']?.toString() ?? '';
@@ -308,6 +384,20 @@ class HybridMusicProvider
     if (existing.isNotEmpty) return existing;
 
     final id = song['id']?.toString() ?? '';
+
+    if (GdStudioMusicClient.isGdStudioId(id)) {
+      final parsed = GdStudioMusicClient.parseSongId(id);
+      if (parsed == null) return '';
+      final (source, mediaId) = parsed;
+      final lyricId = song['lyric_id']?.toString().trim().isNotEmpty == true
+          ? song['lyric_id'].toString()
+          : mediaId;
+      try {
+        return await gdStudio.getLyric(source: source, lyricId: lyricId);
+      } catch (_) {
+        return '';
+      }
+    }
 
     // For meting songs: direct metadata lyrics
     if (_isMetingId(id)) {
@@ -489,8 +579,13 @@ class HybridMusicProvider
   ) {
     var bestScore = -1;
     Map<String, dynamic>? best;
+    final targetTitle = target['title']?.toString() ?? '';
     for (final candidate in candidates) {
       if (candidate['resultType']?.toString() == 'playlist') continue;
+      final candidateTitle = candidate['title']?.toString() ?? '';
+      if (_isHardExcludedInstrumental(targetTitle, candidateTitle)) {
+        continue;
+      }
       final score = _matchScore(target, candidate);
       if (score > bestScore) {
         bestScore = score;
@@ -498,6 +593,47 @@ class HybridMusicProvider
       }
     }
     return bestScore <= 0 ? null : best;
+  }
+
+  /// Hard-exclude off-vocal / instrumental candidates unless the target itself
+  /// is an instrumental/pure-music work.
+  static bool _isHardExcludedInstrumental(
+    String targetTitle,
+    String candidateTitle,
+  ) {
+    final targetHas = _containsAnyMarker(targetTitle, _hardInstrumentalMarkers);
+    if (targetHas) return false;
+    return _containsAnyMarker(candidateTitle, _hardInstrumentalMarkers);
+  }
+
+  static const List<String> _hardInstrumentalMarkers = [
+    '伴奏',
+    '纯音乐',
+    '背景音乐',
+    'bgm',
+    'instrumental',
+    'karaoke',
+    'off vocal',
+    'offvocal',
+    '无人声',
+    '消音',
+  ];
+
+  static const List<String> _softDowngradeMarkers = [
+    'dance practice',
+    '练习室',
+    'live',
+    '现场',
+    '翻唱',
+    'cover',
+  ];
+
+  static bool _containsAnyMarker(String text, List<String> markers) {
+    final normalized = text.toLowerCase();
+    for (final marker in markers) {
+      if (normalized.contains(marker.toLowerCase())) return true;
+    }
+    return false;
   }
 
   static Map<String, dynamic> _withBilibiliPlaybackSource(
@@ -529,6 +665,38 @@ class HybridMusicProvider
       final id = song['id']?.toString() ?? '';
       if (id.isNotEmpty) _songCache[id] = song;
     }
+  }
+
+  /// Fill coverUrl for a GDStudio song if still missing (player bar).
+  Future<void> _ensureGdStudioCover(String id) async {
+    final cached = _songCache[id];
+    if (cached == null) return;
+    final existing = cached['coverUrl']?.toString().trim() ?? '';
+    if (existing.isNotEmpty) return;
+
+    final source = cached['gdstudioSource']?.toString().trim() ?? '';
+    final picId = cached['pic_id']?.toString().trim() ?? '';
+    if (source.isEmpty || picId.isEmpty) return;
+
+    final hinted = GdStudioMusicClient.coverUrlHint(
+      source: source,
+      picId: picId,
+    );
+    if (hinted != null && hinted.isNotEmpty) {
+      _songCache[id] = {...cached, 'coverUrl': hinted};
+      return;
+    }
+
+    try {
+      final url = await gdStudio.getPicUrl(
+        source: source,
+        picId: picId,
+        size: 300,
+      );
+      if (url != null && url.isNotEmpty) {
+        _songCache[id] = {...cached, 'coverUrl': url};
+      }
+    } catch (_) {}
   }
 
   Map<String, dynamic> _mergeCachedDetail(
@@ -592,11 +760,14 @@ class HybridMusicProvider
       score -= 70;
     }
 
-    // Penalize compilations/playlists
+    // Soft-downgrade practice/live/cover; hard instrumental already filtered.
     if (RegExp(
-      r'(合集|歌单|playlist|live|现场|翻唱|cover)',
+      r'(合集|歌单|playlist)',
       caseSensitive: false,
     ).hasMatch(candidateTitle)) {
+      score -= 18;
+    }
+    if (_containsAnyMarker(candidateTitle, _softDowngradeMarkers)) {
       score -= 18;
     }
     return score;
