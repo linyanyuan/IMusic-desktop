@@ -101,6 +101,20 @@ class DesktopSettingsScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 18),
                 _SettingsSection(
+                  title: '播放源',
+                  c: c,
+                  children: [
+                    _SettingsRow(
+                      title: 'ChKSz API 密钥',
+                      description:
+                          '用于 ChKSz·网易云源的搜索与播放，仅保存在本机；获取密钥：api.chksz.com/login',
+                      c: c,
+                      child: _ChkszApiKeyField(c: c, settings: settings),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                _SettingsSection(
                   title: '歌词',
                   c: c,
                   children: [
@@ -383,6 +397,123 @@ class _CacheDirectoryField extends ConsumerWidget {
       ),
       alignment: Alignment.centerLeft,
       child: child,
+    );
+  }
+}
+
+class _ChkszApiKeyField extends ConsumerStatefulWidget {
+  final DeepVibeColors c;
+  final AppSettings settings;
+
+  const _ChkszApiKeyField({required this.c, required this.settings});
+
+  @override
+  ConsumerState<_ChkszApiKeyField> createState() => _ChkszApiKeyFieldState();
+}
+
+class _ChkszApiKeyFieldState extends ConsumerState<_ChkszApiKeyField> {
+  late final TextEditingController _controller;
+  bool _obscured = true;
+  bool _saved = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.settings.chkszApiKey);
+  }
+
+  @override
+  void didUpdateWidget(covariant _ChkszApiKeyField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // AppSettings loads from SharedPreferences asynchronously; once the real
+    // stored key arrives, sync the field — but never clobber user edits.
+    if (_saved &&
+        widget.settings.chkszApiKey != oldWidget.settings.chkszApiKey) {
+      _controller.text = widget.settings.chkszApiKey;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final value = _controller.text.trim();
+    await ref.read(appSettingsProvider.notifier).setChkszApiKey(value);
+    if (!mounted) return;
+    setState(() => _saved = true);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(value.isEmpty ? '已清除 ChKSz API 密钥' : 'ChKSz API 密钥已保存'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = widget.c;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          key: const ValueKey('settings-chksz-api-key-field'),
+          constraints: const BoxConstraints(minHeight: 42),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: c.background.withValues(alpha: 0.72),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: c.divider),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _controller,
+                  obscureText: _obscured,
+                  style: TextStyle(color: c.textPrimary, fontSize: 13),
+                  decoration: InputDecoration(
+                    hintText: '未配置（可用 --dart-define=CHKSZ_API_KEY 注入）',
+                    hintStyle: TextStyle(color: c.textMuted, fontSize: 13),
+                    border: InputBorder.none,
+                    isDense: true,
+                  ),
+                  onChanged: (_) {
+                    if (_saved) setState(() => _saved = false);
+                  },
+                  onSubmitted: (_) => _save(),
+                ),
+              ),
+              IconButton(
+                tooltip: _obscured ? '显示密钥' : '隐藏密钥',
+                icon: Icon(
+                  _obscured
+                      ? Icons.visibility_outlined
+                      : Icons.visibility_off_outlined,
+                  size: 18,
+                ),
+                color: c.textMuted,
+                onPressed: () => setState(() => _obscured = !_obscured),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: _SettingsActionButton(
+            key: const ValueKey('settings-chksz-api-key-save-button'),
+            icon: Icons.check_outlined,
+            label: _saved ? '已保存' : '保存密钥',
+            c: c,
+            onTap: _save,
+          ),
+        ),
+      ],
     );
   }
 }

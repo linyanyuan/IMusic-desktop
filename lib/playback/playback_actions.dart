@@ -214,6 +214,7 @@ Future<void> startSongPlayback(
           : null,
       lyricsTimeoutAtKey: null,
       if (playUrl.resolvedId.isNotEmpty) 'playbackId': playUrl.resolvedId,
+      if (playUrl.coverUrl.trim().isNotEmpty) 'coverUrl': playUrl.coverUrl,
     };
 
     // Update providers

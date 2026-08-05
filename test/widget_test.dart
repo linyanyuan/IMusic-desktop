@@ -24,6 +24,7 @@ import 'package:deepvibe_desktop/playback/playback_providers.dart';
 import 'package:deepvibe_desktop/services/app_settings.dart';
 import 'package:deepvibe_desktop/services/audio_cache_service.dart';
 import 'package:deepvibe_desktop/services/auth_service.dart';
+import 'package:deepvibe_desktop/services/chksz_music_client.dart';
 import 'package:deepvibe_desktop/services/library_service.dart';
 import 'package:deepvibe_desktop/services/music_provider.dart';
 import 'package:deepvibe_desktop/services/music_service.dart';
@@ -128,29 +129,30 @@ void main() {
     expect(gesture.onHorizontalDragStart, isNull);
   });
 
-  testWidgets('first-click loading shows indeterminate track without prior song', (
-    tester,
-  ) async {
-    final container = ProviderContainer();
-    addTearDown(container.dispose);
-    container.read(currentSongProvider.notifier).state = const {
-      'id': 'first-click',
-      'title': 'First Click',
-      'status': 'loading',
-    };
+  testWidgets(
+    'first-click loading shows indeterminate track without prior song',
+    (tester) async {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      container.read(currentSongProvider.notifier).state = const {
+        'id': 'first-click',
+        'title': 'First Click',
+        'status': 'loading',
+      };
 
-    await _pumpPlayerBar(tester, container);
+      await _pumpPlayerBar(tester, container);
 
-    expect(
-      find.byKey(const ValueKey('player-progress-indeterminate-track')),
-      findsOneWidget,
-    );
-    final size = tester.getSize(
-      find.byKey(const ValueKey('player-progress-loading-slot')),
-    );
-    expect(size.width, greaterThan(0));
-    expect(size.height, greaterThanOrEqualTo(4));
-  });
+      expect(
+        find.byKey(const ValueKey('player-progress-indeterminate-track')),
+        findsOneWidget,
+      );
+      final size = tester.getSize(
+        find.byKey(const ValueKey('player-progress-loading-slot')),
+      );
+      expect(size.width, greaterThan(0));
+      expect(size.height, greaterThanOrEqualTo(4));
+    },
+  );
 
   testWidgets('player progress is empty and disabled after playback error', (
     tester,
@@ -648,6 +650,94 @@ void main() {
     expect(provider.queries, ['林俊杰']);
     expect(container.read(searchQueryProvider), '林俊杰');
     expect(find.text('按钮搜索结果'), findsOneWidget);
+  });
+
+  testWidgets('switching to ChKSz source searches and hides tabs', (
+    tester,
+  ) async {
+    final provider = _ChkszSearchRecordingProvider([
+      {
+        'id': 'chksz:163:1',
+        'title': '晴天（网易云）',
+        'artist': '周杰伦',
+        'source': 'chksz',
+        'duration': 269000,
+      },
+    ]);
+    final container = ProviderContainer(
+      overrides: [
+        musicServiceProvider.overrideWithValue(
+          MusicService(provider: provider),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await _pumpSearchScreen(tester, container);
+
+    // Default source: tabs visible, no ChKSz hint.
+    expect(find.text('全部'), findsOneWidget);
+    expect(find.text('ChKSz · 仅单曲'), findsNothing);
+
+    // Search first on the default source.
+    await tester.enterText(find.byType(TextField), '晴天');
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('search-submit-button')));
+    await tester.pumpAndSettle();
+    expect(provider.queries, ['晴天']);
+    expect(provider.chkszQueries, isEmpty);
+
+    // Switch to ChKSz via the in-bar dropdown: auto re-search, tabs hidden,
+    // hint shown.
+    await tester.tap(find.byKey(const ValueKey('search-source-dropdown')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('search-source-option-chksz')));
+    await tester.pumpAndSettle();
+
+    expect(container.read(searchSourceProvider), SearchSource.chksz);
+    expect(provider.chkszQueries, ['晴天']);
+    expect(find.text('晴天（网易云）'), findsOneWidget);
+    expect(find.text('全部'), findsNothing);
+    expect(find.text('ChKSz · 仅单曲'), findsOneWidget);
+
+    // Switching back to the default source restores tabs.
+    await tester.tap(find.byKey(const ValueKey('search-source-dropdown')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('search-source-option-default')),
+    );
+    await tester.pumpAndSettle();
+    expect(provider.queries, ['晴天', '晴天']);
+    expect(find.text('全部'), findsOneWidget);
+  });
+
+  testWidgets('missing ChKSz key shows actionable error state', (tester) async {
+    final provider = _ChkszSearchRecordingProvider(
+      const [],
+      throwError: const ChkszApiKeyMissingException('未配置 ChKSz API 密钥，请在设置中填写'),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        musicServiceProvider.overrideWithValue(
+          MusicService(provider: provider),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await _pumpSearchScreen(tester, container);
+
+    await tester.enterText(find.byType(TextField), '周杰伦');
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('search-source-dropdown')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('search-source-option-chksz')));
+    await tester.pumpAndSettle();
+
+    expect(provider.chkszQueries, ['周杰伦']);
+    expect(container.read(searchErrorProvider), '未配置 ChKSz API 密钥，请在设置中填写');
+    expect(find.text('去设置配置密钥'), findsOneWidget);
+    expect(find.text('未找到相关内容'), findsNothing);
   });
 
   testWidgets(
@@ -2906,8 +2996,10 @@ class _FakeMusicProvider implements MusicProvider {
   void rememberSongs(Iterable<Map<String, dynamic>> songs) {}
 
   @override
-  Future<List<Map<String, dynamic>>> searchSongs(String query, {int page = 1}) async =>
-      const [];
+  Future<List<Map<String, dynamic>>> searchSongs(
+    String query, {
+    int page = 1,
+  }) async => const [];
 
   @override
   Future<List<Map<String, dynamic>>> getRecommendedSongs() async {
@@ -2960,9 +3052,43 @@ class _SearchRecordingMusicProvider extends _FakeMusicProvider {
   _SearchRecordingMusicProvider(this.resultsByQuery);
 
   @override
-  Future<List<Map<String, dynamic>>> searchSongs(String query, {int page = 1}) async {
+  Future<List<Map<String, dynamic>>> searchSongs(
+    String query, {
+    int page = 1,
+  }) async {
     queries.add(query);
     return resultsByQuery[query] ?? const [];
+  }
+}
+
+/// ChKSz-capable fake: records chksz searches and optionally throws a
+/// configurable error (e.g. missing API key).
+class _ChkszSearchRecordingProvider extends _FakeMusicProvider
+    implements ChkszSearchProvider {
+  _ChkszSearchRecordingProvider(this.chkszResults, {this.throwError});
+
+  final List<Map<String, dynamic>> chkszResults;
+  final Object? throwError;
+  final List<String> queries = [];
+  final List<String> chkszQueries = [];
+
+  @override
+  Future<List<Map<String, dynamic>>> searchSongs(
+    String query, {
+    int page = 1,
+  }) async {
+    queries.add(query);
+    return const [];
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> searchChkszSongs(
+    String query, {
+    int page = 1,
+  }) async {
+    chkszQueries.add(query);
+    if (throwError != null) throw throwError!;
+    return chkszResults;
   }
 }
 
@@ -2977,7 +3103,10 @@ class _ProgressivePlaylistSearchProvider extends _FakeMusicProvider
   final Map<String, Future<PlaylistSummary>> summaries;
 
   @override
-  Future<List<Map<String, dynamic>>> searchSongs(String query, {int page = 1}) async => results;
+  Future<List<Map<String, dynamic>>> searchSongs(
+    String query, {
+    int page = 1,
+  }) async => results;
 
   @override
   Future<PlaylistSummary> getPlaylistSummary(Map<String, dynamic> playlist) {

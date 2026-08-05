@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'chksz_music_client.dart';
+import 'chksz_music_provider.dart';
 import 'gdstudio_music_client.dart';
 import 'music_provider.dart';
 import '../shared/collection_lyrics.dart';
@@ -10,21 +12,30 @@ import '../shared/collection_lyrics.dart';
 /// - Metadata (lyrics, song info) from Meting/Default
 /// - Playback URLs from Bilibili
 /// - Preferred song-tab path via GDStudio (search + direct URL), with fallback
+/// - ChKSz NetEase songs (search source picker + direct URL), with fallback
 ///
 /// For meting songs: fetches metadata, then resolves Bilibili playback ID
 /// For Bilibili songs: uses direct playback, but lyrics come from reverse metadata search
 class HybridMusicProvider
-    implements MusicProvider, PlaylistSummaryProvider, PlaybackIdResolver {
+    implements
+        MusicProvider,
+        PlaylistSummaryProvider,
+        PlaybackIdResolver,
+        ChkszSearchProvider {
   HybridMusicProvider({
     required this.metadata,
     required this.playback,
     GdStudioMusicClient? gdStudio,
+    this.chksz,
   }) : gdStudio = gdStudio ?? GdStudioMusicClient(),
        _songCache = {};
 
   final MusicProvider metadata;
   final MusicProvider playback;
   final GdStudioMusicClient gdStudio;
+
+  /// ChKSz provider; null when the app was built without the source.
+  final ChkszMusicProvider? chksz;
   final Map<String, Map<String, dynamic>> _songCache;
 
   @override
@@ -131,13 +142,25 @@ class HybridMusicProvider
     } catch (_) {}
 
     // Only expand with "歌单" suffix on the first page to avoid duplicate sets.
-    if (safePage == 1 &&
-        (!_looksLikePlaylistQuery(query) || results.isEmpty)) {
+    if (safePage == 1 && (!_looksLikePlaylistQuery(query) || results.isEmpty)) {
       try {
         addPlaylists(await _searchPlayback('$query 歌单', page: 1));
       } catch (_) {}
     }
 
+    return results;
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> searchChkszSongs(
+    String query, {
+    int page = 1,
+  }) async {
+    if (chksz == null) {
+      throw const ChkszApiKeyMissingException('ChKSz 未启用');
+    }
+    final results = await chksz!.searchSongs(query, page: page);
+    _cacheSongs(results);
     return results;
   }
 
@@ -265,6 +288,14 @@ class HybridMusicProvider
 
   @override
   Future<Map<String, dynamic>> getPlaylist(String id, {int? limit}) async {
+    if (ChkszMusicClient.isChkszPlaylistId(id)) {
+      if (chksz == null) {
+        throw StateError('ChKSz 未启用');
+      }
+      final playlist = await chksz!.getPlaylist(id, limit: limit);
+      _cachePlaylistSongs(playlist);
+      return playlist;
+    }
     final playlist = _isMetingCollectionId(id)
         ? await metadata.getPlaylist(id, limit: limit)
         : await playback.getPlaylist(id, limit: limit);
@@ -293,6 +324,9 @@ class HybridMusicProvider
 
   @override
   Future<Map<String, dynamic>> getSongDetail(String id) async {
+    if (ChkszMusicClient.isChkszId(id)) {
+      return chksz?.getSongDetail(id) ?? {'id': id};
+    }
     if (!_isMetingId(id)) return playback.getSongDetail(id);
     final detail = await metadata.getSongDetail(id);
     return _mergeCachedDetail(id, detail);
@@ -328,6 +362,49 @@ class HybridMusicProvider
       }
     }
 
+    // ChKSz NetEase songs: direct URL first, Bilibili-by-title fallback.
+    // A missing API key is a configuration error — surface it, never fall
+    // back (the UI prompts the user to configure the key).
+    if (ChkszMusicClient.isChkszId(id)) {
+      // Only song ids are playable; a playlist id here is a routing mistake.
+      if (!ChkszMusicClient.isChkszSongId(id)) {
+        throw StateError('ChKSz 歌单不能直接播放: $id');
+      }
+      if (chksz == null) throw StateError('ChKSz 未启用');
+      try {
+        final direct = await chksz!.getPlayUrl(id);
+        if (direct.url.trim().isNotEmpty) {
+          print('[Hybrid] ChKSz 直链播放: $id');
+          return direct;
+        }
+      } on ChkszApiKeyMissingException {
+        rethrow;
+      } on ChkszApiException {
+        // Config/business errors (invalid key, rate limit) are actionable;
+        // do not mask them with a Bilibili-by-title fallback.
+        rethrow;
+      } catch (e) {
+        print('[Hybrid] ChKSz 取链失败，回退 B 站: $e');
+      }
+      final cached = _songCache[id] ?? {'id': id};
+      try {
+        final resolvedId = await _resolveBilibiliPlaybackId(
+          cached,
+        ).timeout(ChkszMusicClient.fallbackTimeout);
+        final playUrl = await playback.getPlayUrl(resolvedId);
+        return PlaybackUrl(
+          playUrl.url,
+          headers: playUrl.headers,
+          lyrics: playUrl.lyrics,
+          resolvedId: resolvedId,
+          // Pass the ChKSz search-row cover through on Bilibili fallback.
+          coverUrl: cached['coverUrl']?.toString().trim() ?? '',
+        );
+      } catch (e) {
+        throw StateError('无法获取播放地址: ${e.toString()}');
+      }
+    }
+
     // Pure Bilibili songs
     if (!_isMetingId(id)) {
       final playUrl = await playback.getPlayUrl(id);
@@ -342,8 +419,7 @@ class HybridMusicProvider
     // For meting songs: detail first, then stable playbackId, then search.
     try {
       final cached = _songCache[id];
-      final existingPlaybackId =
-          cached?['playbackId']?.toString().trim() ?? '';
+      final existingPlaybackId = cached?['playbackId']?.toString().trim() ?? '';
       Map<String, dynamic> detail;
       if (existingPlaybackId.isNotEmpty) {
         // Stable playback id already known — still merge detail for lyrics.
@@ -367,6 +443,7 @@ class HybridMusicProvider
         headers: playUrl.headers,
         lyrics: lyrics.isNotEmpty ? lyrics : playUrl.lyrics,
         resolvedId: resolvedId,
+        coverUrl: detail['coverUrl']?.toString().trim() ?? '',
       );
     } catch (e) {
       throw StateError('无法获取播放地址: ${e.toString()}');
@@ -384,6 +461,10 @@ class HybridMusicProvider
     if (existing.isNotEmpty) return existing;
 
     final id = song['id']?.toString() ?? '';
+
+    if (ChkszMusicClient.isChkszId(id)) {
+      return chksz?.getLyrics(song) ?? '';
+    }
 
     if (GdStudioMusicClient.isGdStudioId(id)) {
       final parsed = GdStudioMusicClient.parseSongId(id);

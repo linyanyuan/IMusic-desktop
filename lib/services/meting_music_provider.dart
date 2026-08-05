@@ -19,7 +19,7 @@ class MetingMusicProvider implements MusicProvider {
               ),
             ),
         _tokenProvider = tokenProvider,
-        _artistTitles = {};
+       _artistTitles = {};
 
   final Dio _dio;
   final String? Function()? _tokenProvider;
@@ -65,7 +65,10 @@ class MetingMusicProvider implements MusicProvider {
   }
 
   @override
-  Future<List<Map<String, dynamic>>> getHotPlaylists({int? limit, int? offset}) async {
+  Future<List<Map<String, dynamic>>> getHotPlaylists({
+    int? limit,
+    int? offset,
+  }) async {
     return const [];
   }
 
@@ -85,7 +88,15 @@ class MetingMusicProvider implements MusicProvider {
       queryParameters: queryParameters.isEmpty ? null : queryParameters,
       options: _requestOptions(),
     );
-    return _mapValue(response.data?['data']) ?? const {};
+    final collection = _mapValue(response.data?['data']) ?? const {};
+    final songs = collection['songs'];
+    if (songs is List) {
+      collection['songs'] = songs
+          .whereType<Map>()
+          .map((item) => _withCoverUrl(item.cast<String, dynamic>()))
+          .toList();
+    }
+    return collection;
   }
 
   @override
@@ -95,7 +106,8 @@ class MetingMusicProvider implements MusicProvider {
       '/music/songs/${parsed.vendor}/${Uri.encodeComponent(parsed.rawId)}',
       options: _requestOptions(),
     );
-    return _mapValue(response.data?['data']) ?? const {};
+    final detail = _mapValue(response.data?['data']) ?? const {};
+    return _withCoverUrl(detail);
   }
 
   @override
@@ -128,7 +140,7 @@ class MetingMusicProvider implements MusicProvider {
       if (items is! List) return const [];
       final results = items
           .whereType<Map>()
-          .map((item) => item.cast<String, dynamic>())
+          .map((item) => _withCoverUrl(item.cast<String, dynamic>()))
           .toList();
       // Remember artist titles for later playlist queries
       for (final item in results.where(_isArtistResult)) {
@@ -170,6 +182,52 @@ class MetingMusicProvider implements MusicProvider {
     if (value is Map<String, dynamic>) return value;
     if (value is Map) return value.cast<String, dynamic>();
     return null;
+  }
+
+  /// Normalize meting cover fields (`picUrl` / `pic` / `pic_id`) to
+  /// `coverUrl`. Bare ids become vendor CDN urls; full urls pass through
+  /// (http:// upgraded to https://). No pic → item unchanged (placeholder).
+  static Map<String, dynamic> _withCoverUrl(Map<String, dynamic> item) {
+    final existing = item['coverUrl']?.toString().trim() ?? '';
+    if (existing.isNotEmpty) return item;
+
+    final vendor =
+        item['source']?.toString().trim() ??
+        _vendorFromId(item['id']?.toString() ?? '');
+    final raw =
+        item['picUrl']?.toString().trim() ??
+        item['pic']?.toString().trim() ??
+        item['pic_id']?.toString().trim() ??
+        '';
+    if (raw.isEmpty) return item;
+
+    final cover = raw.startsWith('http')
+        ? (raw.startsWith('http://') ? 'https://${raw.substring(7)}' : raw)
+        : _vendorCoverUrl(vendor, raw);
+    if (cover.isEmpty) return item;
+    return {...item, 'coverUrl': cover};
+  }
+
+  static String _vendorFromId(String id) {
+    // meting:{vendor}:{rawId}
+    final parts = id.split(':');
+    if (parts.length < 2 || parts.first != 'meting') return '';
+    return parts[1];
+  }
+
+  static String _vendorCoverUrl(String vendor, String picId) {
+    switch (vendor) {
+      case 'tencent':
+        return 'https://y.gtimg.cn/music/photo_new/T002R300x300M000$picId.jpg';
+      case 'netease':
+        return 'https://p2.music.126.net/$picId.jpg';
+      case 'kuwo':
+        return 'https://img1.kwcdn.kuwo.cn/star/albumcover/$picId';
+      case 'kugou':
+        return 'https://imgessl.kugou.com/cover/480/$picId.jpg';
+      default:
+        return '';
+    }
   }
 
   static bool _isArtistResult(Map<String, dynamic> item) {

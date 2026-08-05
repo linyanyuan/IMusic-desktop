@@ -9,6 +9,7 @@ import '../../core/models/song.dart';
 import '../../core/models/playlist.dart';
 import '../../core/song_identity.dart';
 import '../../services/auth_service.dart';
+import '../../services/chksz_music_client.dart';
 import '../../services/library_service.dart';
 import '../../services/music_service.dart';
 import '../../services/music_provider.dart';
@@ -16,6 +17,9 @@ import '../../playback/playback_actions.dart';
 import '../../playback/playback_providers.dart';
 import '../desktop_app_shell.dart';
 import '../playlist_song_status.dart';
+
+/// Search source picker: default hybrid (Bilibili playback) vs ChKSz NetEase.
+enum SearchSource { defaultSource, chksz }
 
 /// Search state providers
 final searchQueryProvider = StateProvider<String>((ref) => '');
@@ -25,6 +29,13 @@ final searchLoadingMoreProvider = StateProvider<bool>((ref) => false);
 final searchPageProvider = StateProvider<int>((ref) => 1);
 final searchHasMoreProvider = StateProvider<bool>((ref) => false);
 final searchTabProvider = StateProvider<SearchTab>((ref) => SearchTab.all);
+final searchSourceProvider = StateProvider<SearchSource>(
+  (ref) => SearchSource.defaultSource,
+);
+
+/// Non-null when the last search failed with an actionable error (e.g.
+/// missing ChKSz API key).
+final searchErrorProvider = StateProvider<String?>((ref) => null);
 
 /// Hint used to decide whether another page is likely available.
 const kSearchPageSizeHint = 20;
@@ -91,15 +102,19 @@ class _DesktopSearchScreenState extends ConsumerState<DesktopSearchScreen> {
   Future<void> _search(String q) async {
     final query = q.trim();
     final tab = ref.read(searchTabProvider);
+    final source = ref.read(searchSourceProvider);
     final scope = _scopeForTab(tab);
     final requestId = ++_searchRequestId;
-    print('[SearchScreen] 搜索关键词: $query tab=$tab scope=$scope id=$requestId');
+    print(
+      '[SearchScreen] 搜索关键词: $query tab=$tab scope=$scope source=$source id=$requestId',
+    );
 
     ref.read(searchQueryProvider.notifier).state = query;
     ref.read(searchLoadingProvider.notifier).state = true;
     ref.read(searchLoadingMoreProvider.notifier).state = false;
     ref.read(searchPageProvider.notifier).state = 1;
     ref.read(searchHasMoreProvider.notifier).state = false;
+    ref.read(searchErrorProvider.notifier).state = null;
     ref.read(searchResultsProvider.notifier).state = [];
 
     if (query.isEmpty) {
@@ -113,11 +128,9 @@ class _DesktopSearchScreenState extends ConsumerState<DesktopSearchScreen> {
 
     try {
       print('[SearchScreen] 开始搜索 page=1...');
-      final results = await musicService.searchSongs(
-        query,
-        scope: scope,
-        page: 1,
-      );
+      final results = source == SearchSource.chksz
+          ? await musicService.searchChkszSongs(query, page: 1)
+          : await musicService.searchSongs(query, scope: scope, page: 1);
       print('[SearchScreen] 搜索结果: ${results.length} 首');
       if (!mounted || requestId != _searchRequestId) return;
       final visibleResults = _toVisibleResults(results);
@@ -133,6 +146,20 @@ class _DesktopSearchScreenState extends ConsumerState<DesktopSearchScreen> {
           musicService: musicService,
         ),
       );
+    } on ChkszApiKeyMissingException catch (e) {
+      print('[SearchScreen] ChKSz 未配置密钥: $e');
+      if (!mounted || requestId != _searchRequestId) return;
+      ref.read(searchLoadingProvider.notifier).state = false;
+      ref.read(searchHasMoreProvider.notifier).state = false;
+      ref.read(searchErrorProvider.notifier).state = e.message;
+    } on ChkszApiException catch (e) {
+      // Business error (invalid key, rate limit...): readable error, not a
+      // fake empty result list.
+      print('[SearchScreen] ChKSz 业务错误: $e');
+      if (!mounted || requestId != _searchRequestId) return;
+      ref.read(searchLoadingProvider.notifier).state = false;
+      ref.read(searchHasMoreProvider.notifier).state = false;
+      ref.read(searchErrorProvider.notifier).state = e.message;
     } catch (e) {
       print('[SearchScreen] 搜索失败: $e');
       if (!mounted || requestId != _searchRequestId) return;
@@ -144,26 +171,28 @@ class _DesktopSearchScreenState extends ConsumerState<DesktopSearchScreen> {
   Future<void> _loadMore() async {
     final query = ref.read(searchQueryProvider).trim();
     if (query.isEmpty) return;
-    if (ref.read(searchLoadingProvider) || ref.read(searchLoadingMoreProvider)) {
+    if (ref.read(searchLoadingProvider) ||
+        ref.read(searchLoadingMoreProvider)) {
       return;
     }
     if (!ref.read(searchHasMoreProvider)) return;
 
     final tab = ref.read(searchTabProvider);
+    final source = ref.read(searchSourceProvider);
     final scope = _scopeForTab(tab);
     final nextPage = ref.read(searchPageProvider) + 1;
     final requestId = _searchRequestId;
     final musicService = ref.read(musicServiceProvider);
 
     ref.read(searchLoadingMoreProvider.notifier).state = true;
-    print('[SearchScreen] 加载更多 page=$nextPage query=$query scope=$scope');
+    print(
+      '[SearchScreen] 加载更多 page=$nextPage query=$query scope=$scope source=$source',
+    );
 
     try {
-      final results = await musicService.searchSongs(
-        query,
-        scope: scope,
-        page: nextPage,
-      );
+      final results = source == SearchSource.chksz
+          ? await musicService.searchChkszSongs(query, page: nextPage)
+          : await musicService.searchSongs(query, scope: scope, page: nextPage);
       if (!mounted || requestId != _searchRequestId) return;
 
       final existing = ref.read(searchResultsProvider);
@@ -195,6 +224,18 @@ class _DesktopSearchScreenState extends ConsumerState<DesktopSearchScreen> {
           musicService: musicService,
         ),
       );
+    } on ChkszApiKeyMissingException catch (e) {
+      print('[SearchScreen] 加载更多 ChKSz 未配置密钥: $e');
+      if (!mounted || requestId != _searchRequestId) return;
+      ref.read(searchLoadingMoreProvider.notifier).state = false;
+      ref.read(searchHasMoreProvider.notifier).state = false;
+      ref.read(searchErrorProvider.notifier).state = e.message;
+    } on ChkszApiException catch (e) {
+      print('[SearchScreen] 加载更多 ChKSz 业务错误: $e');
+      if (!mounted || requestId != _searchRequestId) return;
+      ref.read(searchLoadingMoreProvider.notifier).state = false;
+      ref.read(searchHasMoreProvider.notifier).state = false;
+      ref.read(searchErrorProvider.notifier).state = e.message;
     } catch (e) {
       print('[SearchScreen] 加载更多失败: $e');
       if (!mounted || requestId != _searchRequestId) return;
@@ -271,6 +312,17 @@ class _DesktopSearchScreenState extends ConsumerState<DesktopSearchScreen> {
     }
   }
 
+  void _onSourceChanged(SearchSource source) {
+    if (ref.read(searchSourceProvider) == source) return;
+    ref.read(searchSourceProvider.notifier).state = source;
+    // Re-search when the search box already has a keyword (the provider
+    // query is only written on an actual search).
+    final query = _controller.text;
+    if (query.trim().isNotEmpty) {
+      _search(query);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = Theme.of(context).brightness == Brightness.dark
@@ -278,11 +330,14 @@ class _DesktopSearchScreenState extends ConsumerState<DesktopSearchScreen> {
         : DeepVibeColors.light;
 
     final tab = ref.watch(searchTabProvider);
+    final source = ref.watch(searchSourceProvider);
     final loading = ref.watch(searchLoadingProvider);
     final loadingMore = ref.watch(searchLoadingMoreProvider);
     final hasMore = ref.watch(searchHasMoreProvider);
     final searchResults = ref.watch(searchResultsProvider);
     final query = ref.watch(searchQueryProvider);
+    final error = ref.watch(searchErrorProvider);
+    final chkszMode = source == SearchSource.chksz;
 
     return Container(
       color: c.background,
@@ -293,9 +348,14 @@ class _DesktopSearchScreenState extends ConsumerState<DesktopSearchScreen> {
             focusNode: _focusNode,
             c: c,
             loading: loading,
+            source: source,
+            onSourceChanged: _onSourceChanged,
             onSearch: () => _search(_controller.text),
           ),
-          _Tabs(c: c, tab: tab, onTabChanged: _onTabChanged),
+          if (chkszMode)
+            _ChkszModeHint(c: c)
+          else
+            _Tabs(c: c, tab: tab, onTabChanged: _onTabChanged),
           Expanded(
             child: loading
                 ? Center(
@@ -308,12 +368,15 @@ class _DesktopSearchScreenState extends ConsumerState<DesktopSearchScreen> {
                       ),
                     ),
                   )
+                : error != null
+                ? _SearchErrorState(c: c, message: error)
                 : query.isEmpty
                 ? _EmptyState(c: c)
                 : _Results(
                     c: c,
                     songs: searchResults,
                     tab: tab,
+                    chkszMode: chkszMode,
                     hasMore: hasMore,
                     loadingMore: loadingMore,
                     onLoadMore: _loadMore,
@@ -327,11 +390,215 @@ class _DesktopSearchScreenState extends ConsumerState<DesktopSearchScreen> {
 
 enum SearchTab { all, songs, playlists }
 
-class _SearchBar extends StatelessWidget {
+/// Compact source picker inside the search bar: icon + current source name +
+/// chevron. The popup shows both sources with descriptions and a checkmark.
+/// ChKSz mode tints the chip cyan so the active source is visible at a glance.
+class _SourceDropdown extends StatelessWidget {
+  final DeepVibeColors c;
+  final SearchSource source;
+  final ValueChanged<SearchSource> onChanged;
+
+  const _SourceDropdown({
+    required this.c,
+    required this.source,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final chkszActive = source == SearchSource.chksz;
+    final icon = chkszActive ? Icons.cloud_outlined : Icons.play_circle_outline;
+    final label = chkszActive ? 'ChKSz' : '默认源';
+    final color = chkszActive ? c.accent : c.textSecondary;
+
+    return PopupMenuButton<SearchSource>(
+      key: const ValueKey('search-source-dropdown'),
+      tooltip: '切换音乐源',
+      initialValue: source,
+      color: c.surface,
+      elevation: 4,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(color: c.divider),
+      ),
+      offset: const Offset(0, 40),
+      onSelected: onChanged,
+      itemBuilder: (context) => [
+        _sourceMenuItem(
+          c: c,
+          value: SearchSource.defaultSource,
+          icon: Icons.play_circle_outline,
+          title: '默认源 · B站混合',
+          subtitle: '歌曲、歌单、合集综合搜索',
+          selected: source == SearchSource.defaultSource,
+        ),
+        _sourceMenuItem(
+          c: c,
+          value: SearchSource.chksz,
+          icon: Icons.cloud_outlined,
+          title: 'ChKSz · 网易云',
+          subtitle: '仅单曲，网易云直链播放',
+          selected: chkszActive,
+        ),
+      ],
+      child: Container(
+        height: 30,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        decoration: BoxDecoration(
+          color: chkszActive
+              ? c.accent.withValues(alpha: 0.1)
+              : c.surfaceVariant.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: chkszActive ? c.accent.withValues(alpha: 0.45) : c.border,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontSize: 12.5,
+                fontWeight: chkszActive ? FontWeight.w600 : FontWeight.w400,
+              ),
+            ),
+            const SizedBox(width: 2),
+            Icon(Icons.arrow_drop_down, size: 16, color: c.textMuted),
+          ],
+        ),
+      ),
+    );
+  }
+
+  PopupMenuItem<SearchSource> _sourceMenuItem({
+    required DeepVibeColors c,
+    required SearchSource value,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required bool selected,
+  }) {
+    final keyName = switch (value) {
+      SearchSource.defaultSource => 'default',
+      SearchSource.chksz => 'chksz',
+    };
+    return PopupMenuItem<SearchSource>(
+      key: ValueKey('search-source-option-$keyName'),
+      value: value,
+      height: 52,
+      child: Row(
+        children: [
+          Icon(icon, size: 17, color: selected ? c.accent : c.textSecondary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: selected ? c.accent : c.textPrimary,
+                    fontSize: 13,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: TextStyle(color: c.textMuted, fontSize: 11),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          if (selected) ...[
+            const SizedBox(width: 8),
+            Icon(Icons.check, size: 15, color: c.accent),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Small hint shown in ChKSz mode (single-song search only).
+class _ChkszModeHint extends StatelessWidget {
+  final DeepVibeColors c;
+  const _ChkszModeHint({required this.c});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      alignment: Alignment.centerLeft,
+      child: Text(
+        'ChKSz · 仅单曲',
+        style: TextStyle(color: c.textMuted, fontSize: 12),
+      ),
+    );
+  }
+}
+
+/// Actionable error state (e.g. missing ChKSz API key) with a shortcut to
+/// the settings page where the key can be configured.
+class _SearchErrorState extends ConsumerWidget {
+  final DeepVibeColors c;
+  final String message;
+
+  const _SearchErrorState({required this.c, required this.message});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.key_off_outlined,
+            size: 56,
+            color: c.textMuted.withOpacity(0.3),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: TextStyle(color: c.textSecondary, fontSize: 14),
+          ),
+          const SizedBox(height: 12),
+          TextButton.icon(
+            key: const ValueKey('search-chksz-config-button'),
+            onPressed: () => navigateDeskRoute(ref, DeskRoute.settings),
+            icon: const Icon(Icons.settings_outlined, size: 16),
+            label: const Text('去设置配置密钥'),
+            style: TextButton.styleFrom(
+              foregroundColor: c.accent,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+                side: BorderSide(color: c.border),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SearchBar extends ConsumerWidget {
   final TextEditingController controller;
   final FocusNode focusNode;
   final DeepVibeColors c;
   final bool loading;
+  final SearchSource source;
+  final ValueChanged<SearchSource> onSourceChanged;
   final VoidCallback onSearch;
 
   const _SearchBar({
@@ -339,11 +606,17 @@ class _SearchBar extends StatelessWidget {
     required this.focusNode,
     required this.c,
     required this.loading,
+    required this.source,
+    required this.onSourceChanged,
     required this.onSearch,
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // The search action fires BOTH onEditingComplete and onSubmitted in the
+    // same frame; the widget-level `loading` prop is stale until the rebuild,
+    // so read the live provider state to skip the duplicate request.
+    bool searchInFlight() => ref.read(searchLoadingProvider);
     return Container(
       padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
       child: Container(
@@ -365,10 +638,10 @@ class _SearchBar extends StatelessWidget {
                 textInputAction: TextInputAction.search,
                 // Desktop Enter / IME search action.
                 onSubmitted: (_) {
-                  if (!loading) onSearch();
+                  if (!searchInFlight()) onSearch();
                 },
                 onEditingComplete: () {
-                  if (!loading) onSearch();
+                  if (!searchInFlight()) onSearch();
                 },
                 style: TextStyle(color: c.textPrimary, fontSize: 15),
                 decoration: InputDecoration(
@@ -379,6 +652,19 @@ class _SearchBar extends StatelessWidget {
                 ),
               ),
             ),
+            // Music source picker: search scope belongs to the bar itself
+            // (no extra control row above the results).
+            Container(width: 1, height: 22, color: c.divider),
+            const SizedBox(width: 10),
+            Padding(
+              padding: const EdgeInsets.only(right: 2),
+              child: _SourceDropdown(
+                c: c,
+                source: source,
+                onChanged: onSourceChanged,
+              ),
+            ),
+            const SizedBox(width: 10),
             Container(
               margin: const EdgeInsets.only(right: 12),
               child: TextButton.icon(
@@ -508,6 +794,7 @@ class _Results extends ConsumerWidget {
   final DeepVibeColors c;
   final List<Song> songs;
   final SearchTab tab;
+  final bool chkszMode;
   final bool hasMore;
   final bool loadingMore;
   final VoidCallback onLoadMore;
@@ -516,6 +803,7 @@ class _Results extends ConsumerWidget {
     required this.c,
     required this.songs,
     required this.tab,
+    required this.chkszMode,
     required this.hasMore,
     required this.loadingMore,
     required this.onLoadMore,
@@ -525,8 +813,11 @@ class _Results extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final playlistResults = songs.where((song) => song.isPlaylist).toList();
     final songResults = songs.where((song) => !song.isPlaylist).toList();
-    final showPlaylists = tab == SearchTab.all || tab == SearchTab.playlists;
-    final showSongs = tab == SearchTab.all || tab == SearchTab.songs;
+    // ChKSz mode shows single songs only (no 综合/歌单/单曲 tabs).
+    final showPlaylists =
+        !chkszMode && (tab == SearchTab.all || tab == SearchTab.playlists);
+    final showSongs =
+        chkszMode || tab == SearchTab.all || tab == SearchTab.songs;
     final hasVisibleResults =
         (showPlaylists && playlistResults.isNotEmpty) ||
         (showSongs && songResults.isNotEmpty);
@@ -589,11 +880,7 @@ class _Results extends ConsumerWidget {
           const SizedBox(height: 32),
         ],
         if (hasMore || loadingMore) ...[
-          _LoadMoreBar(
-            c: c,
-            loading: loadingMore,
-            onLoadMore: onLoadMore,
-          ),
+          _LoadMoreBar(c: c, loading: loadingMore, onLoadMore: onLoadMore),
           const SizedBox(height: 16),
         ],
       ],

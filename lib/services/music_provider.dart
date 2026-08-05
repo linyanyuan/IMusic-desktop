@@ -5,12 +5,17 @@ class PlaybackUrl {
     this.headers = const {},
     this.lyrics = '',
     this.resolvedId = '',
+    this.coverUrl = '',
   });
 
   final String url;
   final Map<String, String> headers;
   final String lyrics;
   final String resolvedId;
+
+  /// Album art discovered while resolving playback (e.g. ChKSz's
+  /// 163_music endpoint returns `picUrl` alongside the stream url).
+  final String coverUrl;
 }
 
 enum PlaylistSummaryKind {
@@ -46,6 +51,16 @@ abstract interface class PlaybackIdResolver {
   Future<String> resolvePlaybackId(Map<String, dynamic> song);
 }
 
+/// Providers that support the ChKSz-only search path (search source picker).
+/// Exposed separately so [MusicService] can surface missing-key errors to the
+/// UI instead of swallowing them into an empty list.
+abstract interface class ChkszSearchProvider {
+  Future<List<Map<String, dynamic>>> searchChkszSongs(
+    String query, {
+    int page = 1,
+  });
+}
+
 /// Abstract music provider interface
 abstract class MusicProvider {
   /// Remember songs for future reference (caching)
@@ -59,10 +74,7 @@ abstract class MusicProvider {
   /// Search songs by query.
   ///
   /// [page] is 1-based. Providers that do not support paging ignore it.
-  Future<List<Map<String, dynamic>>> searchSongs(
-    String query, {
-    int page = 1,
-  });
+  Future<List<Map<String, dynamic>>> searchSongs(String query, {int page = 1});
 
   /// Get recommended songs
   Future<List<Map<String, dynamic>>> getRecommendedSongs();

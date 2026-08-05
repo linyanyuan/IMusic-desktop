@@ -1,7 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 import '../core/models/song.dart';
+import 'app_settings.dart';
 import 'auth_service.dart';
+import 'chksz_music_client.dart';
+import 'chksz_music_provider.dart';
 import 'music_provider.dart';
 import 'bilibili_music_provider.dart';
 import 'meting_music_provider.dart';
@@ -13,6 +16,7 @@ import 'hybrid_music_provider.dart';
 ///
 /// Uses HybridMusicProvider to combine:
 /// - Song-tab: GDStudio search/play when available
+/// - ChKSz: NetEase search/play when selected in the search source picker
 /// - Metadata (lyrics, song info) from Meting/Default as fallback
 /// - Playback URLs from Bilibili as fallback / playlists
 final musicServiceProvider = Provider<MusicService>((ref) {
@@ -28,6 +32,13 @@ final musicServiceProvider = Provider<MusicService>((ref) {
             id.startsWith('meting:') || id.startsWith('meting-artist:'),
       ),
       playback: BilibiliMusicProvider(),
+      // Read the runtime-configured key on every request (settings page);
+      // falls back to --dart-define=CHKSZ_API_KEY inside the client.
+      chksz: ChkszMusicProvider(
+        client: ChkszMusicClient(
+          apiKeyProvider: () => ref.read(appSettingsProvider).chkszApiKey,
+        ),
+      ),
     ),
   );
 });
@@ -42,6 +53,9 @@ enum MusicSearchScope {
 
   /// Bilibili playlists only.
   bilibiliPlaylists,
+
+  /// ChKSz NetEase songs only (search source picker).
+  chkszSongs,
 }
 
 /// Music service - handles music data and playback
@@ -77,6 +91,40 @@ class MusicService {
     }
   }
 
+  /// ChKSz-only search for the search source picker.
+  ///
+  /// Unlike [searchSongs], a missing API key is NOT swallowed: it rethrows
+  /// [ChkszApiKeyMissingException] so the UI can prompt the user to configure
+  /// the key instead of showing an empty list.
+  Future<List<Song>> searchChkszSongs(String query, {int page = 1}) async {
+    final safePage = page < 1 ? 1 : page;
+    final provider = _provider;
+    // Explicit cast: intersection promotion of unrelated types is unreliable.
+    final chkszProvider = provider is ChkszSearchProvider
+        ? provider as ChkszSearchProvider
+        : null;
+    if (chkszProvider == null) {
+      throw const ChkszApiKeyMissingException('ChKSz 未启用');
+    }
+    try {
+      final results = await chkszProvider.searchChkszSongs(
+        query,
+        page: safePage,
+      );
+      _cacheResults(results);
+      return results.map(_toSong).toList();
+    } on ChkszApiKeyMissingException {
+      rethrow;
+    } on ChkszApiException {
+      // Business errors (invalid key, rate limit, bad params) are actionable;
+      // surface them so the UI shows an error instead of fake empty results.
+      rethrow;
+    } catch (e) {
+      print('[MusicService] ChKSz 搜索失败: $e');
+      return [];
+    }
+  }
+
   Future<List<Map<String, dynamic>>> _searchRaw(
     String query,
     MusicSearchScope scope, {
@@ -87,10 +135,18 @@ class MusicService {
     if (provider is HybridMusicProvider) {
       return switch (scope) {
         MusicSearchScope.all => provider.searchSongs(query, page: safePage),
-        MusicSearchScope.metadataSongs =>
-          provider.searchMetadataSongs(query, page: safePage),
-        MusicSearchScope.bilibiliPlaylists =>
-          provider.searchBilibiliPlaylists(query, page: safePage),
+        MusicSearchScope.metadataSongs => provider.searchMetadataSongs(
+          query,
+          page: safePage,
+        ),
+        MusicSearchScope.bilibiliPlaylists => provider.searchBilibiliPlaylists(
+          query,
+          page: safePage,
+        ),
+        MusicSearchScope.chkszSongs => provider.searchChkszSongs(
+          query,
+          page: safePage,
+        ),
       };
     }
     return provider.searchSongs(query, page: safePage);
@@ -194,7 +250,9 @@ class MusicService {
 
       // Cache playback metadata for later library/history lyric lookups.
       print('[MusicService] getPlayUrl - 歌词长度: ${playbackUrl.lyrics.length}');
-      if (playbackUrl.lyrics.isNotEmpty || playbackUrl.resolvedId.isNotEmpty) {
+      if (playbackUrl.lyrics.isNotEmpty ||
+          playbackUrl.resolvedId.isNotEmpty ||
+          playbackUrl.coverUrl.isNotEmpty) {
         var cached = _cache[id];
         if (cached == null) {
           // Create cache entry if it doesn't exist
@@ -207,6 +265,9 @@ class MusicService {
         }
         if (playbackUrl.resolvedId.isNotEmpty) {
           cached['playbackId'] = playbackUrl.resolvedId;
+        }
+        if (playbackUrl.coverUrl.isNotEmpty) {
+          cached['coverUrl'] = playbackUrl.coverUrl;
         }
         print('[MusicService] 歌词已缓存到 $id');
       }

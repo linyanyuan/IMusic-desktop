@@ -83,7 +83,82 @@ void main() {
 
     await provider.searchSongs('test');
 
-    expect(adapter.requests.single.headers.containsKey('Authorization'), isFalse);
+    expect(
+      adapter.requests.single.headers.containsKey('Authorization'),
+      isFalse,
+    );
+  });
+
+  group('cover normalization', () {
+    test(
+      'search rows with full pic url get coverUrl (https upgraded)',
+      () async {
+        final adapter = _JsonAdapter((options) {
+          return {
+            'data': {
+              'items': [
+                {
+                  'id': 'meting:tencent:1',
+                  'title': '晴天',
+                  'artist': '周杰伦',
+                  'resultType': 'song',
+                  'picUrl': 'http://y.gtimg.cn/pic.jpg',
+                },
+              ],
+            },
+          };
+        });
+        final provider = MetingMusicProvider(dio: _dio(adapter));
+
+        final results = await provider.searchSongs('晴天');
+
+        expect(results.single['coverUrl'], 'https://y.gtimg.cn/pic.jpg');
+      },
+    );
+
+    test('bare pic_id builds the vendor CDN url', () async {
+      final adapter = _JsonAdapter((options) {
+        return {
+          'data': {
+            'items': [
+              {
+                'id': 'meting:tencent:1',
+                'title': '晴天',
+                'artist': '周杰伦',
+                'resultType': 'song',
+                'pic_id': '0039MnYb0qxYhV',
+              },
+            ],
+          },
+        };
+      });
+      final provider = MetingMusicProvider(dio: _dio(adapter));
+
+      final results = await provider.searchSongs('晴天');
+
+      expect(
+        results.single['coverUrl'],
+        'https://y.gtimg.cn/music/photo_new/T002R300x300M0000039MnYb0qxYhV.jpg',
+      );
+    });
+
+    test('detail rows keep a pre-existing coverUrl', () async {
+      final adapter = _JsonAdapter((options) {
+        return {
+          'data': {
+            'id': 'meting:tencent:1',
+            'title': '晴天',
+            'lyrics': '[00:00.00]x',
+            'coverUrl': 'https://already.example/cover.jpg',
+          },
+        };
+      });
+      final provider = MetingMusicProvider(dio: _dio(adapter));
+
+      final detail = await provider.getSongDetail('meting:tencent:1');
+
+      expect(detail['coverUrl'], 'https://already.example/cover.jpg');
+    });
   });
 }
 

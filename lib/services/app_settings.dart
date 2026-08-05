@@ -6,12 +6,17 @@ import 'dart:convert';
 
 import 'shortcut_settings.dart';
 
+/// Default ChKSz API key, pre-filled for personal use (个人使用，直接内嵌).
+/// Get / rotate your own key at https://api.chksz.com/login.
+const defaultChkszApiKey = 'chksz_1JJPZlbWc7j3Ui8UUEsq6ClOduRVVQpuRWqHcI2JWe8';
+
 class AppSettings {
   final String cacheDirectory;
   final bool cacheAutoCleanupEnabled;
   final int cacheRetentionDays;
   final double lyricsFontSize;
   final int lyricsColorValue;
+  final String chkszApiKey;
   final ShortcutSettings shortcutSettings;
 
   const AppSettings({
@@ -20,6 +25,7 @@ class AppSettings {
     this.cacheRetentionDays = 7,
     this.lyricsFontSize = 22,
     this.lyricsColorValue = 0xFF1ED760,
+    this.chkszApiKey = defaultChkszApiKey,
     this.shortcutSettings = const ShortcutSettings(
       shortcuts: defaultShortcutBindings,
     ),
@@ -31,6 +37,7 @@ class AppSettings {
     int? cacheRetentionDays,
     double? lyricsFontSize,
     int? lyricsColorValue,
+    String? chkszApiKey,
     ShortcutSettings? shortcutSettings,
   }) {
     return AppSettings(
@@ -40,6 +47,7 @@ class AppSettings {
       cacheRetentionDays: cacheRetentionDays ?? this.cacheRetentionDays,
       lyricsFontSize: lyricsFontSize ?? this.lyricsFontSize,
       lyricsColorValue: lyricsColorValue ?? this.lyricsColorValue,
+      chkszApiKey: chkszApiKey ?? this.chkszApiKey,
       shortcutSettings: shortcutSettings ?? this.shortcutSettings,
     );
   }
@@ -57,6 +65,7 @@ class AppSettingsNotifier extends StateNotifier<AppSettings> {
   static const _lyricsFontSizeKey = 'settings_lyrics_font_size';
   static const _lyricsColorKey = 'settings_lyrics_color';
   static const _shortcutSettingsKey = 'settings_shortcuts';
+  static const _chkszApiKeyKey = 'settings_chksz_api_key';
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -73,6 +82,7 @@ class AppSettingsNotifier extends StateNotifier<AppSettings> {
           const AppSettings().lyricsFontSize,
       lyricsColorValue:
           prefs.getInt(_lyricsColorKey) ?? const AppSettings().lyricsColorValue,
+      chkszApiKey: prefs.getString(_chkszApiKeyKey) ?? defaultChkszApiKey,
       shortcutSettings: _loadShortcutSettings(prefs),
     );
   }
@@ -125,6 +135,14 @@ class AppSettingsNotifier extends StateNotifier<AppSettings> {
     state = state.copyWith(lyricsColorValue: value);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_lyricsColorKey, value);
+  }
+
+  /// ChKSz API key, stored locally so the source works without rebuilds.
+  Future<void> setChkszApiKey(String value) async {
+    final normalized = value.trim();
+    state = state.copyWith(chkszApiKey: normalized);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_chkszApiKeyKey, normalized);
   }
 
   Future<void> setShortcutSettings(ShortcutSettings value) async {

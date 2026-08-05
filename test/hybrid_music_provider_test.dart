@@ -1,6 +1,8 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:deepvibe_desktop/services/chksz_music_client.dart';
+import 'package:deepvibe_desktop/services/chksz_music_provider.dart';
 import 'package:deepvibe_desktop/services/gdstudio_music_client.dart';
 import 'package:deepvibe_desktop/services/hybrid_music_provider.dart';
 import 'package:deepvibe_desktop/services/music_provider.dart';
@@ -193,40 +195,43 @@ void main() {
     expect(metadata.searchCalls, 0);
   });
 
-  test('searchMetadataSongs falls back to metadata when GDStudio empty', () async {
-    final dio = Dio();
-    dio.httpClientAdapter = _SingleResponseAdapter(
-      ResponseBody.fromString(
-        '[]',
-        200,
-        headers: {
-          Headers.contentTypeHeader: [Headers.jsonContentType],
-        },
-      ),
-    );
-    final metadata = const _MetadataProvider(
-      searchResults: {
-        'AOA': [
-          {
-            'id': 'meting:tencent:1',
-            'title': 'Fallback',
-            'artist': 'X',
-            'resultType': 'song',
+  test(
+    'searchMetadataSongs falls back to metadata when GDStudio empty',
+    () async {
+      final dio = Dio();
+      dio.httpClientAdapter = _SingleResponseAdapter(
+        ResponseBody.fromString(
+          '[]',
+          200,
+          headers: {
+            Headers.contentTypeHeader: [Headers.jsonContentType],
           },
-        ],
-      },
-      details: {},
-    );
-    final provider = HybridMusicProvider(
-      metadata: metadata,
-      playback: const _UnusedProvider(),
-      gdStudio: GdStudioMusicClient(dio: dio, sources: const ['joox']),
-    );
+        ),
+      );
+      final metadata = const _MetadataProvider(
+        searchResults: {
+          'AOA': [
+            {
+              'id': 'meting:tencent:1',
+              'title': 'Fallback',
+              'artist': 'X',
+              'resultType': 'song',
+            },
+          ],
+        },
+        details: {},
+      );
+      final provider = HybridMusicProvider(
+        metadata: metadata,
+        playback: const _UnusedProvider(),
+        gdStudio: GdStudioMusicClient(dio: dio, sources: const ['joox']),
+      );
 
-    final songs = await provider.searchMetadataSongs('AOA');
-    expect(songs.single['id'], 'meting:tencent:1');
-    expect(songs.single['playbackSource'], 'bilibili');
-  });
+      final songs = await provider.searchMetadataSongs('AOA');
+      expect(songs.single['id'], 'meting:tencent:1');
+      expect(songs.single['playbackSource'], 'bilibili');
+    },
+  );
 
   test(
     'title-only search cache still fetches song detail before Bilibili search',
@@ -254,34 +259,31 @@ void main() {
     },
   );
 
-  test(
-    'detail playbackId skips Bilibili candidate search',
-    () async {
-      final metadata = _MetadataProvider(
-        searchResults: const {},
-        details: const {
-          'meting:tencent:detail-song': {
-            'id': 'meting:tencent:detail-song',
-            'title': '详情歌曲',
-            'artist': '详情歌手',
-            'playbackId': 'bilibili:BVdetail:p1',
-            'lyrics': '[00:00.00]detail',
-          },
+  test('detail playbackId skips Bilibili candidate search', () async {
+    final metadata = _MetadataProvider(
+      searchResults: const {},
+      details: const {
+        'meting:tencent:detail-song': {
+          'id': 'meting:tencent:detail-song',
+          'title': '详情歌曲',
+          'artist': '详情歌手',
+          'playbackId': 'bilibili:BVdetail:p1',
+          'lyrics': '[00:00.00]detail',
         },
-      );
-      final playback = _ResolvingPlaybackProvider();
-      final provider = HybridMusicProvider(
-        metadata: metadata,
-        playback: playback,
-      );
+      },
+    );
+    final playback = _ResolvingPlaybackProvider();
+    final provider = HybridMusicProvider(
+      metadata: metadata,
+      playback: playback,
+    );
 
-      final playUrl = await provider.getPlayUrl('meting:tencent:detail-song');
+    final playUrl = await provider.getPlayUrl('meting:tencent:detail-song');
 
-      expect(playback.searchQueries, isEmpty);
-      expect(playUrl.resolvedId, 'bilibili:BVdetail:p1');
-      expect(playUrl.lyrics, '[00:00.00]detail');
-    },
-  );
+    expect(playback.searchQueries, isEmpty);
+    expect(playUrl.resolvedId, 'bilibili:BVdetail:p1');
+    expect(playUrl.lyrics, '[00:00.00]detail');
+  });
 
   test('bestBilibiliMatch hard-excludes instrumental candidates', () {
     final best = HybridMusicProvider.bestBilibiliMatch(
@@ -378,6 +380,189 @@ void main() {
       expect(playback.playUrlCalls, 0);
     },
   );
+
+  group('ChKSz routing', () {
+    ChkszMusicProvider chkszProvider({
+      required Dio dio,
+      String apiKey = 'test-key',
+    }) {
+      return ChkszMusicProvider(
+        client: ChkszMusicClient(dio: dio, apiKeyProvider: () => apiKey),
+      );
+    }
+
+    test('getPlayUrl routes chksz ids to the direct NetEase URL', () async {
+      final dio = Dio();
+      dio.httpClientAdapter = _QueueAdapter([
+        _json('{"code":200,"data":{"url":"https://m701.music.126.net/a.mp3"}}'),
+      ]);
+      final provider = HybridMusicProvider(
+        metadata: const _MetadataProvider(searchResults: {}, details: {}),
+        playback: const _UnusedProvider(),
+        chksz: chkszProvider(dio: dio),
+      );
+
+      final play = await provider.getPlayUrl('chksz:163:22813978');
+
+      expect(play.url, 'https://m701.music.126.net/a.mp3');
+      expect(play.headers, isEmpty);
+      expect(play.resolvedId, 'chksz:163:22813978');
+    });
+
+    test('missing API key propagates without Bilibili fallback', () async {
+      final dio = Dio();
+      dio.httpClientAdapter = _QueueAdapter([
+        _json('{"code":200,"data":{"url":"x"}}'),
+      ]);
+      final provider = HybridMusicProvider(
+        metadata: const _MetadataProvider(searchResults: {}, details: {}),
+        playback: const _UnusedProvider(),
+        chksz: chkszProvider(dio: dio, apiKey: ''),
+      );
+
+      expect(
+        () => provider.getPlayUrl('chksz:163:22813978'),
+        throwsA(isA<ChkszApiKeyMissingException>()),
+      );
+    });
+
+    test('ChKSz empty play url falls back to Bilibili by title', () async {
+      // Both quality levels return code 200 with an empty url: a genuine
+      // source failure, so the Bilibili-by-title fallback kicks in.
+      final dio = Dio();
+      dio.httpClientAdapter = _QueueAdapter([
+        _json('{"code":200,"data":{"url":""}}'),
+        _json('{"code":200,"data":{"url":""}}'),
+      ]);
+      final provider = HybridMusicProvider(
+        metadata: const _MetadataProvider(searchResults: {}, details: {}),
+        playback: _ChkszFallbackPlaybackProvider(),
+        chksz: chkszProvider(dio: dio),
+      );
+      // rememberSongs feeds the title cache used by the fallback matcher.
+      provider.rememberSongs(const [
+        {
+          'id': 'chksz:163:22813978',
+          'title': '晴天',
+          'artist': '周杰伦',
+          'resultType': 'song',
+        },
+      ]);
+
+      final play = await provider.getPlayUrl('chksz:163:22813978');
+
+      expect(play.url, 'https://example.test/bilibili.m4s');
+      expect(play.resolvedId, 'bilibili:BVfallback:p1');
+    });
+
+    test('ChKSz business error propagates without Bilibili fallback', () async {
+      final dio = Dio();
+      dio.httpClientAdapter = _QueueAdapter([
+        _json('{"code":400,"msg":"bad key"}'),
+      ]);
+      final provider = HybridMusicProvider(
+        metadata: const _MetadataProvider(searchResults: {}, details: {}),
+        playback: _ChkszFallbackPlaybackProvider(),
+        chksz: chkszProvider(dio: dio),
+      );
+      provider.rememberSongs(const [
+        {
+          'id': 'chksz:163:22813978',
+          'title': '晴天',
+          'artist': '周杰伦',
+          'resultType': 'song',
+        },
+      ]);
+
+      expect(
+        () => provider.getPlayUrl('chksz:163:22813978'),
+        throwsA(
+          isA<ChkszApiException>().having(
+            (e) => e.message,
+            'message',
+            contains('bad key'),
+          ),
+        ),
+      );
+    });
+
+    test('chksz playlist id is not treated as a playable song', () async {
+      final provider = HybridMusicProvider(
+        metadata: const _MetadataProvider(searchResults: {}, details: {}),
+        playback: const _UnusedProvider(),
+        chksz: chkszProvider(dio: Dio()),
+      );
+
+      expect(
+        () => provider.getPlayUrl('chksz:playlist:5202687076'),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('不能直接播放'),
+          ),
+        ),
+      );
+    });
+
+    test('getLyrics uses the ChKSz lyric endpoint', () async {
+      final dio = Dio();
+      dio.httpClientAdapter = _QueueAdapter([
+        _json('{"code":200,"data":{"lrc":"[00:00.00]晴天第一句"}}'),
+      ]);
+      final provider = HybridMusicProvider(
+        metadata: const _MetadataProvider(searchResults: {}, details: {}),
+        playback: const _UnusedProvider(),
+        chksz: chkszProvider(dio: dio),
+      );
+
+      final lyrics = await provider.getLyrics(const {
+        'id': 'chksz:163:22813978',
+        'title': '晴天',
+      });
+
+      expect(lyrics, '[00:00.00]晴天第一句');
+    });
+
+    test('searchChkszSongs maps results and caches them', () async {
+      final dio = Dio();
+      dio.httpClientAdapter = _QueueAdapter([
+        _json(
+          '{"code":200,"data":{"songs":[{"id":1,"name":"晴天","ar":[{"name":"周杰伦"}]}]}}',
+        ),
+      ]);
+      final provider = HybridMusicProvider(
+        metadata: const _MetadataProvider(searchResults: {}, details: {}),
+        playback: const _UnusedProvider(),
+        chksz: chkszProvider(dio: dio),
+      );
+
+      final songs = await provider.searchChkszSongs('晴天');
+
+      expect(songs.single['id'], 'chksz:163:1');
+      expect(songs.single['title'], '晴天');
+    });
+
+    test('getPlaylist routes chksz:playlist: ids to ChKSz', () async {
+      final dio = Dio();
+      dio.httpClientAdapter = _QueueAdapter([
+        _json(
+          '{"code":200,"data":{"id":5202687076,"name":"精选","tracks":[{"id":1,"name":"T","ar":[{"name":"A"}]}]}}',
+        ),
+      ]);
+      final provider = HybridMusicProvider(
+        metadata: const _MetadataProvider(searchResults: {}, details: {}),
+        playback: const _UnusedProvider(),
+        chksz: chkszProvider(dio: dio),
+      );
+
+      final playlist = await provider.getPlaylist('chksz:playlist:5202687076');
+
+      expect(playlist['title'], '精选');
+      final songs = playlist['songs'] as List;
+      expect(songs.single['id'], 'chksz:163:1');
+    });
+  });
 }
 
 class _CountingMetadataProvider implements MusicProvider {
@@ -396,8 +581,10 @@ class _CountingMetadataProvider implements MusicProvider {
   }
 
   @override
-  Future<List<Map<String, dynamic>>> searchSongs(String query, {int page = 1}) async =>
-      const [];
+  Future<List<Map<String, dynamic>>> searchSongs(
+    String query, {
+    int page = 1,
+  }) async => const [];
 
   @override
   Future<List<Map<String, dynamic>>> getRecommendedSongs() async => const [];
@@ -430,7 +617,10 @@ class _ResolvingPlaybackProvider implements MusicProvider {
   Future<String> getLyrics(Map<String, dynamic> song) async => '';
 
   @override
-  Future<List<Map<String, dynamic>>> searchSongs(String query, {int page = 1}) async {
+  Future<List<Map<String, dynamic>>> searchSongs(
+    String query, {
+    int page = 1,
+  }) async {
     searchQueries.add(query);
     return const [
       {
@@ -483,7 +673,10 @@ class _MetadataProvider implements MusicProvider {
   }
 
   @override
-  Future<List<Map<String, dynamic>>> searchSongs(String query, {int page = 1}) async {
+  Future<List<Map<String, dynamic>>> searchSongs(
+    String query, {
+    int page = 1,
+  }) async {
     return searchResults[query] ?? const [];
   }
 
@@ -522,8 +715,10 @@ class _UnusedProvider implements MusicProvider {
   Future<String> getLyrics(Map<String, dynamic> song) async => '';
 
   @override
-  Future<List<Map<String, dynamic>>> searchSongs(String query, {int page = 1}) async =>
-      const [];
+  Future<List<Map<String, dynamic>>> searchSongs(
+    String query, {
+    int page = 1,
+  }) async => const [];
 
   @override
   Future<List<Map<String, dynamic>>> getRecommendedSongs() async => const [];
@@ -560,7 +755,10 @@ class _ThrowOnSearchMetadataProvider implements MusicProvider {
   Future<String> getLyrics(Map<String, dynamic> song) async => '';
 
   @override
-  Future<List<Map<String, dynamic>>> searchSongs(String query, {int page = 1}) async {
+  Future<List<Map<String, dynamic>>> searchSongs(
+    String query, {
+    int page = 1,
+  }) async {
     searchCalls += 1;
     throw StateError('metadata search should not run when GDStudio hits');
   }
@@ -633,8 +831,10 @@ class _PlaybackProviderWithLyrics implements MusicProvider {
       '[00:00.00]B站字幕歌词';
 
   @override
-  Future<List<Map<String, dynamic>>> searchSongs(String query, {int page = 1}) async =>
-      const [];
+  Future<List<Map<String, dynamic>>> searchSongs(
+    String query, {
+    int page = 1,
+  }) async => const [];
 
   @override
   Future<List<Map<String, dynamic>>> getRecommendedSongs() async => const [];
@@ -677,8 +877,10 @@ class _ScopedPlaybackProvider implements MusicProvider {
   Future<String> getLyrics(Map<String, dynamic> song) async => '';
 
   @override
-  Future<List<Map<String, dynamic>>> searchSongs(String query, {int page = 1}) async =>
-      results[query] ?? const [];
+  Future<List<Map<String, dynamic>>> searchSongs(
+    String query, {
+    int page = 1,
+  }) async => results[query] ?? const [];
 
   @override
   Future<List<Map<String, dynamic>>> getRecommendedSongs() async => const [];
@@ -702,5 +904,89 @@ class _ScopedPlaybackProvider implements MusicProvider {
   @override
   Future<PlaybackUrl> getPlayUrl(String id) {
     throw UnimplementedError();
+  }
+}
+
+/// Playback provider that resolves any song to a fixed Bilibili entry —
+/// used to verify the ChKSz → Bilibili fallback path.
+class _ChkszFallbackPlaybackProvider implements MusicProvider {
+  @override
+  void rememberSongs(Iterable<Map<String, dynamic>> songs) {}
+
+  @override
+  Future<String> getLyrics(Map<String, dynamic> song) async => '';
+
+  @override
+  Future<List<Map<String, dynamic>>> searchSongs(
+    String query, {
+    int page = 1,
+  }) async {
+    return const [
+      {
+        'id': 'bilibili:BVfallback:p1',
+        'title': '晴天',
+        'artist': '周杰伦',
+        'resultType': 'song',
+      },
+    ];
+  }
+
+  @override
+  Future<PlaybackUrl> getPlayUrl(String id) async {
+    return const PlaybackUrl(
+      'https://example.test/bilibili.m4s',
+      resolvedId: 'bilibili:BVfallback:p1',
+    );
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> getRecommendedSongs() async => const [];
+
+  @override
+  Future<List<Map<String, dynamic>>> getHotPlaylists({
+    int? limit,
+    int? offset,
+  }) async => const [];
+
+  @override
+  Future<Map<String, dynamic>> getPlaylist(String id, {int? limit}) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<Map<String, dynamic>> getSongDetail(String id) {
+    throw UnimplementedError();
+  }
+}
+
+ResponseBody _json(String body) {
+  return ResponseBody.fromString(
+    body,
+    200,
+    headers: {
+      Headers.contentTypeHeader: [Headers.jsonContentType],
+    },
+  );
+}
+
+class _QueueAdapter implements HttpClientAdapter {
+  _QueueAdapter(this._responses);
+
+  final List<ResponseBody> _responses;
+  var _i = 0;
+
+  @override
+  void close({bool force = false}) {}
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<List<int>>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    if (_i >= _responses.length) {
+      throw StateError('no more mock responses for ${options.uri}');
+    }
+    return _responses[_i++];
   }
 }
