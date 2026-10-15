@@ -97,7 +97,13 @@ jobs:
           # 接入代码签名证书后，在仓库 Secrets 里配这两个值即可自动签名
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 注意：**不要**在这里设 GH_TOKEN / GITHUB_TOKEN。
+          # electron-builder 会把这两个变量当成「用 github 作为 publish provider」的隐式信号
+          # （resolvePublishConfigurations），即便加了 --publish never 也会走进
+          # update-info 生成路径，在仓库信息解析失败时返回含 null 的 publishConfigs，
+          # 崩在 updateInfoBuilder 的 publishConfig.channel。
+          # 资产上传由下面的 softprops/action-gh-release 负责，它自己会用
+          # secrets.GITHUB_TOKEN，与这里无关。
 
       - name: 生成更新清单与校验和
         shell: bash
