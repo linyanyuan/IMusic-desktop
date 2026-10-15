@@ -104,6 +104,12 @@ export async function checkForUpdate(manual: boolean): Promise<void> {
       publish({ kind: 'available', manifest: result.remote })
       return
     }
+    // 拉不到清单 ≠ 已是最新：私有仓库/断网时清单地址会 404，若不区分就会把
+    // 「根本没检查到」谎报成「已是最新」（真实踩坑：2.3.5 检测不到 2.3.6）。
+    if (manual && result.error != null && result.error !== '') {
+      publish({ kind: 'error', message: result.error })
+      return
+    }
     publish(manual ? { kind: 'upToDate' } : { kind: 'idle' })
   } catch (error) {
     publish(manual ? { kind: 'error', message: errorMessage(error) } : { kind: 'idle' })

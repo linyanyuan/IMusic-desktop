@@ -23,11 +23,12 @@ declare global {
       // ---- 更新检查（主进程实现，见 electron/update.ts） ----
       /** 当前版本与 manifest 地址 */
       updateInfo: () => Promise<{ currentVersion: string; manifestUrl: string }>
-      /** 检查更新；manual=true 跳过 24h 节流。remote=null 表示未取到/无效清单 */
+      /** 检查更新；manual=true 跳过 24h 节流。remote=null 表示未取到/无效清单，error 为失败原因 */
       updateCheck: (manual: boolean) => Promise<{
         currentVersion: string
         remote: UpdateManifest | null
         available: boolean
+        error: string | null
       }>
       /** 下载并校验 sha256，resolve 本地安装包路径 */
       updateDownload: (manifest: UpdateManifest) => Promise<{ filePath: string }>

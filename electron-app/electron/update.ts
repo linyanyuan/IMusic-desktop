@@ -193,10 +193,26 @@ export function installerFileName(manifest: UpdateManifest): string {
 
 type ProgressListener = (progress: { received: number; total: number | null }) => void
 
+/**
+ * 清单拉取失败的用户可读原因。
+ *
+ * 为什么必须把「拉不到清单」和「已是最新」分开：清单地址是 GitHub Releases 的
+ * `latest/download` 链接，**私有仓库**对匿名请求返回 404。此前一律静默当 null，
+ * 于是设置页「检查更新」会显示「已是最新」，而实际上是根本没取到清单（真实踩坑：
+ * 2.3.5 检测不到 2.3.6）。status 为 null 表示请求本身抛错（断网/超时/域名被拒）。
+ */
+export function describeManifestFailure(status: number | null, error?: unknown): string {
+  if (status != null) return `无法获取更新信息（HTTP ${status}）`
+  const detail = error instanceof Error ? error.message : String(error ?? '')
+  return detail === '' ? '无法连接更新服务器' : `无法连接更新服务器：${detail}`
+}
+
 export class UpdateService {
   private readonly baseUrl: string
   private downloadAbort: AbortController | null = null
   private downloading = false
+  /** 最近一次拉清单的失败原因；成功或尚未拉取时为 null */
+  private manifestError: string | null = null
 
   constructor(baseUrl?: string) {
     // 供 QA 用本地假 manifest 服务替换上游
@@ -210,6 +226,11 @@ export class UpdateService {
 
   get manifestUrl(): string {
     return `${this.baseUrl.replace(/\/+$/, '')}${UPDATE_MANIFEST_PATH}`
+  }
+
+  /** 最近一次拉清单的失败原因（供 check() 区分「拉不到」与「已是最新」） */
+  get lastManifestError(): string | null {
+    return this.manifestError
   }
 
   /**
@@ -288,7 +309,7 @@ export class UpdateService {
     return Date.now() - last >= CHECK_THROTTLE_MS
   }
 
-  /** 拉取远端 manifest；网络/解析/校验失败一律返回 null（对应 Dart 端 catch → null） */
+  /** 拉取远端 manifest；失败时记录原因并返回 null（自动检查忽略原因，手动检查会展示） */
   async fetchManifest(options: { manual?: boolean } = {}): Promise<UpdateManifest | null> {
     if (!options.manual && !this.shouldAutoCheck()) return null
     try {
@@ -297,21 +318,30 @@ export class UpdateService {
         signal: AbortSignal.timeout(MANIFEST_TIMEOUT_MS),
         headers: { Accept: 'application/json' },
       })
-      if (!response.ok) return null
+      if (!response.ok) {
+        this.manifestError = describeManifestFailure(response.status)
+        return null
+      }
       const manifest = parseManifest(await response.json())
-      if (!manifestIsValid(manifest)) return null
+      if (!manifestIsValid(manifest)) {
+        this.manifestError = '更新清单格式无效'
+        return null
+      }
+      this.manifestError = null
       this.writeLastCheck(new Date())
       return manifest
-    } catch {
+    } catch (error) {
+      this.manifestError = describeManifestFailure(null, error)
       return null
     }
   }
 
-  /** 检查更新：返回远端版本 / 是否有更新 / 当前版本 */
+  /** 检查更新：返回远端版本 / 是否有更新 / 当前版本（拉取失败时带 error 原因） */
   async check(manual: boolean): Promise<{
     currentVersion: string
     remote: UpdateManifest | null
     available: boolean
+    error: string | null
   }> {
     const currentVersion = this.currentVersion
     const remote = await this.fetchManifest({ manual })
@@ -319,6 +349,7 @@ export class UpdateService {
       currentVersion,
       remote,
       available: remote != null && isUpdateAvailable(currentVersion, remote.version),
+      error: remote == null ? this.manifestError : null,
     }
   }
 

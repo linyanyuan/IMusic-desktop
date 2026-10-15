@@ -10,6 +10,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   DEFAULT_UPDATE_BASE_URL,
+  UpdateService,
+  describeManifestFailure,
   manifestIsValid,
   parseManifest,
   installerFileName,
@@ -138,4 +140,67 @@ test('更新说明为空时 changelog 归一化为 null', () => {
     changelog: '',
   })
   assert.equal(parsed?.changelog, null)
+})
+
+// ---------------------------------------------------------------------------
+// 「拉不到清单」必须与「已是最新」区分开
+//
+// 背景（2026-10 真实踩坑）：仓库是**私有**的，而清单地址是 GitHub Releases 的
+// latest/download 链接 —— 匿名请求直接 404。旧实现把非 2xx 静默当 null，渲染层
+// 于是把「根本没检查到」显示成「已是最新」，用户以为 2.3.5 就是最新版。
+// ---------------------------------------------------------------------------
+
+test('清单 404 时记录失败原因，不再静默当作无更新', async () => {
+  const service = new UpdateService(`https://github.com/${REPO}`)
+  const originalFetch = globalThis.fetch
+  try {
+    globalThis.fetch = (async () => new Response('Not Found', { status: 404 })) as typeof fetch
+    assert.equal(await service.fetchManifest({ manual: true }), null, '404 时返回 null')
+    assert.equal(
+      service.lastManifestError,
+      '无法获取更新信息（HTTP 404）',
+      '必须留下可读的失败原因，供设置页区分「检查失败」与「已是最新」',
+    )
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('清单正常时返回 manifest 且清空上一次的失败原因', async () => {
+  const service = new UpdateService(`https://github.com/${REPO}`)
+  const originalFetch = globalThis.fetch
+  try {
+    globalThis.fetch = (async () => new Response('Not Found', { status: 404 })) as typeof fetch
+    await service.fetchManifest({ manual: true })
+    assert.notEqual(service.lastManifestError, null)
+
+    globalThis.fetch = (async () =>
+      Response.json(githubManifest('2.3.6'))) as unknown as typeof fetch
+    const manifest = await service.fetchManifest({ manual: true })
+    assert.equal(manifest?.version, '2.3.6')
+    assert.equal(service.lastManifestError, null, '拉取成功后必须清掉旧错误，否则会误报')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('网络异常（断网/超时/域名被拒）也留下原因', async () => {
+  const service = new UpdateService(`https://github.com/${REPO}`)
+  const originalFetch = globalThis.fetch
+  try {
+    globalThis.fetch = (async () => {
+      throw new Error('fetch failed')
+    }) as typeof fetch
+    assert.equal(await service.fetchManifest({ manual: true }), null)
+    assert.equal(service.lastManifestError, '无法连接更新服务器：fetch failed')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('describeManifestFailure 的文案覆盖两种失败', () => {
+  assert.equal(describeManifestFailure(404), '无法获取更新信息（HTTP 404）')
+  assert.equal(describeManifestFailure(500), '无法获取更新信息（HTTP 500）')
+  assert.equal(describeManifestFailure(null, new Error('timeout')), '无法连接更新服务器：timeout')
+  assert.equal(describeManifestFailure(null, null), '无法连接更新服务器')
 })
