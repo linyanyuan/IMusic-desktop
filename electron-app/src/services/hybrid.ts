@@ -19,6 +19,12 @@ import {
   type CollectionLyricSegment,
 } from './collectionLyrics'
 import { GdStudioMusicClient } from './gdstudio'
+import {
+  NeteasePublicClient,
+  interleaveSongs,
+  type CategoryPlaylistOptions,
+} from './netease'
+import { neteaseCatsForGenreKeys } from '../state/genres'
 import type { ChkszMusicProvider } from './chksz'
 import {
   ChkszMusicClient,
@@ -39,6 +45,9 @@ const HARD_INSTRUMENTAL_MARKERS = [
   '无人声',
   '消音',
 ]
+
+/** 「为你推荐」单页目标首数（与默认推荐 feed 的 30 首对齐） */
+const PERSONALIZED_SONGS_TARGET = 30
 
 const SOFT_DOWNGRADE_MARKERS = [
   'dance practice',
@@ -65,6 +74,8 @@ export class HybridMusicProvider implements MusicProvider {
      * 改成解析器后与 Dart 行为对齐：每次取用都按当前 key 解析（解析器内部按 key 缓存实例）。
      */
     private readonly resolveChksz: ChkszResolver,
+    /** 网易云公开接口客户端（分类歌单 / 分类热门单曲 / 网易歌单详情） */
+    private readonly netease: NeteasePublicClient = new NeteasePublicClient(),
   ) {}
 
   /** 当前 key 对应的 ChKSz provider；未配置 key 时为 null */
@@ -230,6 +241,46 @@ export class HybridMusicProvider implements MusicProvider {
     return mapped
   }
 
+  /**
+   * 分类热门歌单（网易云公开接口）—— 搜索页「热门分类」与分类详情页使用。
+   * 失败/空由调用方决定展示（页面层有重试按钮）。
+   */
+  getCategoryPlaylists(
+    cat: string,
+    opts?: CategoryPlaylistOptions,
+  ): Promise<RawSong[]> {
+    return this.netease.getCategoryPlaylists(cat, opts)
+  }
+
+  /** 分类热门单曲：取该分类第 page 批热门歌单的曲目交错去重（约 30 首） */
+  async getCategorySongs(cat: string, page = 1): Promise<RawSong[]> {
+    const songs = await this.netease.getCategorySongs(cat, page)
+    this.cacheSongs(songs)
+    return songs
+  }
+
+  /**
+   * 按用户口味偏好的个性化推荐：对每个已选分类取同一页的「分类热门单曲」，
+   * 按分类轮询交错、去重后取 30 首；全部为空/失败时回退默认推荐 feed。
+   */
+  async getPersonalizedSongs(genreKeys: string[], page = 1): Promise<RawSong[]> {
+    const cats = neteaseCatsForGenreKeys(genreKeys)
+    if (cats.length > 0) {
+      const lists = await Promise.all(
+        cats.map((cat) =>
+          this.netease.getCategorySongs(cat, page).catch(() => [] as RawSong[]),
+        ),
+      )
+      const merged = interleaveSongs(lists, PERSONALIZED_SONGS_TARGET)
+      if (merged.length > 0) {
+        this.cacheSongs(merged)
+        return merged
+      }
+      console.log('[Hybrid] 个性化推荐为空，回退默认推荐 feed')
+    }
+    return this.getRecommendedSongs(page)
+  }
+
   async getHotPlaylists(opts?: { limit?: number; offset?: number }): Promise<RawSong[]> {
     const metadataFuture = this.metadata.getHotPlaylists(opts).catch(() => [] as RawSong[])
     const playbackFuture = this.playback.getHotPlaylists(opts).catch(() => [] as RawSong[])
@@ -247,6 +298,12 @@ export class HybridMusicProvider implements MusicProvider {
   // ---------- 歌单/详情 ----------
 
   async getPlaylist(id: string, limit?: number): Promise<RawSong> {
+    // 网易云公开歌单（分类浏览/首页进入）：id 形如 `netease-playlist:<id>`
+    if (NeteasePublicClient.isNeteasePlaylistId(id)) {
+      const playlist = await this.netease.getPlaylist(id, limit)
+      this.cachePlaylistSongs(playlist)
+      return playlist
+    }
     if (ChkszMusicClient.isChkszPlaylistId(id)) {
       if (this.chksz == null) throw new Error('ChKSz 未启用')
       const playlist = await this.chksz.getPlaylist(id, limit)

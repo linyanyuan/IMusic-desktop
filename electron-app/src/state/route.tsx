@@ -30,6 +30,7 @@ export const DeskRoute = {
   Favorites: 'favorites',
   History: 'history',
   PlaylistDetail: 'playlistDetail',
+  Category: 'category',
   Focus: 'focus',
   Profile: 'profile',
   Settings: 'settings',
@@ -40,12 +41,17 @@ export interface RouteState {
   route: DeskRoute
   /** PlaylistDetail 时选中的歌单 id（'favorites' 表示我喜欢的音乐） */
   playlistId: string | null
+  /** Category 时选中的分类 key（genres.ts 的 Genre.key） */
+  categoryKey: string | null
   /** 搜索页预填关键词 */
   searchSeed: string
 }
 
 export interface RouteApi extends RouteState {
-  go: (route: DeskRoute, opts?: { playlistId?: string; searchSeed?: string }) => void
+  go: (
+    route: DeskRoute,
+    opts?: { playlistId?: string; categoryKey?: string; searchSeed?: string },
+  ) => void
   openSearch: (seed: string) => void
   /** 专注模式开关：进入时记住来源，退出时回到来源（对应 Flutter toggleDeskFocusRoute） */
   toggleFocus: () => void
@@ -60,10 +66,20 @@ export interface RouteApi extends RouteState {
 const RouteContext = createContext<RouteApi | null>(null)
 
 function sameRouteState(a: RouteState, b: RouteState): boolean {
-  return a.route === b.route && a.playlistId === b.playlistId && a.searchSeed === b.searchSeed
+  return (
+    a.route === b.route &&
+    a.playlistId === b.playlistId &&
+    a.categoryKey === b.categoryKey &&
+    a.searchSeed === b.searchSeed
+  )
 }
 
-const HOME_STATE: RouteState = { route: DeskRoute.Home, playlistId: null, searchSeed: '' }
+const HOME_STATE: RouteState = {
+  route: DeskRoute.Home,
+  playlistId: null,
+  categoryKey: null,
+  searchSeed: '',
+}
 
 export function RouteProvider({ children }: { children: ReactNode }) {
   const [history, setHistory] = useState<NavHistory<RouteState>>(() => emptyHistory(HOME_STATE))
@@ -76,13 +92,19 @@ export function RouteProvider({ children }: { children: ReactNode }) {
       // 专注模式是覆盖式沉浸模式，不进历史链
       setHistory((h) => {
         focusReturn.current = h.current.route === DeskRoute.Focus ? focusReturn.current : h.current
-        return replaceCurrent(h, { route: DeskRoute.Focus, playlistId: null, searchSeed: '' })
+        return replaceCurrent(h, {
+          route: DeskRoute.Focus,
+          playlistId: null,
+          categoryKey: null,
+          searchSeed: '',
+        })
       })
       return
     }
     const next: RouteState = {
       route,
       playlistId: opts?.playlistId ?? null,
+      categoryKey: opts?.categoryKey ?? null,
       searchSeed: opts?.searchSeed ?? '',
     }
     setHistory((h) => navigateTo(h, next, sameRouteState))
@@ -90,7 +112,11 @@ export function RouteProvider({ children }: { children: ReactNode }) {
 
   const openSearch = useCallback<RouteApi['openSearch']>((seed) => {
     setHistory((h) =>
-      navigateTo(h, { route: DeskRoute.Search, playlistId: null, searchSeed: seed }, sameRouteState),
+      navigateTo(
+        h,
+        { route: DeskRoute.Search, playlistId: null, categoryKey: null, searchSeed: seed },
+        sameRouteState,
+      ),
     )
   }, [])
 
@@ -103,7 +129,12 @@ export function RouteProvider({ children }: { children: ReactNode }) {
         return replaceCurrent(h, HOME_STATE)
       }
       focusReturn.current = h.current
-      return replaceCurrent(h, { route: DeskRoute.Focus, playlistId: null, searchSeed: '' })
+      return replaceCurrent(h, {
+        route: DeskRoute.Focus,
+        playlistId: null,
+        categoryKey: null,
+        searchSeed: '',
+      })
     })
   }, [])
 

@@ -7,6 +7,8 @@ import { useEffect, useReducer } from 'react'
 import type { LibraryService } from '../services/library'
 import type { AuthService } from '../services/auth'
 import type { AppSettings } from '../services/appSettings'
+import type { TastePreferencesStore } from '../services/tastePreferences'
+import { tastePreferences } from '../services/tastePreferences'
 import { getServices } from '../services/runtime'
 
 function useSubscription<T>(target: T & { subscribe?: (fn: () => void) => () => void }): T {
@@ -31,4 +33,9 @@ export function useAuth(): AuthService {
 
 export function useSettings(): AppSettings {
   return useSubscription(getServices().settings)
+}
+
+/** 音乐口味偏好（localStorage）：store 变更时自动重渲染，用 get() 取当前值 */
+export function useTastePreferences(): TastePreferencesStore {
+  return useSubscription(tastePreferences)
 }

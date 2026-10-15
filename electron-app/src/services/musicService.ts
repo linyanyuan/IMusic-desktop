@@ -13,11 +13,13 @@ import {
   defaultGetLyrics,
 } from './musicProvider'
 import { HybridMusicProvider } from './hybrid'
+import { type CategoryPlaylistOptions } from './netease'
 import { FallbackMusicProvider } from './fallback'
 import { GdStudioMusicClient } from './gdstudio'
 import { MetingMusicProvider, DefaultMusicProvider } from './meting'
 import { BilibiliMusicProvider } from './bilibili'
 import { createChkszResolver } from './chksz'
+import { NeteasePublicClient } from './netease'
 
 /**
  * 兜底过滤「空载荷 id」的条目（如 `bilibili:`、`gdstudio::`）。
@@ -81,6 +83,41 @@ export class MusicService {
     return this.provider.getHotPlaylists(opts).then(dropUnplayableSongs)
   }
 
+  /**
+   * 分类热门歌单（网易云公开接口）—— 非 Hybrid provider（如单测的假 provider）
+   * 没有该能力时返回空数组，页面层自然落到空态。
+   */
+  getCategoryPlaylists(
+    cat: string,
+    opts?: CategoryPlaylistOptions,
+  ): Promise<RawSong[]> {
+    const hybrid =
+      this.provider instanceof HybridMusicProvider ? this.provider : null
+    if (hybrid == null) return Promise.resolve([])
+    return hybrid.getCategoryPlaylists(cat, opts).then(dropUnplayableSongs)
+  }
+
+  /** 分类热门单曲（交错去重后约 30 首） */
+  getCategorySongs(cat: string, page = 1): Promise<RawSong[]> {
+    const hybrid =
+      this.provider instanceof HybridMusicProvider ? this.provider : null
+    if (hybrid == null) return Promise.resolve([])
+    return hybrid.getCategorySongs(cat, page).then(dropUnplayableSongs)
+  }
+
+  /**
+   * 基于口味偏好的个性化推荐；无偏好或全部失败时 provider 内部已回退
+   * 默认推荐 feed（getRecommendedSongs）。
+   */
+  getPersonalizedSongs(genreKeys: string[], page = 1): Promise<RawSong[]> {
+    const hybrid =
+      this.provider instanceof HybridMusicProvider ? this.provider : null
+    if (hybrid == null || genreKeys.length === 0) {
+      return this.getRecommendedSongs(page)
+    }
+    return hybrid.getPersonalizedSongs(genreKeys, page).then(dropUnplayableSongs)
+  }
+
   getPlaylist(id: string, limit?: number): Promise<RawSong> {
     return this.provider.getPlaylist(id, limit)
   }
@@ -131,5 +168,7 @@ export function createMusicService(deps: MusicServiceDeps): MusicService {
   const gdStudio = new GdStudioMusicClient()
   // 解析器而不是快照：设置页改了 key 立即生效（对应 Dart 端 provider 重建）
   const chksz = createChkszResolver(deps.chkszApiKeyProvider)
-  return new MusicService(new HybridMusicProvider(metadata, playback, gdStudio, chksz))
+  return new MusicService(
+    new HybridMusicProvider(metadata, playback, gdStudio, chksz, new NeteasePublicClient()),
+  )
 }

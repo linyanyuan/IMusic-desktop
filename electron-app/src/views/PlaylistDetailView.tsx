@@ -11,7 +11,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
-import { Play, Shuffle, ListMusic, Loader2, Trash2 } from 'lucide-react'
+import { Play, Shuffle, ListMusic, Loader2, Trash2, Heart } from 'lucide-react'
 import { SongTable } from '../components/SongTable'
 import { AddToPlaylistModal } from '../components/AddToPlaylistModal'
 import { Cover } from '../components/Cover'
@@ -31,6 +31,9 @@ interface ResolvedPlaylist {
   songs: Song[]
   /** 自建歌单才允许增删（远端歌单是只读的） */
   editable: boolean
+  /** 远端来源标识（bilibili / netease / …）；收藏时一并存进库里 */
+  source: string
+  sourceLabel: string
 }
 
 export function PlaylistDetailView() {
@@ -41,6 +44,7 @@ export function PlaylistDetailView() {
   const [remote, setRemote] = useState<ResolvedPlaylist | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [collectBusy, setCollectBusy] = useState(false)
 
   const playlistId = route.playlistId ?? ''
 
@@ -84,6 +88,8 @@ export function PlaylistDetailView() {
               ? toSongs(rawSongs as Record<string, unknown>[])
               : [],
             editable: false,
+            source: resolved['source']?.toString() ?? '',
+            sourceLabel: resolved['sourceLabel']?.toString() ?? '',
           },
           null,
         )
@@ -105,6 +111,8 @@ export function PlaylistDetailView() {
         coverUrl: null,
         songs: library.likedSongs,
         editable: false,
+        source: '',
+        sourceLabel: '',
       }
     }
     if (localPlaylist != null) {
@@ -116,6 +124,8 @@ export function PlaylistDetailView() {
         songs: Array.isArray(rawSongs) ? toSongs(rawSongs as Record<string, unknown>[]) : [],
         // 服务端同步/收藏来的歌单不应提供「删除/增删歌曲」（会去改远端别人的歌单）
         editable: localPlaylist['isCollected'] !== true,
+        source: localPlaylist['source']?.toString() ?? '',
+        sourceLabel: localPlaylist['sourceLabel']?.toString() ?? '',
       }
     }
     return remote
@@ -141,8 +151,35 @@ export function PlaylistDetailView() {
     )
   }
 
-  const { id, name, coverUrl: cover, songs, editable } = resolved
+  const { id, name, coverUrl: cover, songs, editable, source, sourceLabel } = resolved
   const totalSeconds = songs.reduce((sum, s) => sum + durationSeconds(s), 0)
+  // 收藏态：本地库里已有同 id 且标记 isCollected（收藏的歌单详情走本地快照分支）
+  const collected = localPlaylist != null && localPlaylist['isCollected'] === true
+  const selfCreated = localPlaylist != null && localPlaylist['isCollected'] !== true
+  const canCollect = playlistId !== FAVORITES_ID && !selfCreated
+
+  /** 收藏 / 取消收藏（collectPlaylist 本身是 toggle；失败由服务层回滚本地状态） */
+  const toggleCollect = async () => {
+    if (collectBusy) return
+    setCollectBusy(true)
+    try {
+      await library.collectPlaylist({
+        id,
+        name,
+        title: name,
+        ...(cover != null ? { coverUrl: cover } : {}),
+        songs: songs.map((s) => s.extra),
+        songCount: songs.length,
+        resultType: 'playlist',
+        ...(source !== '' ? { source, sourceLabel } : {}),
+      })
+    } catch (e) {
+      // 项目里没有全局 toast；写库依赖云端（未登录会 401），失败必须让用户知道
+      window.alert(`收藏失败：${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setCollectBusy(false)
+    }
+  }
 
   const playAll = (shuffle: boolean) => {
     if (songs.length === 0) return
@@ -194,6 +231,27 @@ export function PlaylistDetailView() {
               <Shuffle size={15} strokeWidth={2} />
               随机播放
             </button>
+            {canCollect && (
+              <button
+                type="button"
+                data-testid="playlist-collect"
+                data-collected={collected ? 'true' : 'false'}
+                disabled={collectBusy}
+                onClick={() => void toggleCollect()}
+                className={`flex items-center gap-2 rounded-full px-5 py-2 text-[13.5px] font-medium transition-colors disabled:opacity-50 ${
+                  collected
+                    ? 'bg-[#FA233B] text-white hover:bg-[#E01E34]'
+                    : 'bg-[#F5F5F7] text-[#FA233B] hover:bg-black/[0.07]'
+                }`}
+              >
+                {collectBusy ? (
+                  <Loader2 size={15} strokeWidth={2} className="animate-spin" />
+                ) : (
+                  <Heart size={15} strokeWidth={2} fill={collected ? 'currentColor' : 'none'} />
+                )}
+                {collected ? '已收藏' : '收藏歌单'}
+              </button>
+            )}
             {editable && (
               <button
                 type="button"

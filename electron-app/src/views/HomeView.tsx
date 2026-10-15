@@ -9,12 +9,25 @@
  * 「继续播放」卡里的歌词行单独订阅播放进度（usePlayerTime），避免整页每 250ms 重渲染。
  */
 
-import { useEffect, useMemo, useState } from 'react'
-import { Play, Pause, Heart, Loader2, ListMusic, ChevronRight, RefreshCw } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Play,
+  Pause,
+  Heart,
+  Loader2,
+  ListMusic,
+  ChevronRight,
+  RefreshCw,
+  Sparkles,
+} from 'lucide-react'
 import { Cover } from '../components/Cover'
+import { Modal } from '../components/Modal'
+import { TasteGenreChips } from '../components/TasteGenreChips'
 import { usePlayer, usePlayerTime } from '../contexts/PlayerContext'
-import { useAuth, useLibrary } from '../state/hooks'
+import { useAuth, useLibrary, useTastePreferences } from '../state/hooks'
 import { DeskRoute, useRoute } from '../state/route'
+import { genreLabel } from '../state/genres'
+import { shouldOfferTasteOnboarding } from '../services/tastePreferences'
 import { getServices } from '../services/runtime'
 import { toSongs, formatTime, durationSeconds, songCover } from '../state/songUtils'
 import { activeLyricIndex, parseLyrics, plainLyricLines } from '../state/lyrics'
@@ -27,13 +40,19 @@ const HOT_PAGE_SIZE = 10
 function SectionTitle({
   children,
   action,
+  aside,
 }: {
   children: React.ReactNode
   action?: React.ReactNode
+  /** 标题右侧的补充说明（如「根据 流行 · 摇滚 推荐」），不是交互区 */
+  aside?: React.ReactNode
 }) {
   return (
-    <div className="mb-4 flex items-baseline justify-between">
-      <h2 className="text-[19px] font-bold tracking-tight text-[#1D1D1F]">{children}</h2>
+    <div className="mb-4 flex items-baseline justify-between gap-3">
+      <div className="flex min-w-0 items-baseline gap-2.5">
+        <h2 className="shrink-0 text-[19px] font-bold tracking-tight text-[#1D1D1F]">{children}</h2>
+        {aside}
+      </div>
       {action}
     </div>
   )
@@ -237,6 +256,111 @@ function PlaylistCard({ playlist, onOpen }: { playlist: Song; onOpen: () => void
   )
 }
 
+/** 首次口味引导卡（内嵌在「推荐歌曲」上方）：分类 chips 多选 1–5 个，或跳过 */
+function TasteOnboardingCard({
+  onStart,
+  onSkip,
+}: {
+  onStart: (genres: string[]) => void
+  onSkip: () => void
+}) {
+  const [selected, setSelected] = useState<string[]>([])
+  return (
+    <div
+      data-testid="taste-onboarding"
+      className="mb-4 rounded-2xl border border-[#FA233B]/20 bg-gradient-to-br from-[#FA233B]/[0.06] via-transparent to-[#F5F5F7]/60 p-5"
+    >
+      <div className="flex items-start gap-3">
+        <Sparkles size={18} strokeWidth={1.75} className="mt-0.5 shrink-0 text-[#FA233B]" />
+        <div className="min-w-0 flex-1">
+          <div className="text-[14px] font-semibold text-[#1D1D1F]">
+            选择你喜欢的音乐类型，为你定制推荐
+          </div>
+          <div className="mt-1 text-[12px] text-[#86868B]">
+            最多选 5 个；之后可在「调整口味」里随时修改。
+          </div>
+          <div className="mt-3">
+            <TasteGenreChips selected={selected} onChange={setSelected} />
+          </div>
+          <div className="mt-4 flex items-center gap-2">
+            <button
+              type="button"
+              data-testid="taste-start"
+              disabled={selected.length === 0}
+              onClick={() => onStart(selected)}
+              className="rounded-full bg-[#FA233B] px-4 py-2 text-[13px] font-medium text-white transition-colors hover:bg-[#E01E34] disabled:opacity-40"
+            >
+              开始推荐
+            </button>
+            <button
+              type="button"
+              data-testid="taste-skip"
+              onClick={onSkip}
+              className="rounded-full px-4 py-2 text-[13px] text-[#86868B] transition-colors hover:bg-black/[0.05]"
+            >
+              跳过
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** 「调整口味」弹窗 —— 与引导卡同一组 chips，额外提供清除偏好 */
+function TastePreferencesModal({
+  initial,
+  onClose,
+  onSave,
+  onClear,
+}: {
+  initial: string[]
+  onClose: () => void
+  onSave: (genres: string[]) => void
+  onClear: () => void
+}) {
+  // 条件渲染（open 时才挂载）—— 初始值直接取 useState 初值，不需要同步 effect
+  const [selected, setSelected] = useState<string[]>(initial)
+  return (
+    <Modal open title="调整音乐口味" onClose={onClose} width={520}>
+      <p className="text-[12.5px] text-[#86868B]">
+        选中的分类会作为首页「推荐歌曲」的依据（最多 5 个）。
+      </p>
+      <div className="mt-4">
+        <TasteGenreChips selected={selected} onChange={setSelected} />
+      </div>
+      <div className="mt-6 flex items-center justify-between">
+        <button
+          type="button"
+          data-testid="taste-clear"
+          onClick={onClear}
+          className="rounded-full px-4 py-2 text-[13px] text-[#86868B] transition-colors hover:bg-black/[0.05] hover:text-[#FA233B]"
+        >
+          清除偏好
+        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full px-4 py-2 text-[13px] text-[#86868B] transition-colors hover:bg-black/[0.05]"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            data-testid="taste-save"
+            disabled={selected.length === 0}
+            onClick={() => onSave(selected)}
+            className="rounded-full bg-[#FA233B] px-5 py-2 text-[13px] font-medium text-white transition-colors hover:bg-[#E01E34] disabled:opacity-40"
+          >
+            保存
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 export function HomeView() {
   const player = usePlayer()
   const library = useLibrary()
@@ -254,21 +378,68 @@ export function HomeView() {
   // 今日精选：以日期为种子的主题精选歌单（当天固定，次日换主题）
   const [featured, setFeatured] = useState<Song[]>([])
   const [featuredTheme, setFeaturedTheme] = useState('')
+  // 推荐歌曲请求序号：过期响应（旧口味/旧 page 后到、连点换一批）直接丢弃
+  const recReqRef = useRef(0)
+
+  // 音乐口味偏好（localStorage，实时读取）：有偏好 → 个性化推荐，否则沿用默认 feed
+  const taste = useTastePreferences()
+  const prefs = taste.get()
+  const selectedGenres = prefs.genres
+  const tasteKey = selectedGenres.join(',')
+  const showOnboarding = shouldOfferTasteOnboarding(prefs)
+  const tasteSubtitle =
+    selectedGenres.length > 0
+      ? `根据 ${selectedGenres.map(genreLabel).join(' · ')} 推荐`
+      : '热门推荐'
+  const [tasteModalOpen, setTasteModalOpen] = useState(false)
+
+  /**
+   * 推荐歌曲加载：有口味偏好时调 getPersonalizedSongs（provider 内部失败会回退
+   * 默认 feed），否则走原有 getRecommendedSongs。换一批 = page+1。
+   */
+  const loadRecommended = useCallback(
+    async (page: number, mode: 'initial' | 'refresh' = 'initial') => {
+      const requestId = ++recReqRef.current
+      if (mode === 'initial') setLoading(true)
+      else setRecRefreshing(true)
+      try {
+        const keys = taste.get().genres
+        const songs =
+          keys.length > 0
+            ? await getServices().music.getPersonalizedSongs(keys, page)
+            : await getServices().music.getRecommendedSongs(page)
+        if (requestId !== recReqRef.current) return
+        setRecommended(toSongs(songs))
+        setRecBatch(page)
+      } catch (e) {
+        console.warn('[Home] 推荐加载失败', e)
+        if (requestId !== recReqRef.current) return
+        setRecommended([])
+      } finally {
+        // 只有最新请求能复位 loading，且两个开关一起复位 —— 避免旧请求被判过期后状态卡死
+        if (requestId === recReqRef.current) {
+          setLoading(false)
+          setRecRefreshing(false)
+        }
+      }
+    },
+    [taste],
+  )
+
+  // 卸载后让在途推荐请求失效
+  useEffect(() => () => {
+    recReqRef.current += 1
+  }, [])
+
+  // 首次进入与口味变化都重载第 1 页（保存口味后 store 通知 → 本组件重渲染 → effect 触发）
+  useEffect(() => {
+    void loadRecommended(1, 'initial')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tasteKey])
 
   useEffect(() => {
     let alive = true
-    void (async () => {
-      try {
-        const songs = await getServices().music.getRecommendedSongs(1)
-        if (alive) setRecommended(toSongs(songs))
-      } catch (e) {
-        console.warn('[Home] 推荐加载失败', e)
-        if (alive) setRecommended([])
-      } finally {
-        if (alive) setLoading(false)
-      }
-    })()
-    // 今日精选与推荐并行拉取：日期种子 → 主题批次 → 前 2 个合集
+    // 今日精选：日期种子 → 主题批次 → 前 2 个合集
     void (async () => {
       try {
         const daily = dailyFeatured(Date.now())
@@ -284,7 +455,7 @@ export function HomeView() {
         if (alive) setFeatured([])
       }
     })()
-    // 热门歌单与推荐并行拉取（首批）
+    // 热门歌单（首批）
     void (async () => {
       try {
         const lists = await getServices().music.getHotPlaylists({ limit: HOT_PAGE_SIZE })
@@ -320,18 +491,16 @@ export function HomeView() {
   }
 
   // 换一批：拉推荐 feed 的下一页并整体替换（对照 BiliMusic 的换一批，不追加）
-  const refreshRecommended = async () => {
-    setRecRefreshing(true)
-    try {
-      const next = recBatch + 1
-      const songs = await getServices().music.getRecommendedSongs(next)
-      setRecBatch(next)
-      setRecommended(toSongs(songs))
-    } catch (e) {
-      console.warn('[Home] 换一批失败', e)
-    } finally {
-      setRecRefreshing(false)
-    }
+  const refreshRecommended = () => {
+    void loadRecommended(recBatch + 1, 'refresh')
+  }
+
+  /** 保存口味：写库后由 store 通知重载；口味未变时（重存同一组）手动补一次刷新 */
+  const applyTaste = (genres: string[]) => {
+    const nextKey = genres.join(',')
+    taste.set({ genres })
+    setTasteModalOpen(false)
+    if (nextKey === tasteKey) void loadRecommended(1, 'refresh')
   }
 
   const quickFavorites = useMemo(() => library.likedSongs.slice(0, 6), [library.likedSongs])
@@ -428,12 +597,37 @@ export function HomeView() {
 
       {/* 推荐歌曲（单曲 feed，换一批整体替换 —— 对照 BiliMusic 推荐页） */}
       <div data-home-section="recommended">
+        {/* 首次引导：从未设置且未跳过时出现在「推荐歌曲」上方 */}
+        {showOnboarding && (
+          <TasteOnboardingCard
+            onStart={(genres) => applyTaste(genres)}
+            onSkip={() => taste.skip()}
+          />
+        )}
         <SectionTitle
+          aside={
+            <>
+              <span
+                data-testid="taste-basis"
+                className="truncate text-[12px] font-normal text-[#86868B]"
+              >
+                {tasteSubtitle}
+              </span>
+              <button
+                type="button"
+                data-testid="taste-adjust"
+                onClick={() => setTasteModalOpen(true)}
+                className="shrink-0 text-[12px] font-medium text-[#FA233B] transition-opacity hover:opacity-80"
+              >
+                调整口味
+              </button>
+            </>
+          }
           action={
             <button
               type="button"
               aria-label="换一批推荐"
-              onClick={() => void refreshRecommended()}
+              onClick={() => refreshRecommended()}
               disabled={recRefreshing || loading}
               className="flex items-center gap-1.5 text-[12.5px] font-medium text-[#FA233B] transition-opacity hover:opacity-80 disabled:opacity-50"
             >
@@ -537,6 +731,19 @@ export function HomeView() {
           </div>
         )}
       </div>
+
+      {/* 调整口味弹窗（条件渲染，避开 initial 同步问题） */}
+      {tasteModalOpen && (
+        <TastePreferencesModal
+          initial={selectedGenres}
+          onClose={() => setTasteModalOpen(false)}
+          onSave={(genres) => applyTaste(genres)}
+          onClear={() => {
+            taste.clear()
+            setTasteModalOpen(false)
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -16,6 +16,7 @@ import { SearchView } from './views/SearchView'
 import { FavoritesView } from './views/FavoritesView'
 import { HistoryView } from './views/HistoryView'
 import { PlaylistDetailView } from './views/PlaylistDetailView'
+import { CategoryView } from './views/CategoryView'
 import { LibraryView } from './views/LibraryView'
 import { FocusView } from './views/FocusView'
 import { ProfileView } from './views/ProfileView'
@@ -45,7 +46,7 @@ function MainContent() {
           包含块，反而让遮罩错位。 */}
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
-          key={route.route + (route.playlistId ?? '')}
+          key={route.route + (route.playlistId ?? '') + (route.categoryKey ?? '')}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -57,6 +58,7 @@ function MainContent() {
           {route.route === DeskRoute.Favorites && <FavoritesView />}
           {route.route === DeskRoute.History && <HistoryView />}
           {route.route === DeskRoute.PlaylistDetail && <PlaylistDetailView />}
+          {route.route === DeskRoute.Category && <CategoryView />}
           {route.route === DeskRoute.Profile && <ProfileView />}
           {route.route === DeskRoute.Settings && <SettingsView />}
         </motion.div>

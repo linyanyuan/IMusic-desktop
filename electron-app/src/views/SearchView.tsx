@@ -13,18 +13,10 @@ import { getServices } from '../services/runtime'
 import { MusicSearchScope, type MusicSearchScope as Scope } from '../services/models'
 import { DeskRoute, useRoute } from '../state/route'
 import { toSongs, durationSeconds, formatTime, songCover } from '../state/songUtils'
+import { GENRES } from '../state/genres'
 import type { Song } from '../services/models'
 
 const RECENT_KEY = 'imusic:recentSearches'
-
-const CATEGORIES: Array<{ label: string; from: string; to: string }> = [
-  { label: '流行', from: '#FA233B', to: '#FF7A59' },
-  { label: '摇滚', from: '#5E5CE6', to: '#BF5AF2' },
-  { label: '专注纯音乐', from: '#0A84FF', to: '#64D2FF' },
-  { label: '电子', from: '#30D158', to: '#66D4CF' },
-  { label: '古典', from: '#8E8E93', to: '#48484A' },
-  { label: '独立音乐', from: '#FF9F0A', to: '#FFD60A' },
-]
 
 const SCOPE_TABS: Array<{ key: Scope; label: string }> = [
   { key: MusicSearchScope.All, label: '全部音源' },
@@ -321,12 +313,15 @@ export function SearchView() {
         <div className="space-y-8">
           <div>
             <h2 className="mb-4 text-[15px] font-semibold text-[#1D1D1F]">热门分类浏览</h2>
+            {/* 分类卡改走「分类详情」（真实分类歌单/单曲），不再当关键词去搜
+                —— 旧行为会搜出「标题含分类名」的歌，语义是错的 */}
             <div className="grid grid-cols-3 gap-4">
-              {CATEGORIES.map((c) => (
+              {GENRES.map((c) => (
                 <button
-                  key={c.label}
+                  key={c.key}
                   type="button"
-                  onClick={() => submit(c.label)}
+                  data-testid={`category-card-${c.key}`}
+                  onClick={() => route.go(DeskRoute.Category, { categoryKey: c.key })}
                   className="h-[92px] overflow-hidden rounded-2xl p-4 text-left text-[15px] font-semibold text-white shadow-[0_8px_24px_rgba(0,0,0,0.06)] transition-transform hover:scale-[1.02]"
                   style={{ background: `linear-gradient(135deg, ${c.from}, ${c.to})` }}
                 >

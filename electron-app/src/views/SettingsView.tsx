@@ -7,7 +7,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Check, LogOut, RefreshCw, Trash2, Loader2, PlugZap, AlertCircle, Camera } from 'lucide-react'
 import { UserAvatar } from '../components/UserAvatar'
-import { useAuth, useLibrary, useSettings } from '../state/hooks'
+import { TasteGenreChips } from '../components/TasteGenreChips'
+import { useAuth, useLibrary, useSettings, useTastePreferences } from '../state/hooks'
+import { MAX_TASTE_GENRES } from '../state/genres'
 import { SettingsShortcuts } from '../components/SettingsShortcuts'
 import { verifyChkszKey, type ChkszKeyCheck } from '../services/chksz'
 import { formatBytes } from '../state/format'
@@ -114,6 +116,9 @@ export function SettingsView() {
   const auth = useAuth()
   const library = useLibrary()
   const snapshot = settings.getSnapshot()
+  // 音乐口味偏好（localStorage）：实时读取，改动即时生效
+  const taste = useTastePreferences()
+  const tastePrefs = taste.get()
 
   // ---- 账号 ----
   const [mode, setMode] = useState<'login' | 'register'>('login')
@@ -618,6 +623,30 @@ export function SettingsView() {
               )
             })}
           </div>
+        </div>
+      </Section>
+
+      {/* 音乐口味 */}
+      <Section
+        title="音乐口味"
+        description="首页「推荐歌曲」会按这里选择的分类做个性化推荐（网易云分类热门）；清除后回到默认推荐。"
+      >
+        <TasteGenreChips
+          selected={tastePrefs.genres}
+          onChange={(genres) => taste.set({ genres })}
+        />
+        <div className="flex flex-wrap items-center gap-3">
+          <span data-testid="taste-summary" className="text-[12px] text-[#86868B]">
+            {tastePrefs.genres.length > 0
+              ? `已选 ${tastePrefs.genres.length}/${MAX_TASTE_GENRES} 个分类 · 改动即时生效`
+              : '未选择分类（使用默认推荐）'}
+          </span>
+          {tastePrefs.genres.length > 0 && (
+            <Button ariaLabel="清除音乐口味" onClick={() => taste.clear()}>
+              <Trash2 size={14} strokeWidth={1.75} />
+              清除
+            </Button>
+          )}
         </div>
       </Section>
 
