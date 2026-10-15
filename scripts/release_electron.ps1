@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     IMusic Desktop（Electron）一键发布：改版本号 → 自检 → 提交推送 → 打 tag 触发 GitHub Actions。
 
@@ -102,14 +102,14 @@ function Test-Clean {
   # 只拦「已暂存/已修改的已跟踪文件」；未跟踪的新文件不拦（发布脚本只动 package.json）
   $staged = @(git diff --cached --name-only)
   $unstaged = @(git diff --name-only)
-  if ($staged.Count -gt 0 -or $unstaged.Count -gt 0) {
-    throw @"
-工作区有未提交的改动，请先提交或 stash：
-
-$(($staged + $unstaged) | ForEach-Object { "  $_" })
-
-发布脚本只会改 electron-app/package.json，其他改动请先自行处理。
-"@
+  $dirty = @($staged + $unstaged | Select-Object -Unique)
+  if ($dirty.Count -gt 0) {
+    # 不用 here-string：Windows PowerShell 5.1 的解析器处理
+    # @"..." 内的 $( ... { "..." } ) 嵌套双引号有缺陷（pwsh 7 已修），
+    # 这里改用普通字符串拼接，保证 5.1 与 7.x 都能解析。
+    $lines = @($dirty | ForEach-Object { '    ' + $_ })
+    $message = '工作区有未提交的改动，请先提交或 stash：' + "`n" + ($lines -join "`n")
+    throw $message
   }
 }
 
