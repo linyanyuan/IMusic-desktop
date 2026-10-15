@@ -54,7 +54,7 @@ electron-app/        Electron 重构版（独立 npm 工程）
   tests/               单元测试（esbuild + node --test）
   qa/                  CDP 取证探针
 
-scripts/             Flutter 版打包与发布脚本
+scripts/             Flutter 版打包与发布脚本；release_electron.ps1 为 Electron 一键发布
 doc/                 产品需求和技术设计文档
 docs/                技术设计与发布文档
 .github/workflows/   Electron 版自动打包发布
@@ -247,47 +247,54 @@ https://github.com/linyanyuan/IMusic-desktop/releases/latest/download/desktop-up
 
 ### B1. 改版本号
 
-```bash
-cd electron-app
-$EDITOR package.json          # 改 "version": "2.3.3"
-```
-
 版本号规则：`主.次.修订[+build号]`。build 号可选，用来区分同版本号的多次构建
 （例如 `2.3.3+7`）。**tag 去掉 `v` 之后必须和这个字符串完全一致**，否则 workflow
 第一步就会失败。
 
-### B2. 本地自检（建议，能提前拦住问题）
+### B2. 一键发布（推荐）
+
+一条命令完成「改版本号 → 自检 → 提交推送 → 打 tag」：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\release_electron.ps1 -Version 2.3.3 -Changelog "修复若干问题"
+```
+
+脚本会依次做：
+
+1. 校验版本号格式、必须大于当前版本、工作区干净、分支与远端同步
+2. 写入 `electron-app/package.json` 的新版本号
+3. 跑 `npm run release:check`（类型检查 + 105 个单元测试）——**失败就中止，不会发出版本**
+4. `git commit` + `git push`
+5. `git tag v2.3.3` + `git push origin v2.3.3` ← 这一步触发 GitHub Actions
+
+常用参数：
+
+| 参数 | 用途 |
+| --- | --- |
+| `-Version 2.3.3` | 必填，新版本号 |
+| `-Changelog "..."` | 写进 commit message，方便回溯 |
+| `-WhatIf` | **预演**：只打印每步做什么，不改文件不推送 |
+| `-SkipTests` | 跳过自检（仅代码无变化时用） |
+| `-NoPush` | 只做到本地 tag，不推送 |
+| `-Force` | 允许重发同版本号（会删重建远端 tag） |
+
+不确定时先预演一次：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\release_electron.ps1 -Version 2.3.3 -WhatIf
+```
+
+### B3. 手动发布（不用脚本时）
 
 ```bash
 cd electron-app
-npm run release:check        # 类型检查 + 105 个单元测试
+$EDITOR package.json          # 改 "version": "2.3.3"
+npm run release:check         # 类型检查 + 105 个测试
+git add package.json && git commit -m "chore(electron): bump 2.3.3" && git push
+git tag v2.3.3 && git push origin v2.3.3
 ```
 
-想连打包一起验：
-
-```bash
-npm run release:github       # 上面两步 + electron-builder --publish never
-```
-
-产物落在 `electron-app/release/`，可以本地装一次确认能跑。
-
-### B3. 提交并推送
-
-```bash
-cd electron-app
-git add package.json
-git commit -m "chore(electron): bump 2.3.3"
-git push
-```
-
-### B4. 打 tag 并推送（这一步才触发发布）
-
-```bash
-git tag v2.3.3
-git push origin v2.3.3
-```
-
-之后 GitHub Actions 自动完成：
+### B4. 发布后 GitHub Actions 自动完成
 
 1. 校验 tag 与 `package.json` 的 version 一致
 2. `npm ci` → 类型检查 → 105 个测试
@@ -339,6 +346,7 @@ manifest 应含 `version`、`downloadUrl`、`sha256` 三个字段，且 `downloa
 
 - **workflow 第一步就红**：tag 和 `package.json` 的 version 不一致。`v2.3.3` ↔ `2.3.3`。
 - **提示「找不到 IMusic-Setup-…-x64.exe」**：版本号写法与 tag 不一致，看 B6。
+- **发布脚本拒绝执行**：多半是版本号没涨、工作区有未提交改动、或本地分支落后远端。脚本会给出具体原因。
 - **`release/` 目录删不掉，报 EBUSY**：跑过打包版之后 `app.asar` 会被持续占用
   （杀进程后仍锁着）。换个输出目录重建，或重启后再清理。
 - **想改发布渠道回自建服务器**：设环境变量 `IMUSIC_UPDATE_BASE_URL`，并追加
