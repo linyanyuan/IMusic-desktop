@@ -381,11 +381,14 @@ if ($Force) {
 # 把它取出来交给 softprops/action-gh-release。
 # 用 -F 从文件读而不是 -m：多行中文说明经 PowerShell 5.1 传给原生程序时
 # 换行容易被弄丢，写文件最稳。
+# --cleanup=whitespace 不能省：git tag -F 的默认 cleanup 是 strip，会把
+# 以 # 开头的行当成注释删掉——Markdown 的 ## 小标题会整段消失（实测）。
+# whitespace 只清理首尾空行与行尾空白（git commit 默认就是这个，所以 commit 不受影响）。
 $tagMessage = if ($notes -ne '') { $notes } else { "IMusic Desktop $tag" }
 $msgFile = [System.IO.Path]::GetTempFileName()
 try {
   [System.IO.File]::WriteAllText($msgFile, $tagMessage, [System.Text.UTF8Encoding]::new($false))
-  Invoke-Step 'git' @('tag', '-a', $tag, '-F', $msgFile)
+  Invoke-Step 'git' @('tag', '-a', '--cleanup=whitespace', $tag, '-F', $msgFile)
 } finally {
   Remove-Item -LiteralPath $msgFile -Force -ErrorAction SilentlyContinue
 }
