@@ -90,7 +90,17 @@ class BilibiliMusicProvider implements MusicProvider, PlaylistSummaryProvider {
       );
       if (result == null) return [];
 
-      final songs = result.whereType<Map<String, dynamic>>().map((item) {
+      final items = result
+          .whereType<Map<String, dynamic>>()
+          .where((item) => _hasPlayableBvid(item['bvid']?.toString() ?? ''))
+          .toList();
+      final filtered =
+          result.whereType<Map<String, dynamic>>().length - items.length;
+      if (filtered > 0) {
+        print('[BilibiliMusicProvider] searchSongs - 过滤无 bvid 条目: $filtered');
+      }
+
+      final songs = items.map((item) {
         final bvid = item['bvid']?.toString() ?? '';
         final title = _stripHtmlTags(item['title']?.toString() ?? '未知标题');
         final author = item['author']?.toString() ?? '未知UP主';
@@ -183,9 +193,19 @@ class BilibiliMusicProvider implements MusicProvider, PlaylistSummaryProvider {
         return [];
       }
 
-      final songs = result.whereType<Map<String, dynamic>>().take(20).map((
-        item,
-      ) {
+      final items = result
+          .whereType<Map<String, dynamic>>()
+          .where((item) => _hasPlayableBvid(item['bvid']?.toString() ?? ''))
+          .take(20)
+          .toList();
+      final filtered =
+          result.whereType<Map<String, dynamic>>().take(20).length -
+          items.length;
+      if (filtered > 0) {
+        print('[BilibiliMusicProvider] Bilibili 降级 - 过滤无 bvid 条目: $filtered');
+      }
+
+      final songs = items.map((item) {
         final bvid = item['bvid']?.toString() ?? '';
         final title = _stripHtmlTags(item['title']?.toString() ?? '未知标题');
         final author = item['author']?.toString() ?? '未知UP主';
@@ -241,9 +261,13 @@ class BilibiliMusicProvider implements MusicProvider, PlaylistSummaryProvider {
       final result = data?['result'] as List?;
       if (result == null) return [];
 
-      return result.whereType<Map<String, dynamic>>().take(limit ?? 10).map((
-        item,
-      ) {
+      final items = result
+          .whereType<Map<String, dynamic>>()
+          .where((item) => _hasPlayableBvid(item['bvid']?.toString() ?? ''))
+          .take(limit ?? 10)
+          .toList();
+
+      return items.map((item) {
         final bvid = item['bvid']?.toString() ?? '';
         final title = _stripHtmlTags(item['title']?.toString() ?? '未知歌单');
         final author = item['author']?.toString() ?? '未知UP主';
@@ -417,6 +441,10 @@ class BilibiliMusicProvider implements MusicProvider, PlaylistSummaryProvider {
     final page = parts.length > 2 ? _parsePage(parts[2]) : 1;
 
     print('[BilibiliMusicProvider] 解析 ID: bvid=$bvid, page=$page');
+
+    if (!_hasPlayableBvid(bvid)) {
+      throw Exception('B站视频 ID 无效，无法播放（该条目可能为课堂/番剧等非视频内容）');
+    }
 
     try {
       // Get CID
@@ -647,6 +675,10 @@ class BilibiliMusicProvider implements MusicProvider, PlaylistSummaryProvider {
     }
     return id;
   }
+
+  /// B 站搜索/推荐会混入课堂(ketang)/番剧/影视等无 bvid 的条目，
+  /// 这类条目拼出的 id（`bilibili:`）会让后续取 CID、取流全部失败。
+  bool _hasPlayableBvid(String bvid) => bvid.trim().isNotEmpty;
 
   int _parsePage(String value) {
     final page = int.tryParse(value.replaceFirst(RegExp(r'^[pP]'), '')) ?? 1;

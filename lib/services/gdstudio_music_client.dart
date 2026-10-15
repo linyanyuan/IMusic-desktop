@@ -29,11 +29,18 @@ class GdStudioMusicClient {
 
   static const defaultBaseUrl = 'https://music-api.gdstudio.xyz/api.php';
 
-  /// Page-1 order: joox first (usually faster play URLs). kuwo paginates well.
-  static const defaultSources = ['joox', 'kuwo', 'netease'];
+  /// Page-1 order.
+  ///
+  /// 2026-10 upstream regression: joox `types=url` now always returns an empty
+  /// URL (`{"url":"","br":-1}`), while kuwo/tencent/kugou/migu/spotify/deezer
+  /// answer HTTP 400 `Value of `source` is not supported`. Only netease still
+  /// serves search/url/lyric, so this degrades to a single source; Hybrid's
+  /// Bilibili fallback covers netease outages.
+  static const defaultSources = ['netease'];
 
-  /// Sources that honor `pages`/`count` for load-more.
-  static const pageableSources = ['kuwo'];
+  /// Sources that honor `pages`/`count` for load-more (netease returns
+  /// different rows for page 2/3, kuwo is unsupported upstream now).
+  static const pageableSources = ['netease'];
 
   /// Default page size per source (`count` query param).
   static const defaultCountPerSource = 20;
@@ -54,6 +61,8 @@ class GdStudioMusicClient {
   String? _stickyQuery;
 
   /// `gdstudio:{source}:{urlId}` → (source, urlId)
+  /// 只接受 `gdstudio:{source}:{id}`；早期无 source 的 `gdstudio:{id}` 形态在
+  /// Dart 端同样被拒（两端行为一致，不为兼容旧 id 单方面放宽）。
   static (String source, String mediaId)? parseSongId(String id) {
     if (!id.startsWith(idPrefix)) return null;
     final rest = id.substring(idPrefix.length);
@@ -70,9 +79,15 @@ class GdStudioMusicClient {
 
   /// Search preferred sources.
   ///
-  /// Page 1: first non-empty among [sources] (joox → kuwo → …).
-  /// Page 2+: prefer a pageable source (kuwo). If page 1 was joox (no real
-  /// paging), UI page N maps to kuwo page N-1 so load-more still works.
+  /// 2026-10 上游回归：music-api.gdstudio.xyz 只剩 netease 源可用（joox 的
+  /// `types=url` 恒返回空地址，kuwo/tencent/kugou/migu/spotify/deezer 一律
+  /// HTTP 400 `Value of source is not supported`），所以 [defaultSources] 已收敛
+  /// 为 `['netease']`；netease 也失败时由 HybridMusicProvider 回退 B 站。
+  ///
+  /// 不要再照抄 `['joox','kuwo','netease']` 这类旧顺序 —— 那会让搜索结果全是
+  /// joox 条目、取链为空，表现为「播控栏有歌名但不出声」。
+  ///
+  /// Page 1+: 逐个源取第一页非空结果；第 2 页起的 load-more 由可分页源承担。
   Future<List<Map<String, dynamic>>> searchSongs(
     String query, {
     int page = 1,
@@ -127,8 +142,9 @@ class GdStudioMusicClient {
     required String query,
     required int page,
   }) {
-    final sticky =
-        (_stickyQuery == query && _stickySource != null) ? _stickySource! : null;
+    final sticky = (_stickyQuery == query && _stickySource != null)
+        ? _stickySource!
+        : null;
     final pageableInConfig = [
       for (final s in sources)
         if (pageableSources.contains(s)) s,
@@ -216,8 +232,7 @@ class GdStudioMusicClient {
   /// Map API search row → app song map. Returns null if unusable.
   static Map<String, dynamic>? mapSearchItem(Map<String, dynamic> raw) {
     final source = raw['source']?.toString().trim() ?? '';
-    final urlId =
-        (raw['url_id'] ?? raw['id'])?.toString().trim() ?? '';
+    final urlId = (raw['url_id'] ?? raw['id'])?.toString().trim() ?? '';
     final name = raw['name']?.toString().trim() ?? '';
     if (source.isEmpty || urlId.isEmpty || name.isEmpty) return null;
 
@@ -243,7 +258,7 @@ class GdStudioMusicClient {
       'url_id': urlId,
       'lyric_id': lyricId,
       'pic_id': picId,
-      if (coverHint != null) 'coverUrl': coverHint,
+      'coverUrl': ?coverHint,
       if (durationMs > 0) 'duration': durationMs,
       // Prefer streaming via UrlSource (usually no custom headers).
       'preferDirectUrl': true,
@@ -251,10 +266,7 @@ class GdStudioMusicClient {
   }
 
   /// Best-effort cover without an extra HTTP hop (source-specific CDN).
-  static String? coverUrlHint({
-    required String source,
-    required String picId,
-  }) {
+  static String? coverUrlHint({required String source, required String picId}) {
     final id = picId.trim();
     if (id.isEmpty) return null;
     if (id.startsWith('http://') || id.startsWith('https://')) return id;
@@ -343,8 +355,11 @@ class GdStudioMusicClient {
     // Mid quality first — often succeeds faster than probing 320 then failing.
     for (final br in const [192, 128, 320, 999]) {
       try {
-        final hit = await _fetchUrl(source: source, mediaId: mediaId, br: br)
-            .timeout(urlAttemptTimeout);
+        final hit = await _fetchUrl(
+          source: source,
+          mediaId: mediaId,
+          br: br,
+        ).timeout(urlAttemptTimeout);
         if (hit != null && hit.isNotEmpty) {
           url = hit;
           break;
@@ -399,11 +414,7 @@ class GdStudioMusicClient {
   }) async {
     final response = await _dio.get<dynamic>(
       baseUrl,
-      queryParameters: {
-        'types': 'lyric',
-        'source': source,
-        'id': lyricId,
-      },
+      queryParameters: {'types': 'lyric', 'source': source, 'id': lyricId},
     );
     final data = response.data;
     if (data is! Map) return '';

@@ -48,7 +48,7 @@ void main() {
     addTearDown(() => dir.delete(recursive: true));
     var downloadCount = 0;
     final service = AudioCacheService(
-      downloader: (_, outputPath, __) async {
+      downloader: (_, outputPath, _) async {
         downloadCount += 1;
         await File(outputPath).writeAsString('audio-bytes');
       },

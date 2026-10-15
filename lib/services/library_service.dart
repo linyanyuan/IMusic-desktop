@@ -886,7 +886,7 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
       'playbackSourceId': playbackId,
       'sourceId': playbackId,
       if (bvid.isNotEmpty) 'bvid': bvid,
-      if (page != null) 'page': page,
+      'page': ?page,
       if (bvid.isNotEmpty && page != null)
         'pageUrl': 'https://www.bilibili.com/video/$bvid?p=$page',
     };

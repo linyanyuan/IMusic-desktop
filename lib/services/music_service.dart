@@ -83,7 +83,7 @@ class MusicService {
     int page = 1,
   }) async {
     try {
-      final results = await _searchRaw(query, scope, page: page);
+      final results = _dropUnplayable(await _searchRaw(query, scope, page: page));
       _cacheResults(results);
       return results.map(_toSong).toList();
     } catch (e) {
@@ -107,9 +107,8 @@ class MusicService {
       throw const ChkszApiKeyMissingException('ChKSz 未启用');
     }
     try {
-      final results = await chkszProvider.searchChkszSongs(
-        query,
-        page: safePage,
+      final results = _dropUnplayable(
+        await chkszProvider.searchChkszSongs(query, page: safePage),
       );
       _cacheResults(results);
       return results.map(_toSong).toList();
@@ -152,10 +151,22 @@ class MusicService {
     return provider.searchSongs(query, page: safePage);
   }
 
+  /// 兜底过滤「空载荷 id」的条目（如 `bilibili:`、`gdstudio::`）。
+  ///
+  /// 上游搜索会混入 B 站课堂(ketang)/番剧/影视等没有 bvid 的结果，provider 层
+  /// 已按来源剔除，这里对 Gateway 推荐、热点歌单等其它来源再兜一层，避免空 id
+  /// 流入 UI 与播放链路。
+  static List<Map<String, dynamic>> _dropUnplayable(
+    Iterable<Map<String, dynamic>> songs,
+  ) => songs.where((song) {
+    final segments = (song['id']?.toString() ?? '').split(':').skip(1);
+    return segments.isEmpty || segments.any((s) => s.trim().isNotEmpty);
+  }).toList();
+
   /// Get recommended songs
   Future<List<Song>> getRecommendedSongs() async {
     try {
-      final results = await _provider.getRecommendedSongs();
+      final results = _dropUnplayable(await _provider.getRecommendedSongs());
       _cacheResults(results);
       return results.map(_toSong).toList();
     } catch (e) {
@@ -169,7 +180,9 @@ class MusicService {
     int? offset,
   }) async {
     try {
-      return await _provider.getHotPlaylists(limit: limit, offset: offset);
+      return _dropUnplayable(
+        await _provider.getHotPlaylists(limit: limit, offset: offset),
+      );
     } catch (e) {
       return [];
     }

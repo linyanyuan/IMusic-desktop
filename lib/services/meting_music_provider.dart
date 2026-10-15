@@ -81,7 +81,7 @@ class MetingMusicProvider implements MusicProvider {
     final artistTitle = _artistTitles[id]?.trim() ?? '';
     final queryParameters = <String, dynamic>{
       if (artistTitle.isNotEmpty) 'name': artistTitle,
-      if (limit != null) 'limit': limit,
+      'limit': ?limit,
     };
     final response = await _dio.get<Map<String, dynamic>>(
       '/music/artists/${parsed.vendor}/${Uri.encodeComponent(parsed.rawId)}',

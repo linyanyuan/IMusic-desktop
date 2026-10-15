@@ -6,9 +6,10 @@ import 'dart:convert';
 
 import 'shortcut_settings.dart';
 
-/// Default ChKSz API key, pre-filled for personal use (个人使用，直接内嵌).
-/// Get / rotate your own key at https://api.chksz.com/login.
-const defaultChkszApiKey = 'chksz_1JJPZlbWc7j3Ui8UUEsq6ClOduRVVQpuRWqHcI2JWe8';
+/// No default ChKSz key is shipped. A key must be configured in Settings or
+/// baked in at build time via `--dart-define=CHKSZ_API_KEY=...`. Get / rotate
+/// your own key at https://api.chksz.com/login.
+const defaultChkszApiKey = '';
 
 class AppSettings {
   final String cacheDirectory;
