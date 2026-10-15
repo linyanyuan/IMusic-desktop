@@ -119,7 +119,7 @@ npm run electron:dev
 
 ```bash
 flutter test                    # Flutter 版
-cd electron-app && npm test     # Electron 版（105 个用例）
+cd electron-app && npm test     # Electron 版（108 个用例）
 ```
 
 静态分析 / 类型检查：
@@ -301,7 +301,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\release_electron.ps1 -Version
 
 1. 校验版本号格式、必须大于当前版本、工作区干净、分支与远端同步
 2. 写入 `electron-app/package.json` 的新版本号
-3. 跑 `npm run release:check`（类型检查 + 105 个单元测试）——**失败就中止，不会发出版本**
+3. 跑 `npm run release:check`（类型检查 + 108 个单元测试）——**失败就中止，不会发出版本**
 4. `git commit` + `git push`
 5. `git tag v2.3.3` + `git push origin v2.3.3` ← 这一步触发 GitHub Actions
 
@@ -327,7 +327,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\release_electron.ps1 -Version
 ```bash
 cd electron-app
 $EDITOR package.json          # 改 "version": "2.3.3"
-npm run release:check         # 类型检查 + 105 个测试
+npm run release:check         # 类型检查 + 108 个测试
 git add package.json && git commit -m "chore(electron): bump 2.3.3" && git push
 git tag v2.3.3 && git push origin v2.3.3
 ```
@@ -335,7 +335,7 @@ git tag v2.3.3 && git push origin v2.3.3
 ### B4. 发布后 GitHub Actions 自动完成
 
 1. 校验 tag 与 `package.json` 的 version 一致
-2. `npm ci` → 类型检查 → 105 个测试
+2. `npm ci` → 类型检查 → 108 个测试
 3. Vite 构建（渲染层 + 主进程 + preload）
 4. `electron-builder` 打出 NSIS 安装包 + 绿色 zip
 5. 生成 `desktop-update.json`（含 sha256）、`SHA256SUMS.txt`
@@ -366,7 +366,14 @@ manifest 应含 `version`、`downloadUrl`、`sha256` 三个字段，且 `downloa
 - `version` 字段写完整版本号：更新端按 build 号区分两次构建
   （`2.3.3+8 > 2.3.3+7`），写少了就分不出来。
 
-这条链路有 `electron-app/tests/update-publish.test.ts` 锁定，改动前先看它。
+还有一个相邻的坑：electron-builder 的 zip 在 Windows 上默认叫
+`IMusic-<version>-win.zip`（**平台名而不是 arch**）。所以 `build.win.artifactName`
+必须显式配成 `${productName}-${version}-${arch}.${ext}`，否则 workflow 按
+`-x64.zip` 拼的地址与 sha256 校验会直接报 `No such file or directory`
+（2026-10 真实 CI 故障）。workflow 侧同时用 glob 定位产物，不依赖硬编码。
+
+这两条链路分别有 `electron-app/tests/update-publish.test.ts` 和
+`electron-app/tests/release-artifacts.test.ts` 锁定，改动前先看它们。
 
 ### B7. 代码签名（可选）
 

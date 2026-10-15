@@ -37,7 +37,7 @@ git push -u origin feat/electron-ui-rewrite
 ```bash
 cd electron-app
 npm ci                  # 首次/依赖变动后
-npm run release:check   # 类型检查 + 97 个单元测试
+npm run release:check   # 类型检查 + 108 个单元测试
 npm run electron:build  # 打 NSIS 安装包 + 绿色 zip 到 electron-app/release/
 ```
 
@@ -50,6 +50,14 @@ npm run electron:build  # 打 NSIS 安装包 + 绿色 zip 到 electron-app/relea
 | `builder-debug.yml` | electron-builder 调试信息，别上传 |
 | `win-unpacked/` | 未打包目录，仅供本地调试，别上传 |
 
+> **产物命名是锁定的**：`build.win.artifactName` 必须是
+> `${productName}-${version}-${arch}.${ext}`。不配它的话，electron-builder 的 zip
+> 在 Windows 上默认叫 `<productName>-<version>-win.zip`（**平台名而非 arch**），
+> workflow 按 `-x64.zip` 拼出的下载地址与 sha256 校验就会
+> `No such file or directory` 直接失败（2026-10 真实 CI 故障）。
+> `tests/release-artifacts.test.ts` 锁定这三条命名约束；workflow 侧同时用 glob
+> 定位实际产物，两边都不依赖硬编码。
+>
 > **已知坑**（项目记忆 #89）：`release*/win-unpacked/resources/app.asar` 在**运行过**打包版之后
 > 会被持续占用（杀进程后仍锁着，报 `EBUSY: resource busy or locked`），导致 electron-builder
 > 无法重写同一输出目录。规避：换输出目录
@@ -81,7 +89,7 @@ git push origin v2.3.3
 ### 3. workflow 自动做的事
 
 1. **校验 tag 与 `package.json` 版本一致**（`v2.3.3` ↔ `2.3.3`），不一致直接失败——避免发出一个版本号对不上的包。
-2. `npm ci` → `npm run typecheck` → `npm test`（97 个测试）。
+2. `npm ci` → `npm run typecheck` → `npm test`（108 个测试）。
 3. `npm run build`（Vite 渲染层 + 主进程 + preload）。
 4. `electron-builder --publish never` 打出 NSIS + zip。
 5. 生成三个附加文件：

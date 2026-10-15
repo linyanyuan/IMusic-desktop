@@ -118,17 +118,48 @@ jobs:
           FULL_VERSION="$(node -p "require('./package.json').version")"
           cd release
 
-          # electron-builder 的 ${version} 宏是 package.json 的完整 version（含 +build），
-          # 所以产物名带 build 号；而更新端 installerFileName() 会去掉 +build。
-          # manifest 的 version 用「完整版本号」（版本比较要用 build 号区分），
-          # 但 downloadUrl 必须指向**实际**的 asset 名。
-          SETUP_FULL="IMusic-Setup-${FULL_VERSION}-x64.exe"
-          ZIP_FULL="IMusic-${FULL_VERSION}-x64.zip"
+          # 定位实际产物：不硬编码 -x64。electron-builder 的 zip 默认名是
+          # <productName>-<version>-win.zip（带平台名而不是 arch），曾经因此
+          # 在 CI 里报 "sha256sum: IMusic-<v>-x64.zip: No such file or directory"。
+          # 虽然 package.json 已用 win.artifactName 固定为 -<arch>，这里仍用 glob
+          # 定位，以后改配置/换 arch 也不会再对不上。
+          pick() {
+            # 先按当前版本号收窄，避免 release/ 里残留旧版本产物时选错。
+            # 用 compgen -G 而不是 ls：它会自己展开 glob，无匹配时返回空，
+            # 不会像加了引号的 ls 那样把字面 pattern 当作文件名。
+            local hit
+            hit="$(compgen -G "$1" 2>/dev/null | head -n1 || true)"
+            if [ -z "${hit}" ]; then
+              hit="$(compgen -G "$2" 2>/dev/null | head -n1 || true)"
+            fi
+            printf '%s' "${hit}"
+          }
 
-          if [ ! -f "${SETUP_FULL}" ]; then
-            echo "::error::找不到 ${SETUP_FULL}，实际产物：$(ls)"
+          SETUP_EXACT="IMusic-Setup-${FULL_VERSION}*.exe"
+          SETUP_LOOSE='IMusic-Setup-*.exe'
+          ZIP_EXACT="IMusic-${FULL_VERSION}*.zip"
+          ZIP_LOOSE='IMusic-*.zip'
+
+          SETUP_FULL="$(pick "${SETUP_EXACT}" "${SETUP_LOOSE}")"
+          ZIP_FULL="$(pick "${ZIP_EXACT}" "${ZIP_LOOSE}")"
+
+          if [ -z "${SETUP_FULL}" ]; then
+            echo "::error::找不到安装包（IMusic-Setup-${FULL_VERSION}*.exe）。目录内容："
+            ls -1
             exit 1
           fi
+          if [ -z "${ZIP_FULL}" ]; then
+            echo "::error::找不到 zip 包（IMusic-${FULL_VERSION}*.zip）。目录内容："
+            ls -1
+            exit 1
+          fi
+          # blockmap 只在 nsis 产物上生成，缺了不影响更新，仅提示
+          if [ ! -f "${SETUP_FULL}.blockmap" ]; then
+            echo "::warning::没有 ${SETUP_FULL}.blockmap（增量更新会退化为全量下载）"
+          fi
+
+          echo "解析到安装包：${SETUP_FULL}"
+          echo "解析到绿色包：${ZIP_FULL}"
 
           BASE="https://github.com/${REPO}/releases/download/${REF}"
 
