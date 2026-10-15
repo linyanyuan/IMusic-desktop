@@ -6,7 +6,7 @@
  * 状态机（见 src/state/update.ts）。
  *
  * 契约与 Dart 端保持一致：
- *   GET {base}/desktop-releases/desktop-update.json
+ *   GET {base}/releases/latest/download/desktop-update.json
  *   { "version": "1.0.1+2", "downloadUrl": "https://.../IMusic-Setup-1.0.1.exe",
  *     "sha256": "<64 位 hex>", "changelog": "..." }
  *
@@ -15,7 +15,7 @@
  * 这点与严格 SemVer 不同，但对「每次打包 build 号自增」的桌面发布更有用，且必须
  * 与 Flutter 端行为一致，否则两端会出现「一端提示更新、另一端不提示」。
  */
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, net } from 'electron'
 import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { createWriteStream, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -207,6 +207,21 @@ export function describeManifestFailure(status: number | null, error?: unknown):
   return detail === '' ? '无法连接更新服务器' : `无法连接更新服务器：${detail}`
 }
 
+/**
+ * 更新流量的 HTTP 出口：优先走 Chromium 网络栈（net.fetch），纯 Node 环境回退到全局 fetch。
+ *
+ * 为什么不能用 Node 的 fetch：它**不读系统代理设置**。国内网络下 github.com 直连会
+ * 10s 超时，于是更新检查恒报失败（真实踩坑：仓库改成 public 后本机仍
+ * 「无法连接更新服务器：fetch failed」，而 net.fetch 走系统代理返回 200）。net.fetch
+ * 与浏览器同一条链路，系统代理/证书/HTTP2 都由 Chromium 统一处理。
+ * 单测（纯 Node，没有 net）里回退到全局 fetch，便于注入假响应。
+ */
+export function updateHttpFetch(url: string, init: RequestInit): Promise<Response> {
+  const netFetch = (net as { fetch?: typeof fetch } | undefined)?.fetch
+  if (typeof netFetch === 'function') return netFetch.call(net, url, init)
+  return fetch(url, init)
+}
+
 export class UpdateService {
   private readonly baseUrl: string
   private downloadAbort: AbortController | null = null
@@ -314,7 +329,7 @@ export class UpdateService {
     if (!options.manual && !this.shouldAutoCheck()) return null
     try {
       const manifestUrl = this.assertAllowedUrl(this.manifestUrl, '更新清单')
-      const response = await fetch(manifestUrl, {
+      const response = await updateHttpFetch(manifestUrl, {
         signal: AbortSignal.timeout(MANIFEST_TIMEOUT_MS),
         headers: { Accept: 'application/json' },
       })
@@ -384,7 +399,7 @@ export class UpdateService {
     try {
       armIdleWatchdog()
       const downloadUrl = this.assertAllowedUrl(manifest.downloadUrl, '安装包下载')
-      const response = await fetch(downloadUrl, { signal: controller.signal })
+      const response = await updateHttpFetch(downloadUrl, { signal: controller.signal })
       if (!response.ok) throw new Error(`下载失败：HTTP ${response.status}`)
       const totalHeader = response.headers.get('content-length')
       const total = totalHeader != null ? Number.parseInt(totalHeader, 10) : null

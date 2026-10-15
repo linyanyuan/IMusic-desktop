@@ -1,6 +1,6 @@
 {
   "checks": {
-    "versionShown": true,
+    "versionShown": false,
     "available": true,
     "downloading": true,
     "downloaded": true,
@@ -9,11 +9,13 @@
     "noInstall": true,
     "allowlist": true
   },
-  "verdict": "pass",
-  "failed": [],
+  "verdict": "fail",
+  "failed": [
+    "versionShown"
+  ],
   "detail": {
     "about": {
-      "version": "2.0.0"
+      "version": "2.3.6"
     },
     "dialogTitle": {
       "state": "available",
@@ -33,13 +35,10 @@
     }
   },
   "consoleTail": [
-    "[log] [BilibiliMusicProvider] getRecommendedSongs - 开始获取推荐歌曲",
+    "[log] [BilibiliMusicProvider] getRecommendedSongs - 开始获取推荐歌曲, page= 1",
     "[log] [BilibiliMusicProvider] 请求 Gateway API: /qqmusic/search/songs",
     "[warning] [Shortcuts] 全局热键注册失败（可能被其他程序占用）: Array(7)",
-    "[warning] [Bootstrap] 音乐库加载失败 ApiError: API request failed with status 401: {\"error\":\"Unauthorized\"}\n    at Rv.apiRequest (file:///D:/project/my-music-desktop/electron-app/dist/assets/index-C7c0M65m.js:251:30887)\n    at async Rv.getRemoteLibrary (file:///D:/project/my-music-desktop/electron-app/dist",
-    "[log] [BilibiliMusicProvider] Gateway API 失败: AbortError: signal is aborted without reason，降级使用 Bilibili 搜索",
-    "[log] [BilibiliMusicProvider] searchBilibiliRecommended - 使用 Bilibili 降级方案",
-    "[log] [BilibiliMusicProvider] Bilibili 降级返回 20 首歌曲"
+    "[log] [BilibiliMusicProvider] Gateway API 失败: AbortError: signal is aborted without reason"
   ],
   "serverPort": 18787
 }

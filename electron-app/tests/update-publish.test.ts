@@ -8,10 +8,13 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { readFile } from 'node:fs/promises'
+import path from 'node:path'
 import {
   DEFAULT_UPDATE_BASE_URL,
   UpdateService,
   describeManifestFailure,
+  updateHttpFetch,
   manifestIsValid,
   parseManifest,
   installerFileName,
@@ -203,4 +206,43 @@ test('describeManifestFailure 的文案覆盖两种失败', () => {
   assert.equal(describeManifestFailure(500), '无法获取更新信息（HTTP 500）')
   assert.equal(describeManifestFailure(null, new Error('timeout')), '无法连接更新服务器：timeout')
   assert.equal(describeManifestFailure(null, null), '无法连接更新服务器')
+})
+
+// ---------------------------------------------------------------------------
+// 更新流量必须走 Chromium 网络栈（net.fetch）
+//
+// 背景（2026-10 真实踩坑）：仓库改成 public 后，本机更新检查仍然失败 —— Node 的
+// fetch 不读系统代理，github.com 直连 10s 超时；同一时刻 Electron 的 net.fetch
+// （系统代理）返回 200。国内用户要靠代理才能访问 GitHub，所以出口必须跟浏览器一致。
+// ---------------------------------------------------------------------------
+
+test('更新器用 net.fetch，而不是不读系统代理的 Node fetch', async () => {
+  // 测试会先被 esbuild 打成 tests/dist/*.cjs，import.meta.url 不可用，按包根定位源码
+  const source = await readFile(path.resolve(process.cwd(), 'electron/update.ts'), 'utf8')
+  assert.match(
+    source,
+    /import \{[^}]*\bnet\b[^}]*\} from 'electron'/,
+    '必须从 electron 引入 net',
+  )
+  assert.match(source, /netFetch = \(net as \{ fetch\?: typeof fetch \} \| undefined\)\?\.fetch/)
+  const calls = source.match(/await updateHttpFetch\(/g) ?? []
+  assert.equal(calls.length, 2, '清单与安装包下载都走 updateHttpFetch')
+  const bareAwaits = source.match(/[^.\w]await fetch\(/g) ?? []
+  assert.equal(bareAwaits.length, 0, '裸 fetch 不读系统代理，会静默解析失败')
+})
+
+test('纯 Node（无 net）时回退到全局 fetch，单测才能注入假响应', async () => {
+  const originalFetch = globalThis.fetch
+  let calls = 0
+  try {
+    globalThis.fetch = (async () => {
+      calls += 1
+      return new Response('{}', { status: 200 })
+    }) as typeof fetch
+    const response = await updateHttpFetch('https://example.com/x.json', {})
+    assert.equal(calls, 1)
+    assert.equal(response.status, 200)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
 })

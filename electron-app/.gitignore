@@ -18,3 +18,6 @@ qa/update-probe-manifest.json
 
 # QA 报告中的凭据必须脱敏后再入库（探针已做 redact，这里是防回退）
 #   apikey / vuutv / vkey / token 等查询参数不得出现在提交的 JSON 里
+
+# esbuild 生成的探针 bundle（构建产物，不入库）
+qa/*.bundle.mjs

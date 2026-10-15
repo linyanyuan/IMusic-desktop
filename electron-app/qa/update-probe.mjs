@@ -1,7 +1,8 @@
 // 更新检查（update.ts / UpdateDialog / Settings 关于段）的端到端取证。
 //
 // 为什么需要本地假发布服务器：更新器的 manifest 地址是固定路径
-// `{base}/desktop-releases/desktop-update.json`，base 在应用启动时由
+// `{base}/releases/latest/download/desktop-update.json`（旧自建服务器布局是
+// `{base}/desktop-releases/desktop-update.json`，假服务两条都认），base 由
 // IMUSIC_UPDATE_BASE_URL 注入 —— 所以必须在启动 Electron 之前先把假服务挂起来，
 // 探针本身跑不了这件事。于是本脚本分两个模式：
 //
@@ -57,13 +58,13 @@ if (mode === 'serve') {
 
   createServer((req, res) => {
     const url = (req.url ?? '').split('?')[0]
-    if (url === '/desktop-releases/desktop-update.json') {
+    if (url === '/releases/latest/download/desktop-update.json' || url === '/desktop-releases/desktop-update.json') {
       const body = JSON.stringify(manifest)
       res.writeHead(200, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) })
       res.end(body)
       return
     }
-    if (url === '/desktop-releases/desktop-update-evil.json') {
+    if (url === '/releases/latest/download/desktop-update-evil.json' || url === '/desktop-releases/desktop-update-evil.json') {
       const body = JSON.stringify(evilManifest)
       res.writeHead(200, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) })
       res.end(body)
