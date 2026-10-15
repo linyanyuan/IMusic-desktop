@@ -37,7 +37,7 @@ git push -u origin feat/electron-ui-rewrite
 ```bash
 cd electron-app
 npm ci                  # 首次/依赖变动后
-npm run release:check   # 类型检查 + 108 个单元测试
+npm run release:check   # 类型检查 + 110 个单元测试
 npm run electron:build  # 打 NSIS 安装包 + 绿色 zip 到 electron-app/release/
 ```
 
@@ -69,6 +69,12 @@ npm run electron:build  # 打 NSIS 安装包 + 绿色 zip 到 electron-app/relea
 
  workflow：`.github/workflows/release-windows.yml`
 
+> **日常发版直接用一键脚本**（见 README「B2. 一键发布」）：
+> ```powershell
+> powershell -ExecutionPolicy Bypass -File .\scripts\release_electron.ps1 -Version 2.3.6 -ChangelogFile .\notes.md
+> ```
+> 下面 1-3 步是不用脚本时的手动流程。
+
 ### 1. 改版本号
 
 ```bash
@@ -81,22 +87,31 @@ git push
 
 ### 2. 打 tag 并推送
 
+更新说明写在 tag 说明里，workflow 会把它当作 Release 正文，
+并写进 `desktop-update.json` 的 `changelog`（应用内更新弹窗展示）。
+
 ```bash
-git tag v2.3.3
+# --cleanup=whitespace 不能省：默认 cleanup 会把 # 开头的行当注释删掉，
+# 那意味着 Markdown 的 ## 小标题会从 Release 里整段消失（2026-10 实测）。
+git tag -a v2.3.3 --cleanup=whitespace -m "$(cat ../notes.md)"
 git push origin v2.3.3
 ```
+
+不写说明也能发布，只是 Release 只剩自动生成的变更对比链接。
 
 ### 3. workflow 自动做的事
 
 1. **校验 tag 与 `package.json` 版本一致**（`v2.3.3` ↔ `2.3.3`），不一致直接失败——避免发出一个版本号对不上的包。
-2. `npm ci` → `npm run typecheck` → `npm test`（108 个测试）。
+2. `npm ci` → `npm run typecheck` → `npm test`（110 个测试）。
 3. `npm run build`（Vite 渲染层 + 主进程 + preload）。
 4. `electron-builder --publish never` 打出 NSIS + zip。
 5. 生成三个附加文件：
-   - `desktop-update.json` —— 应用内更新器读的清单，`downloadUrl` 指向本次 Release 的 asset
+   - `desktop-update.json` —— 应用内更新器读的清单，`downloadUrl` 指向本次 Release 的 asset，
+     `changelog` 取自 tag 说明（更新弹窗会展示）
    - `SHA256SUMS.txt` —— 安装包 + zip 的 sha256
    - `*.blockmap` —— electron-updater 差分更新用
-6. 用 `softprops/action-gh-release` 建 Release（自动生成 release notes），上传上述全部资产。
+6. 把 tag 说明写成 `release-notes.md`，连同自动生成的变更对比一起作为 Release 正文。
+7. 用 `softprops/action-gh-release` 建 Release，上传上述全部资产（已存在则更新）。
 
 ### 4. 手动触发（不打 tag）
 

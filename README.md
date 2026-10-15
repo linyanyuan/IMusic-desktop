@@ -119,7 +119,7 @@ npm run electron:dev
 
 ```bash
 flutter test                    # Flutter 版
-cd electron-app && npm test     # Electron 版（108 个用例）
+cd electron-app && npm test     # Electron 版（110 个用例）
 ```
 
 静态分析 / 类型检查：
@@ -301,22 +301,57 @@ powershell -ExecutionPolicy Bypass -File .\scripts\release_electron.ps1 -Version
 
 1. 校验版本号格式、必须大于当前版本、工作区干净、分支与远端同步
 2. 写入 `electron-app/package.json` 的新版本号
-3. 跑 `npm run release:check`（类型检查 + 108 个单元测试）——**失败就中止，不会发出版本**
+3. 跑 `npm run release:check`（类型检查 + 110 个单元测试）——**失败就中止，不会发出版本**
 4. `git commit` + `git push`
 5. `git tag v2.3.3` + `git push origin v2.3.3` ← 这一步触发 GitHub Actions
+
+#### 写更新说明
+
+`-Changelog` 的内容会同时进三处：**commit message**、**tag 说明**、以及 GitHub
+**Release 正文**与**应用内更新弹窗**（后者经 `desktop-update.json` 的
+`changelog` 字段）。分节写更清楚：
+
+```powershell
+# 短说明：用 \n 表示换行
+powershell -ExecutionPolicy Bypass -File .\scripts\release_electron.ps1 `
+  -Version 2.3.6 -Changelog "新功能\n- 支持桌面歌词拖拽缩放\n\n修复\n- 修了分P歌收藏态"
+```
+
+内容较长时推荐写成 Markdown 文件（支持 `##` 小标题）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\release_electron.ps1 -Version 2.3.6 -ChangelogFile .\notes.md
+```
+
+`notes.md` 示例：
+
+```markdown
+## 新功能
+- 桌面歌词窗口支持拖拽缩放
+
+## 改进
+- 首页加载速度提升约 40%
+
+## 修复
+- 修了 B 站分P歌收藏态判断
+```
+
+> 不写更新说明也能发布，但 Release 就只剩自动生成的变更对比链接，
+> 更新弹窗也只会显示一个 URL。
 
 常用参数：
 
 | 参数 | 用途 |
 | --- | --- |
 | `-Version 2.3.3` | 必填，新版本号 |
-| `-Changelog "..."` | 写进 commit message，方便回溯 |
+| `-Changelog "..."` | 更新说明，支持 `\n` 换行 |
+| `-ChangelogFile <md>` | 从文件读更新说明（多行 Markdown，推荐） |
 | `-WhatIf` | **预演**：只打印每步做什么，不改文件不推送 |
 | `-SkipTests` | 跳过自检（仅代码无变化时用） |
 | `-NoPush` | 只做到本地 tag，不推送 |
 | `-Force` | 允许重发同版本号（会删重建远端 tag） |
 
-不确定时先预演一次：
+不确定时先预演一次（预演里也会打印将要使用的更新说明）：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\release_electron.ps1 -Version 2.3.3 -WhatIf
@@ -327,15 +362,17 @@ powershell -ExecutionPolicy Bypass -File .\scripts\release_electron.ps1 -Version
 ```bash
 cd electron-app
 $EDITOR package.json          # 改 "version": "2.3.3"
-npm run release:check         # 类型检查 + 108 个测试
+npm run release:check         # 类型检查 + 110 个测试
 git add package.json && git commit -m "chore(electron): bump 2.3.3" && git push
-git tag v2.3.3 && git push origin v2.3.3
+# tag 说明会变成 Release 正文，所以把更新说明写在 -m 里；
+# --cleanup=whitespace 不能省（默认会把 # 开头的行当注释删掉）
+git tag -a v2.3.3 --cleanup=whitespace -m "$(cat notes.md)" && git push origin v2.3.3
 ```
 
 ### B4. 发布后 GitHub Actions 自动完成
 
 1. 校验 tag 与 `package.json` 的 version 一致
-2. `npm ci` → 类型检查 → 108 个测试
+2. `npm ci` → 类型检查 → 110 个测试
 3. Vite 构建（渲染层 + 主进程 + preload）
 4. `electron-builder` 打出 NSIS 安装包 + 绿色 zip
 5. 生成 `desktop-update.json`（含 sha256）、`SHA256SUMS.txt`
@@ -392,6 +429,11 @@ manifest 应含 `version`、`downloadUrl`、`sha256` 三个字段，且 `downloa
 - **workflow 第一步就红**：tag 和 `package.json` 的 version 不一致。`v2.3.3` ↔ `2.3.3`。
 - **提示「找不到 IMusic-Setup-…-x64.exe」**：版本号写法与 tag 不一致，看 B6。
 - **发布脚本拒绝执行**：多半是版本号没涨、工作区有未提交改动、或本地分支落后远端。脚本会给出具体原因。
+- **Release 里没有更新说明 / 只剩一句 Full Changelog**：发版时没传 `-Changelog` 或
+  `-ChangelogFile`。说明是写在 tag 说明里的，tag 已经推上去就改不了——补说明需要发新版本号。
+- **更新说明写的是 `## 新功能`，但 Release 里小标题没了**：`git tag -F/-m` 的默认
+  cleanup 会把 `#` 开头的行当注释删掉。脚本已加 `--cleanup=whitespace`；手动打 tag 时
+  自己加上（见 B3）。
 - **`release/` 目录删不掉，报 EBUSY**：跑过打包版之后 `app.asar` 会被持续占用
   （杀进程后仍锁着）。换个输出目录重建，或重启后再清理。
 - **想改发布渠道回自建服务器**：设环境变量 `IMUSIC_UPDATE_BASE_URL`，并追加
