@@ -1,8 +1,18 @@
 # IMusic Desktop
 
-IMusic Desktop 是一款基于 Flutter 构建的 PC 端音乐播放器，面向桌面场景重新设计了听歌、搜索、歌单管理、歌词展示和账号曲库同步体验。
+IMusic Desktop 是一款桌面端音乐播放器，面向桌面场景重新设计了听歌、搜索、歌单管理、歌词展示和账号曲库同步体验。
 
 它不是简单把移动端界面放大，而是采用更适合电脑使用的工作台布局：左侧常驻导航、中间主工作区、右侧播放上下文、底部稳定播放栏。用户可以一边搜索音乐和歌单，一边查看队列、歌词、收藏状态和播放信息。
+
+> **仓库里有两套前端，发布渠道互相独立，不要混用：**
+>
+> | 前端 | 目录 | 面向 | 发布方式 |
+> | --- | --- | --- | --- |
+> | Flutter 桌面版 | `lib/` `windows/` | 老用户（当前线上版本） | PowerShell 脚本 → 自建服务器 `60.205.218.90:8787` |
+> | Electron 重构版 | `electron-app/` | 后续主力版本 | 打 git tag → GitHub Actions → GitHub Releases |
+>
+> 两边的更新器各读各的 manifest，互不感知。给其中一边发版本**不会**让另一边用户收到更新。
+> 想发哪一版，就看对应那一节的说明。
 
 ## 功能亮点
 
@@ -19,55 +29,85 @@ IMusic Desktop 是一款基于 Flutter 构建的 PC 端音乐播放器，面向�
 
 ## 技术栈
 
-- Flutter Desktop
-- Dart
-- Riverpod
-- audioplayers
-- Dio
-- shared_preferences
-- window_manager
-- desktop_multi_window
+**Flutter 桌面版**：Flutter Desktop / Dart / Riverpod / audioplayers / Dio / shared_preferences / window_manager / desktop_multi_window
+
+**Electron 重构版**：Electron 36 / React 19 / TypeScript / Tailwind CSS 4 / Vite 6 / esbuild
 
 ## 项目结构
 
 ```text
-lib/
-  app/              应用入口、主题和整体配置
-  core/             核心模型和通用状态
-  desktop/          桌面端页面、壳层、侧边栏、播放栏和组件
-  lyrics_window/    独立桌面歌词窗口
-  playback/         播放状态和播放动作
-  services/         登录、曲库、音乐源和网络服务
-  shared/           歌词解析等共享工具
-test/               回归测试和组件测试
-windows/            Windows 桌面端工程配置
-doc/                产品需求和技术设计文档
+lib/                 Flutter 桌面版源码
+  app/                应用入口、主题和整体配置
+  core/               核心模型和通用状态
+  desktop/            桌面端页面、壳层、侧边栏、播放栏和组件
+  lyrics_window/      独立桌面歌词窗口
+  playback/           播放状态和播放动作
+  services/           登录、曲库、音乐源和网络服务
+  shared/             歌词解析等共享工具
+test/                Flutter 回归测试和组件测试
+windows/             Windows 桌面端工程配置（Flutter）
+
+electron-app/        Electron 重构版（独立 npm 工程）
+  electron/            主进程：缓存/协议/下载队列/歌词窗/快捷键/更新
+  src/services/        业务逻辑（从 lib/services 1:1 移植）
+  src/state/ src/views/ src/components/   渲染层
+  tests/               单元测试（esbuild + node --test）
+  qa/                  CDP 取证探针
+
+scripts/             Flutter 版打包与发布脚本
+doc/                 产品需求和技术设计文档
+docs/                技术设计与发布文档
+.github/workflows/   Electron 版自动打包发布
 ```
 
 ## 本地运行
 
-请先安装 Flutter，并启用 Windows 桌面端支持。
+Flutter 桌面版（需先安装 Flutter 并启用 Windows 桌面端支持）：
 
 ```bash
 flutter pub get
 flutter run -d windows
 ```
 
+Electron 重构版：
+
+```bash
+cd electron-app
+npm ci
+npm run electron:dev
+```
+
 运行测试：
 
 ```bash
-flutter test
+flutter test                    # Flutter 版
+cd electron-app && npm test     # Electron 版（105 个用例）
 ```
 
-静态分析：
+静态分析 / 类型检查：
 
 ```bash
-dart analyze
+dart analyze                              # Flutter 版
+cd electron-app && npm run typecheck      # Electron 版
 ```
 
 ## 版本发布与软件内更新
 
-桌面端内置更新读取服务器上的：
+下面分两节，**按你要发的前端选对应那一节**。两边的 manifest、产物命名、发布渠道都不同。
+
+| | Flutter 桌面版 | Electron 重构版 |
+| --- | --- | --- |
+| 发版命令 | `package_windows.ps1` | `git push origin v<version>` |
+| 产物 | `imusic-<v>-windows-x64.zip` | `IMusic-Setup-<v>-x64.exe` + `IMusic-<v>-x64.zip` |
+| 发布位置 | 自建服务器 `60.205.218.90:8787` | GitHub Releases |
+| 用户更新来源 | `60.205.218.90:8787/desktop-releases/` | `github.com/linyanyuan/IMusic-desktop/releases/latest/` |
+| 自动化 | 手动跑脚本 + scp | GitHub Actions 全自动 |
+
+---
+
+## A. 发布 Flutter 桌面版（老用户）
+
+Flutter 桌面版内置更新读取服务器上的：
 
 ```text
 http://60.205.218.90:8787/desktop-releases/desktop-update.json
@@ -187,9 +227,142 @@ http://60.205.218.90:8787/desktop-releases/imusic-1.0.2%2B3-windows-x64.zip
 - 下载失败：先在浏览器打开 `desktop-update.json` 里的 `downloadUrl`，确认 zip 能直接下载。
 - 更新后无法覆盖：确认当前客户端目录没有被杀毒软件或其他进程锁住。
 
+---
+
+## B. 发布 Electron 重构版（后续主力版本）
+
+Electron 版用户的应用内更新读取：
+
+```text
+https://github.com/linyanyuan/IMusic-desktop/releases/latest/download/desktop-update.json
+```
+
+发布靠 **打 git tag 触发 GitHub Actions**，不需要手动上传文件、不需要算 sha256。
+
+### B0. 前提条件
+
+- 改动已 `git push` 到远端（workflow 只会构建远端代码）。
+- 本地已装 Node 20+，`electron-app/node_modules` 已装（`npm ci`）。
+- **两个渠道互不相通**：Flutter 老用户不会收到 Electron 版更新，需要引导他们手动去 GitHub 下载。
+
+### B1. 改版本号
+
+```bash
+cd electron-app
+$EDITOR package.json          # 改 "version": "2.3.3"
+```
+
+版本号规则：`主.次.修订[+build号]`。build 号可选，用来区分同版本号的多次构建
+（例如 `2.3.3+7`）。**tag 去掉 `v` 之后必须和这个字符串完全一致**，否则 workflow
+第一步就会失败。
+
+### B2. 本地自检（建议，能提前拦住问题）
+
+```bash
+cd electron-app
+npm run release:check        # 类型检查 + 105 个单元测试
+```
+
+想连打包一起验：
+
+```bash
+npm run release:github       # 上面两步 + electron-builder --publish never
+```
+
+产物落在 `electron-app/release/`，可以本地装一次确认能跑。
+
+### B3. 提交并推送
+
+```bash
+cd electron-app
+git add package.json
+git commit -m "chore(electron): bump 2.3.3"
+git push
+```
+
+### B4. 打 tag 并推送（这一步才触发发布）
+
+```bash
+git tag v2.3.3
+git push origin v2.3.3
+```
+
+之后 GitHub Actions 自动完成：
+
+1. 校验 tag 与 `package.json` 的 version 一致
+2. `npm ci` → 类型检查 → 105 个测试
+3. Vite 构建（渲染层 + 主进程 + preload）
+4. `electron-builder` 打出 NSIS 安装包 + 绿色 zip
+5. 生成 `desktop-update.json`（含 sha256）、`SHA256SUMS.txt`
+6. 建 GitHub Release 并上传全部资产
+
+在 <https://github.com/linyanyuan/IMusic-desktop/actions> 看进度。
+
+### B5. 验证发布结果
+
+```bash
+# manifest 能访问（把 v2.3.3 换成你的 tag）
+curl -s https://github.com/linyanyuan/IMusic-desktop/releases/latest/download/desktop-update.json
+
+# 产物都在
+curl -s https://api.github.com/repos/linyanyuan/IMusic-desktop/releases/latest | grep browser_download_url
+```
+
+manifest 应含 `version`、`downloadUrl`、`sha256` 三个字段，且 `downloadUrl` 指向
+`IMusic-Setup-<完整版本号>-x64.exe`。
+
+### B6. 版本号与 build 号（最容易踩的坑）
+
+- electron-builder 的 `${version}` 宏用**完整**版本号，所以产物叫
+  `IMusic-Setup-2.3.3+7-x64.exe`（带 build 号）。
+- 更新器 `installerFileName()` 会**去掉** build 号生成 `IMusic-Setup-2.3.3-x64.exe`，
+  这个名字只用来给下载回来的文件落地，不用来拼 URL。
+- 所以 `downloadUrl` 必须指向含 build 号的那个名，否则 404。
+- `version` 字段写完整版本号：更新端按 build 号区分两次构建
+  （`2.3.3+8 > 2.3.3+7`），写少了就分不出来。
+
+这条链路有 `electron-app/tests/update-publish.test.ts` 锁定，改动前先看它。
+
+### B7. 代码签名（可选）
+
+当前**没有**签名证书，用户首运会看到 SmartScreen 提示（可点「更多信息 → 仍要运行」）。
+接入证书后，在仓库 **Settings → Secrets and variables → Actions** 加：
+
+| Secret | 值 |
+| --- | --- |
+| `WIN_CSC_LINK` | base64 后的 `.p12` 证书 |
+| `WIN_CSC_KEY_PASSWORD` | 证书密码 |
+
+配好即自动签名，无需改代码。
+
+### B8. 常见问题
+
+- **workflow 第一步就红**：tag 和 `package.json` 的 version 不一致。`v2.3.3` ↔ `2.3.3`。
+- **提示「找不到 IMusic-Setup-…-x64.exe」**：版本号写法与 tag 不一致，看 B6。
+- **`release/` 目录删不掉，报 EBUSY**：跑过打包版之后 `app.asar` 会被持续占用
+  （杀进程后仍锁着）。换个输出目录重建，或重启后再清理。
+- **想改发布渠道回自建服务器**：设环境变量 `IMUSIC_UPDATE_BASE_URL`，并追加
+  `IMUSIC_UPDATE_ALLOWED_HOSTS` 放行域名。
+- 更完整的说明见 `docs/electron-release-guide.md`。
+
+---
+
 ## 开发说明
 
 - 当前项目主要面向 Windows 桌面端。
-- 播放、搜索、登录和曲库同步逻辑集中在 `lib/services/` 与 `lib/playback/`。
-- 桌面歌词窗口使用 `desktop_multi_window` 创建独立 Flutter 子窗口。
+- 播放、搜索、登录和曲库同步逻辑集中在 `lib/services/` 与 `lib/playback/`（Flutter）、
+  `electron-app/src/services/`（Electron，从前者 1:1 移植）。
+- 桌面歌词窗口：Flutter 版用 `desktop_multi_window` 创建独立 Flutter 子窗口；
+  Electron 版用主进程 `BrowserWindow` + 特权协议。
+- Electron 版的 B 站流媒体走主进程 `session.webRequest` 注入 Referer，本地缓存经
+  特权协议提供并支持 HTTP Range。
 - 构建产物、日志、IDE 配置、本地调试报告和本地 agent 状态已在 `.gitignore` 中忽略。
+
+### 相关文档
+
+| 文档 | 内容 |
+| --- | --- |
+| `docs/electron-release-guide.md` | Electron 版发布完整说明（含服务器配置对比） |
+| `docs/electron-rewrite-technical-design.md` | Dart → TypeScript 模块映射、流媒体网关、IPC、状态模型 |
+| `docs/2026-10-14-electron-ui-rewrite-requirements.md` | Electron UI 重构需求 |
+| `scripts/package_windows_usage.md` | Flutter 版打包命令与常见报错 |
