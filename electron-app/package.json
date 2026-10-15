@@ -1,0 +1,70 @@
+{
+  "name": "imusic-desktop",
+  "private": true,
+  "version": "2.3.2",
+  "author": "DeepVibe",
+  "description": "IMusic Desktop - 多音源桌面音乐播放器（Electron 重构版）",
+  "type": "module",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "electron:dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && npm run copy-preload && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
+    "build": "npm run typecheck && vite build && npm run copy-preload",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit",
+    "test": "node tests/run.mjs",
+    "copy-preload": "node -e \"const fs=require('fs');fs.mkdirSync('dist-electron',{recursive:true});fs.cpSync('electron/preload.cjs','dist-electron/preload.cjs')\"",
+    "electron:start": "npm run build && electron .",
+    "electron:build": "npm run build && electron-builder",
+    "release:check": "npm run typecheck && npm test",
+    "release:github": "npm run release:check && npm run electron:build -- --publish never"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9",
+    "framer-motion": "^12.12.0",
+    "lucide-react": "^0.511.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.0",
+    "@types/node": "^22.20.5",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^4.5.0",
+    "concurrently": "^9.1.0",
+    "cross-env": "^7.0.3",
+    "electron": "^36.0.0",
+    "electron-builder": "^26.0.0",
+    "esbuild": "^0.25.12",
+    "tailwindcss": "^4.1.0",
+    "typescript": "~5.8.0",
+    "vite": "^6.3.0",
+    "vite-plugin-electron": "^0.29.1",
+    "wait-on": "^8.0.0"
+  },
+  "build": {
+    "appId": "com.imusic.desktop",
+    "productName": "IMusic",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*"
+    ],
+    "win": {
+      "target": ["nsis", "zip"],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "IMusic",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "${productName}-Setup-${version}-${arch}.${ext}"
+    }
+  }
+}

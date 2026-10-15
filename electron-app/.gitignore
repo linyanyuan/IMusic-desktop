@@ -1,0 +1,20 @@
+# 依赖与构建产物
+node_modules/
+dist/
+dist-electron/
+# build/ 里只有打包图标要入库（electron-builder win.icon），其余产物忽略
+build/*
+!build/icon.ico
+release*/
+tests/dist/
+
+# electron-builder 缓存
+.electron-builder-cache/
+
+# QA 临时产物（报告 JSON / 截图是有意保留的取证，日志与 pid 不入库）
+qa/*.log
+qa/*.pid
+qa/update-probe-manifest.json
+
+# QA 报告中的凭据必须脱敏后再入库（探针已做 redact，这里是防回退）
+#   apikey / vuutv / vkey / token 等查询参数不得出现在提交的 JSON 里

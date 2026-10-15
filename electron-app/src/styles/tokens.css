@@ -1,0 +1,21 @@
+/**
+ * 设计 token —— 与 docs/electron-rewrite-technical-design.md §8 一致。
+ * Tailwind4 通过 @theme 映射为同名 utility（bg-accent、text-secondary 等）。
+ */
+@theme {
+  --color-bg-main: #ffffff;
+  --color-bg-sidebar: #f5f5f7;
+  --color-text-primary: #1d1d1f;
+  --color-text-secondary: #86868b;
+  --color-accent: #fa233b;
+  --color-accent-hover: #e01e34;
+  --color-border-subtle: #e5e5ea;
+
+  --radius-banner: 16px;
+  --radius-cover: 12px;
+  --radius-item: 8px;
+}
+
+:root {
+  --playerbar-bg: rgba(255, 255, 255, 0.8);
+}

@@ -1,0 +1,45 @@
+{
+  "checks": {
+    "versionShown": true,
+    "available": true,
+    "downloading": true,
+    "downloaded": true,
+    "sha256": true,
+    "noPartialLeftover": true,
+    "noInstall": true,
+    "allowlist": true
+  },
+  "verdict": "pass",
+  "failed": [],
+  "detail": {
+    "about": {
+      "version": "2.0.0"
+    },
+    "dialogTitle": {
+      "state": "available",
+      "version": "9.9.9+7",
+      "title": "发现新版本 v9.9.9+7"
+    },
+    "sawDownloading": "downloading",
+    "finalState": {
+      "state": "downloaded",
+      "version": "9.9.9+7"
+    },
+    "actualSha": "bfe74807c87a64433433238baa29cb800d0e4b5f3b8c96037ab15b620e9633c5",
+    "expectedSha": "bfe74807c87a64433433238baa29cb800d0e4b5f3b8c96037ab15b620e9633c5",
+    "allowlist": {
+      "rejected": true,
+      "message": "Error invoking remote method 'imusic:updateDownload': Error: 安装包下载域名不在白名单内：evil.example.com"
+    }
+  },
+  "consoleTail": [
+    "[log] [BilibiliMusicProvider] getRecommendedSongs - 开始获取推荐歌曲",
+    "[log] [BilibiliMusicProvider] 请求 Gateway API: /qqmusic/search/songs",
+    "[warning] [Shortcuts] 全局热键注册失败（可能被其他程序占用）: Array(7)",
+    "[warning] [Bootstrap] 音乐库加载失败 ApiError: API request failed with status 401: {\"error\":\"Unauthorized\"}\n    at Rv.apiRequest (file:///D:/project/my-music-desktop/electron-app/dist/assets/index-C7c0M65m.js:251:30887)\n    at async Rv.getRemoteLibrary (file:///D:/project/my-music-desktop/electron-app/dist",
+    "[log] [BilibiliMusicProvider] Gateway API 失败: AbortError: signal is aborted without reason，降级使用 Bilibili 搜索",
+    "[log] [BilibiliMusicProvider] searchBilibiliRecommended - 使用 Bilibili 降级方案",
+    "[log] [BilibiliMusicProvider] Bilibili 降级返回 20 首歌曲"
+  ],
+  "serverPort": 18787
+}

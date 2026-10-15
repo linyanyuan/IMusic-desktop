@@ -1,0 +1,132 @@
+{
+  "port": "9222",
+  "settings": {
+    "rowCount": 9,
+    "rows": [
+      {
+        "action": "playPauseInApp",
+        "label": "Space"
+      },
+      {
+        "action": "playPauseGlobal",
+        "label": "Ctrl + Alt + P"
+      },
+      {
+        "action": "previousTrack",
+        "label": "Ctrl + Alt + Left"
+      },
+      {
+        "action": "nextTrack",
+        "label": "Ctrl + Alt + Right"
+      },
+      {
+        "action": "volumeUp",
+        "label": "Ctrl + Alt + Up"
+      },
+      {
+        "action": "volumeDown",
+        "label": "Ctrl + Alt + Down"
+      },
+      {
+        "action": "mute",
+        "label": "Ctrl + Alt + M"
+      },
+      {
+        "action": "toggleDesktopLyrics",
+        "label": "Ctrl + Alt + D"
+      },
+      {
+        "action": "toggleFocusMode",
+        "label": "F"
+      }
+    ],
+    "scopes": 9,
+    "globalTogglePresent": true,
+    "globalToggleChecked": true,
+    "resetButtonPresent": true
+  },
+  "registrationUi": {
+    "unavailable": [],
+    "text": null
+  },
+  "envCandidates": {
+    "available": [
+      "CommandOrControl+Alt+P",
+      "CommandOrControl+Alt+Shift+P",
+      "CommandOrControl+Shift+P",
+      "CommandOrControl+Alt+M",
+      "CommandOrControl+Alt+Shift+M",
+      "CommandOrControl+Alt+D",
+      "CommandOrControl+Alt+Shift+D",
+      "CommandOrControl+Shift+D",
+      "CommandOrControl+Alt+Shift+F"
+    ],
+    "unavailable": []
+  },
+  "inAppFocusKey": {
+    "focusView": true
+  },
+  "space": {
+    "started": true,
+    "title": "【经典】周杰伦全MV 【200P】"
+  },
+  "spaceAfterFirstPress": true,
+  "spaceAfterSecondPress": true,
+  "rebind": {
+    "chosen": "CommandOrControl+Alt+D",
+    "recordingLabel": "按下新的快捷键",
+    "afterFWhileRecording": {
+      "label": "Ctrl + Alt + Shift + F",
+      "focusView": false
+    },
+    "afterRebind": {
+      "label": "Ctrl + Alt + D",
+      "unavailable": [],
+      "stored": {
+        "control": true,
+        "alt": true,
+        "shift": false,
+        "meta": false,
+        "key": "d"
+      }
+    }
+  },
+  "globalHotkey": {
+    "events": [
+      "toggleDesktopLyrics"
+    ],
+    "drawerOpen": true,
+    "drawerWasClosedBefore": true,
+    "toggled": true
+  },
+  "globalToggleOff": {
+    "checked": false,
+    "eventsWhileDisabled": [],
+    "drawerOpen": false
+  },
+  "globalToggleOn": {
+    "checked": true,
+    "events": [
+      "toggleDesktopLyrics"
+    ]
+  },
+  "resetDefault": {
+    "lyricsLabel": "Ctrl + Alt + D",
+    "unknownRows": 0
+  },
+  "console": [
+    "[log] [BilibiliMusicProvider] searchSongs - 请求完成",
+    "[log] [BilibiliMusicProvider] searchSongs - 结果数量: 20",
+    "[log] [BilibiliMusicProvider] searchSongs - 过滤无 bvid 条目: 3",
+    "[log] [BilibiliMusicProvider] searchSongs - 返回歌曲: 17 首",
+    "[log] [BilibiliMusicProvider] getPlayUrl - ID: bilibili:BV1fx411N7bU",
+    "[log] [BilibiliMusicProvider] 解析 ID: bvid=BV1fx411N7bU, page=1",
+    "[log] [BilibiliMusicProvider] 获取 CID...",
+    "[log] [BilibiliMusicProvider] CID: 2154848",
+    "[log] [BilibiliMusicProvider] 获取播放 URL...",
+    "[log] [BilibiliMusicProvider] 从 dash.audio 获取 URL: https://upos-sz-estgoss.bilivideo.com/upgcxcode/48/48/2154848/2154848_nb2-1-30232.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMk",
+    "[log] [BilibiliMusicProvider] 最终播放 URL: https://upos-sz-estgoss.bilivideo.com/upgcxcode/48/48/2154848/2154848_nb2-1-30232.m4s?e=ig8euxZM2rNcNbdlhoNvNC8BqJIzNbfqXBvEqxTEto8BTrNvN0GvT90W5JZMkX_YN0MvXg8g",
+    "[log] [BilibiliMusicProvider] getPlayUrl 成功"
+  ],
+  "verdict": "fail"
+}

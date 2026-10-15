@@ -1,0 +1,243 @@
+{
+ "report": {
+  "query": "起风了",
+  "scopeClicked": true,
+  "search": {
+   "count": 20,
+   "titles": [
+    "1起风了冯沁苑(买辣椒也用券)netease0:00",
+    "2起风了(林俊杰)8Y1arnetease0:00",
+    "3起风了周深netease0:00",
+    "4起风了 (抖音热搜版)织雾netease0:00",
+    "5起风了吴青峰netease0:00"
+   ]
+  },
+  "firstRowHasPlay": true,
+  "playing": true,
+  "footerTitle": "起风了",
+  "audio": {
+   "srcHost": "m801.music.126.net",
+   "readyState": 4,
+   "networkState": 1,
+   "duration": 325.9,
+   "currentTime": 0.3,
+   "error": null,
+   "events": [
+    "loadstart@54673",
+    "loadedmetadata@54696",
+    "play@54698",
+    "waiting@54698",
+    "loadeddata@54701",
+    "canplay@54701",
+    "playing@54701",
+    "suspend@55046"
+   ]
+  },
+  "directNetease": true,
+  "lyrics": {
+   "lineCount": 71,
+   "firstLine": "作词 : 米果",
+   "firstTimesSec": [
+    0,
+    1,
+    2,
+    25.237,
+    28.592,
+    31.681
+   ],
+   "first": {
+    "index": 1,
+    "timeSec": 1,
+    "text": "作曲 : 高橋優"
+   },
+   "syncAtFirst": {
+    "ok": true,
+    "lineMs": 1000,
+    "nextLineMs": 2000
+   },
+   "posAtFirstMs": 1000,
+   "after9s": {
+    "index": 2,
+    "timeSec": 2,
+    "text": "编曲 : 池窪浩一 (Kouichi Ikekubo)"
+   },
+   "posAfter9sMs": 10000,
+   "syncAfter9s": {
+    "ok": true,
+    "lineMs": 2000,
+    "nextLineMs": 25237
+   },
+   "advanced": true
+  },
+  "verdict": {
+   "playing": true,
+   "neteaseDirect": true,
+   "audioHealthy": true,
+   "lyricsLoaded": true,
+   "lyricsSynced": true,
+   "lyricsAdvanced": true,
+   "pass": true
+  }
+ },
+ "network": [
+  {
+   "kind": "bilibili-cdn",
+   "source": "netease",
+   "host": "music-api.gdstudio.xyz"
+  },
+  {
+   "kind": "bilibili-cdn",
+   "source": "netease",
+   "host": "music-api.gdstudio.xyz"
+  },
+  {
+   "kind": "bilibili-cdn",
+   "source": "netease",
+   "host": "music-api.gdstudio.xyz"
+  },
+  {
+   "kind": "bilibili-cdn",
+   "source": "netease",
+   "host": "music-api.gdstudio.xyz"
+  },
+  {
+   "kind": "bilibili-cdn",
+   "source": "netease",
+   "host": "music-api.gdstudio.xyz"
+  },
+  {
+   "kind": "bilibili-cdn",
+   "source": "netease",
+   "host": "music-api.gdstudio.xyz"
+  },
+  {
+   "kind": "bilibili-cdn",
+   "source": "netease",
+   "host": "music-api.gdstudio.xyz"
+  },
+  {
+   "kind": "bilibili-cdn",
+   "source": "netease",
+   "host": "music-api.gdstudio.xyz"
+  },
+  {
+   "kind": "bilibili-cdn",
+   "source": "netease",
+   "host": "music-api.gdstudio.xyz"
+  },
+  {
+   "kind": "bilibili-cdn",
+   "source": "netease",
+   "host": "music-api.gdstudio.xyz"
+  },
+  {
+   "kind": "bilibili-cdn",
+   "source": "netease",
+   "host": "music-api.gdstudio.xyz"
+  },
+  {
+   "kind": "bilibili-cdn",
+   "source": "netease",
+   "host": "music-api.gdstudio.xyz"
+  },
+  {
+   "kind": "bilibili-cdn",
+   "source": "netease",
+   "host": "music-api.gdstudio.xyz"
+  },
+  {
+   "kind": "bilibili-cdn",
+   "source": "netease",
+   "host": "music-api.gdstudio.xyz"
+  },
+  {
+   "kind": "bilibili-cdn",
+   "source": "netease",
+   "host": "music-api.gdstudio.xyz"
+  },
+  {
+   "kind": "bilibili-cdn",
+   "source": "netease",
+   "host": "music-api.gdstudio.xyz"
+  },
+  {
+   "kind": "bilibili-cdn",
+   "source": "netease",
+   "host": "music-api.gdstudio.xyz"
+  },
+  {
+   "kind": "netease-cdn",
+   "source": null,
+   "host": "p2.music.126.net"
+  },
+  {
+   "kind": "netease-cdn",
+   "source": null,
+   "host": "p2.music.126.net"
+  },
+  {
+   "kind": "netease-cdn",
+   "source": null,
+   "host": "p2.music.126.net"
+  },
+  {
+   "kind": "gdstudio:url",
+   "source": "netease",
+   "host": "music-api.gdstudio.xyz"
+  },
+  {
+   "kind": "gdstudio:url",
+   "source": "netease",
+   "host": "music-api.gdstudio.xyz"
+  },
+  {
+   "kind": "gdstudio:lyric",
+   "source": "netease",
+   "host": "music-api.gdstudio.xyz"
+  },
+  {
+   "kind": "netease-cdn",
+   "source": null,
+   "host": "m801.music.126.net"
+  },
+  {
+   "kind": "netease-cdn",
+   "source": null,
+   "host": "p2.music.126.net"
+  }
+ ],
+ "failedRequests": [
+  {
+   "error": "net::ERR_ABORTED",
+   "type": "Other"
+  },
+  {
+   "error": "net::ERR_ABORTED",
+   "type": "Other"
+  },
+  {
+   "error": "net::ERR_ABORTED",
+   "type": "Fetch"
+  },
+  {
+   "error": "net::ERR_ABORTED",
+   "type": "Fetch"
+  }
+ ],
+ "console": [
+  "[log] [BilibiliMusicProvider] Bilibili 降级返回 20 首歌曲",
+  "[log] [Hybrid] 歌曲 tab 使用 GDStudio 结果: 20 page=1",
+  "[log] [Hybrid] GDStudio 直链播放: gdstudio:netease:1330348068",
+  "[info] [Player] 歌词异步加载成功: 71 行",
+  "[log] [BilibiliMusicProvider] getRecommendedSongs - 开始获取推荐歌曲",
+  "[log] [BilibiliMusicProvider] 请求 Gateway API: /qqmusic/search/songs",
+  "[warning] [Bootstrap] 音乐库加载失败 ApiError: API request failed with status 401: {\"error\":\"Unauthorized\"}\n    at jS.apiRequest (file:///D:/project/my-music-desktop/electron-app/dist/assets/index-dcey5k5N.js:201:25616)\n    at async jS.getRemoteLibrary (file:///D:/project/my-music-desktop/electron-app/dist",
+  "[log] [BilibiliMusicProvider] Gateway API 失败: AbortError: signal is aborted without reason，降级使用 Bilibili 搜索",
+  "[log] [BilibiliMusicProvider] searchBilibiliRecommended - 使用 Bilibili 降级方案",
+  "[log] [BilibiliMusicProvider] Bilibili 降级返回 20 首歌曲",
+  "[log] [Hybrid] 歌曲 tab 使用 GDStudio 结果: 20 page=1",
+  "[log] [GdStudio] url br=192 failed: AbortError: signal is aborted without reason",
+  "[log] [Hybrid] GDStudio 直链播放: gdstudio:netease:1330348068",
+  "[info] [Player] 歌词异步加载成功: 71 行"
+ ]
+}

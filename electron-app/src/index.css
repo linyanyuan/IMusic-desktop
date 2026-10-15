@@ -1,0 +1,85 @@
+@import 'tailwindcss';
+@import './styles/tokens.css';
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family:
+    -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC',
+    sans-serif;
+  color: var(--color-text-primary);
+  background: var(--color-bg-main);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* 无边框窗口拖拽区域 */
+.drag-region {
+  -webkit-app-region: drag;
+}
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* 队列抽屉里正在播放的跳动音柱 */
+@keyframes eq {
+  0%,
+  100% {
+    height: 4px;
+  }
+  50% {
+    height: 12px;
+  }
+}
+
+/* 极简滚动条 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.16);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.28);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ---- 独立桌面歌词窗口 ---- */
+/* 透明 BrowserWindow：根与 body 必须无背景，否则透出白底 */
+.lyrics-window-host {
+  background: transparent !important;
+}
+.lyrics-window-root {
+  /* 整条可拖动（对应 Flutter 歌词窗的拖拽移动；锁定时禁用） */
+  -webkit-app-region: drag;
+  user-select: none;
+}
+.lyrics-window-root.lyrics-locked {
+  -webkit-app-region: no-drag;
+}
+.lyrics-no-drag {
+  -webkit-app-region: no-drag;
+}
+/* 换行过渡（对应 Flutter AnimatedSwitcher 160ms） */
+@keyframes lyrics-line-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.lyrics-line-swap {
+  animation: lyrics-line-in 160ms ease-out;
+}

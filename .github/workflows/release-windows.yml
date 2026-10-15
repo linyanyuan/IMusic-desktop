@@ -1,0 +1,147 @@
+# IMusic Desktop（Electron）打包 + 发布到 GitHub Releases
+#
+# 触发：推送 v* 标签，例如
+#   git tag v2.3.3
+#   git push origin v2.3.3
+#
+# 产物：
+#   - IMusic-Setup-<version>-x64.exe   NSIS 安装版
+#   - IMusic-<version>-x64.zip          绿色免安装版
+#   - desktop-update.json               更新清单（应用内更新器读取）
+#   - SHA256SUMS.txt                    所有产物的 sha256
+#
+# 注意：当前没有代码签名证书，安装包未签名，用户首次运行会看到
+# Windows SmartScreen 提示（仍可选「仍要运行」）。接入 EV 证书后取消下面
+# WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD 两个 secret 的注释即可自动签名。
+
+name: Release (Windows)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（需与 package.json 的 version 一致，如 2.3.3）'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-publish:
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: electron-app/package-lock.json
+
+      - name: 校验 tag 与 package.json 版本一致
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          # 触发方式是 tag 时 GITHUB_REF_NAME 形如 v2.3.3；手动触发时用输入值
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            TAG="v${{ github.event.inputs.version }}"
+          fi
+          EXPECT="${TAG#v}"
+          ACTUAL="$(node -p "require('./electron-app/package.json').version")"
+          echo "tag=$TAG  package.json=$ACTUAL"
+          if [ "$EXPECT" != "$ACTUAL" ]; then
+            echo "::error::tag ($EXPECT) 与 electron-app/package.json 的 version ($ACTUAL) 不一致。" \
+                 "请先改 package.json 的 version 并提交，再打同名 tag。"
+            exit 1
+          fi
+
+      - name: 安装依赖
+        working-directory: electron-app
+        run: npm ci
+
+      - name: 类型检查 + 单元测试
+        working-directory: electron-app
+        run: |
+          npm run typecheck
+          npm test
+
+      - name: 构建（渲染层 + 主进程 + preload）
+        working-directory: electron-app
+        run: npm run build
+
+      - name: 打包 NSIS + zip
+        working-directory: electron-app
+        run: npx electron-builder --publish never
+        env:
+          # 接入代码签名证书后，在仓库 Secrets 里配这两个值即可自动签名
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 生成更新清单与校验和
+        shell: bash
+        working-directory: electron-app
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./package.json').version")"
+          cd release
+
+          SETUP="IMusic-Setup-${VERSION}-x64.exe"
+          ZIP="IMusic-${VERSION}-x64.zip"
+
+          # 更新清单的 downloadUrl 指向本次 Release 的 asset
+          REPO="${{ github.repository }}"
+          REF="${{ github.ref_name }}"
+          BASE="https://github.com/${REPO}/releases/download/${REF}"
+
+          # 去掉 build 号（1.2.3+4 -> 1.2.3），与更新端 installerFileName 的取法一致
+          VERSION_ONLY="${VERSION%%+*}"
+
+          SETUP_URL="${BASE}/${SETUP}"
+          SHA256="$(sha256sum "${SETUP}" | awk '{print $1}')"
+
+          cat > desktop-update.json <<EOF
+          {
+            "version": "${VERSION}",
+            "downloadUrl": "${SETUP_URL}",
+            "sha256": "${SHA256}",
+            "changelog": "见 Release notes：${BASE}"
+          }
+          EOF
+
+          # 全产物校验和（绿色包 zip + 安装包）
+          sha256sum "${ZIP}" "${SETUP}" > SHA256SUMS.txt
+
+          echo "---- desktop-update.json ----"
+          cat desktop-update.json
+          echo "---- SHA256SUMS.txt ----"
+          cat SHA256SUMS.txt
+
+      - name: 上传 Release 资产
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: IMusic Desktop ${{ github.ref_name }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
+          files: |
+            electron-app/release/IMusic-Setup-*.exe
+            electron-app/release/IMusic-*.zip
+            electron-app/release/desktop-update.json
+            electron-app/release/SHA256SUMS.txt
+            electron-app/release/*.blockmap
+          fail_on_unmatched_files: true

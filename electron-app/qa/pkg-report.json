@@ -1,0 +1,93 @@
+{
+  "query": "周杰伦",
+  "ui": {
+    "loading": false,
+    "results": 20,
+    "keyMissing": false,
+    "errorish": [
+      "ChKSz"
+    ],
+    "empty": false
+  },
+  "playback": {
+    "audio": null,
+    "footer": "布拉格广场 | 蔡依林/周杰伦 | 0:00 | 4:54",
+    "playing": true,
+    "lyricLines": 0,
+    "drawerLyricLines": 87,
+    "timeline": [
+      "播放@0:00",
+      "播放@0:00",
+      "暂停@0:00"
+    ],
+    "neteaseStreams": [
+      "https://p3.music.126.net/yD9vbpuILH-tqNRIaP640g==/109951163038292176.jpg",
+      "https://p3.music.126.net/pleQjKOI26fSenkUGipDLw==/109951166537300832.jpg",
+      "https://p3.music.126.net/H6kETGEXS0zdUvTkP8sh0Q==/109951166326634933.jpg",
+      "https://p4.music.126.net/7ohi163WcAw-njQIJ7PlPQ==/18892908300315027.jpg",
+      "https://p4.music.126.net/_O0ErSGUeALi-4jvzDoj8Q==/871912720826764.jpg",
+      "https://p4.music.126.net/lKIkniPBdOWqZzl1yvgz9g==/109951170708258712.jpg",
+      "https://p4.music.126.net/dDgHDWlJAFwkMNrjbQExIA==/109951165959446596.jpg",
+      "https://p3.music.126.net/72oWjF23bDbX0ZXT0yUCvA==/109951163604724077.jpg",
+      "https://p4.music.126.net/yD9vbpuILH-tqNRIaP640g==/109951163038292176.jpg",
+      "https://p3.music.126.net/7ohi163WcAw-njQIJ7PlPQ==/18892908300315027.jpg",
+      "https://p3.music.126.net/rcGG58RFPous1aKTeu5BgQ==/605830906916387.jpg",
+      "https://p4.music.126.net/9YuflxGL7XFAfOnINEsdWw==/109951171358446171.jpg",
+      "https://p4.music.126.net/84IexihW0KPrRe0DdOEyHg==/109951165958730017.jpg",
+      "https://p3.music.126.net/LhN619m5JlZ-Y_gUFkwH1g==/3394192410959263.jpg",
+      "https://p4.music.126.net/sP2dnyP_zds2hlzClLoLpA==/109951165958812099.jpg",
+      "https://p3.music.126.net/6hiV-3m-hdTNOh8pclZIEg==/109951165986730839.jpg",
+      "https://m701.music.126.net/20261015072227/dbd2862fffbac844c013a805f33468af/jdymusic/obj/wo3DlMOGwrbDjj7DisKw/22259946455/1698/f3e2/2ad8/03ac8aa498e4abcf4505915a138480cc.mp3?vuutv=***REDACTED***",
+      "https://p3.music.126.net/8D2Pd7EuvGboMyE2xWc47A==/109951172453712025.jpg"
+    ]
+  },
+  "chkszRequests": [
+    "https://api.chksz.com/api/163_search?keyword=%E5%91%A8%E6%9D%B0%E4%BC%A6&limit=20&apikey=***REDACTED***",
+    "https://api.chksz.com/api/163_music?id=210049&level=exhigh&type=json&apikey=***REDACTED***",
+    "https://api.chksz.com/api/163_lyric?id=210049&apikey=***REDACTED***"
+  ],
+  "chkszOutcomes": [
+    {
+      "url": "https://api.chksz.com/api/163_search?keyword=%E5%91%A8%E6%9D%B0%E4%BC%A6&limit=20&apikey=***REDACTED***",
+      "status": 200,
+      "kind": "response"
+    },
+    {
+      "url": "https://api.chksz.com/api/163_music?id=210049&level=exhigh&type=json&apikey=***REDACTED***",
+      "status": 200,
+      "kind": "response"
+    },
+    {
+      "url": "https://api.chksz.com/api/163_lyric?id=210049&apikey=***REDACTED***",
+      "status": 200,
+      "kind": "response"
+    }
+  ],
+  "consoleAll": [
+    "[log] [BilibiliMusicProvider] getRecommendedSongs - 开始获取推荐歌曲",
+    "[log] [BilibiliMusicProvider] 请求 Gateway API: /qqmusic/search/songs",
+    "[log] [BilibiliMusicProvider] Gateway API 失败: AbortError: signal is aborted without reason，降级使用 Bilibili 搜索",
+    "[log] [BilibiliMusicProvider] searchBilibiliRecommended - 使用 Bilibili 降级方案",
+    "[log] [BilibiliMusicProvider] Bilibili 降级返回 20 首歌曲",
+    "[log] [BilibiliMusicProvider] searchSongs - 查询: 周杰伦 page=1",
+    "[log] [BilibiliMusicProvider] searchSongs - 请求完成",
+    "[log] [BilibiliMusicProvider] searchSongs - 结果数量: 20",
+    "[log] [BilibiliMusicProvider] searchSongs - 过滤无 bvid 条目: 3",
+    "[log] [BilibiliMusicProvider] searchSongs - 返回歌曲: 17 首",
+    "[log] [Hybrid] ChKSz 直链播放: chksz:163:210049",
+    "[info] [Player] 歌词异步加载成功: 87 行"
+  ],
+  "consoleTail": [
+    "[log] [Hybrid] ChKSz 直链播放: chksz:163:210049"
+  ],
+  "consoleErrorTail": [],
+  "verdict": {
+    "有结果": true,
+    "未卡在搜索中": true,
+    "没有请求": false,
+    "可播放": true,
+    "无音频错误": true,
+    "走网易云直链": true,
+    "有歌词": true
+  }
+}
