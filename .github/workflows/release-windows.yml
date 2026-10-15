@@ -10,6 +10,11 @@
 #   - desktop-update.json               更新清单（应用内更新器读取）
 #   - SHA256SUMS.txt                    所有产物的 sha256
 #
+# Release 正文：取自 tag 的注释（git tag -a -m/-F）。发布脚本
+# scripts/release_electron.ps1 会把 -Changelog/-ChangelogFile 写进 tag 说明，
+# 这里用 git tag -l --format='%(contents)' 取出来，同时也会进 desktop-update.json
+# 的 changelog 字段（应用内更新弹窗会展示）。
+#
 # 注意：当前没有代码签名证书，安装包未签名，用户首次运行会看到
 # Windows SmartScreen 提示（仍可选「仍要运行」）。接入 EV 证书后取消下面
 # WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD 两个 secret 的注释即可自动签名。
@@ -61,7 +66,8 @@ jobs:
           TAG="${GITHUB_REF_NAME}"
           # 手动触发（workflow_dispatch）时 GITHUB_REF_NAME 是分支名而非 tag，
           # 这时用 inputs.version 推导期望 tag；只有 tag 推送才是真正的 vX.Y.Z。
-          if [ "${GITHUB_REF_TYPE}" != "tag" ] && [ -n "${INPUT_VERSION}" ]; then
+          if [ "${GITHUB_REF_TYPE}" != "tag" ] \
+            && [ -n "${INPUT_VERSION}" ]; then
             TAG="v${INPUT_VERSION}"
             echo "::warning::手动触发模式：按 ${TAG} 校验版本，但 Release 的" \
               "tag_name 仍是 ${GITHUB_REF_NAME}（分支名）。建议改用打 tag 发布。"
@@ -104,6 +110,29 @@ jobs:
           # 崩在 updateInfoBuilder 的 publishConfig.channel。
           # 资产上传由下面的 softprops/action-gh-release 负责，它自己会用
           # secrets.GITHUB_TOKEN，与这里无关。
+
+      - name: 生成 Release 说明（取自 tag 说明）
+        shell: bash
+        env:
+          # 经 env 传入而不是 ${{ }} 插值（tag 名由推送者控制）
+          REF: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # checkout 只取到触发的那次提交，注释型 tag 的说明要显式取回。
+          # 取不到不是失败：那样 Release 就只显示自动生成的变更对比。
+          git fetch --force --tags origin "+refs/tags/${REF}:refs/tags/${REF}" \
+            2>/dev/null || true
+          # $() 去掉尾部空行；发布脚本已把更新说明写进 tag 说明，正文就是它。
+          NOTES="$(git tag -l --format='%(contents)' "${REF}" \
+            2>/dev/null || true)"
+          if [ -n "${NOTES}" ]; then
+            printf '%s\n' "${NOTES}" > release-notes.md
+          else
+            : > release-notes.md
+            echo "::notice::tag ${REF} 没有说明，Release 正文将只有自动生成的变更对比"
+          fi
+          echo '---- release-notes.md ----'
+          cat release-notes.md
 
       - name: 生成更新清单与校验和
         shell: bash
@@ -165,16 +194,34 @@ jobs:
 
           SHA256="$(sha256sum "${SETUP_FULL}" | awk '{print $1}')"
 
+          # 用 node 写 JSON，不用 heredoc 拼字符串：更新说明是多行 Markdown，
+          # 带引号/换行/反斜杠时手拼必然生成非法 JSON，交给 JSON.stringify 才安全。
           # manifest.version 保留完整版本号：更新端的 parseVersion 支持 +build，
           # 且 build 号参与比较（pub_semver 语义），少了它就分不出 2.3.3+7 / 2.3.3+8。
-          cat > desktop-update.json <<EOF
-          {
-            "version": "${FULL_VERSION}",
-            "downloadUrl": "${BASE}/${SETUP_FULL}",
-            "sha256": "${SHA256}",
-            "changelog": "见 Release notes：${BASE}"
-          }
-          EOF
+          NOTES_FILE="${GITHUB_WORKSPACE}/release-notes.md"
+          export FULL_VERSION SETUP_FULL SHA256 BASE NOTES_FILE
+          node -e '
+            const fs = require("fs");
+            const notes = (() => {
+              try {
+                return fs.readFileSync(process.env.NOTES_FILE, "utf8").trim();
+              } catch {
+                return "";
+              }
+            })();
+            const manifest = {
+              version: process.env.FULL_VERSION,
+              downloadUrl: `${process.env.BASE}/${process.env.SETUP_FULL}`,
+              sha256: process.env.SHA256,
+              changelog: notes !== ""
+                ? notes
+                : `见 Release notes：${process.env.BASE}`,
+            };
+            fs.writeFileSync(
+              "desktop-update.json",
+              JSON.stringify(manifest, null, 2) + "\n"
+            );
+          '
 
           # 全产物校验和（绿色包 zip + 安装包）
           sha256sum "${ZIP_FULL}" "${SETUP_FULL}" > SHA256SUMS.txt
@@ -193,6 +240,9 @@ jobs:
           name: IMusic Desktop ${{ github.ref_name }}
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
+          # 说明来自 tag 说明（上一步已落到 release-notes.md）。
+          # action 会把 body 与自动生成的变更对比拼起来，body 在前面。
+          body_path: release-notes.md
           generate_release_notes: true
           files: |
             electron-app/release/IMusic-Setup-*.exe

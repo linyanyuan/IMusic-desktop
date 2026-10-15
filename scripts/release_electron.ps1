@@ -21,7 +21,14 @@
     必须大于当前版本，否则拒绝执行。
 
 .PARAMETER Changelog
-    写进 commit message 的变更说明，便于日后回溯这次发了什么。
+    本次更新说明（会写进 commit message、tag 说明，并作为 GitHub Release 的正文）。
+    可以用 \n 表示换行，例如：
+      -Changelog "新功能\n- 支持 xx\n\n修复\n- 修了 yy"
+    内容较长时建议改用 -ChangelogFile 指向一个 Markdown 文件。
+
+.PARAMETER ChangelogFile
+    从文件读取更新说明（UTF-8），适合写多行、带小标题的 Markdown。
+    与 -Changelog 二选一；同时给时以本参数为准。
 
 .PARAMETER SkipTests
     跳过本地自检。仅在「只改版本号、代码无变化」时使用。
@@ -38,6 +45,10 @@
     最常用：一条命令完成改版本、自检、提交、推送、打 tag。
 
 .EXAMPLE
+    .\scripts\release_electron.ps1 -Version 2.4.0 -ChangelogFile .\notes.md
+    更新说明写在文件里（支持多行 Markdown），适合正式版本。
+
+.EXAMPLE
     .\scripts\release_electron.ps1 -Version 2.4.0 -WhatIf
     预演：只打印每一步会做什么，不修改任何文件、不推送。
 
@@ -52,6 +63,8 @@ param(
   [string]$Version,
 
   [string]$Changelog = '',
+
+  [string]$ChangelogFile = '',
 
   [switch]$SkipTests,
 
@@ -248,6 +261,41 @@ if ($behind -gt 0) {
 Write-Ok "分支 $branch（领先远端 $ahead 个提交）"
 
 # ---------------------------------------------------------------------------
+# 0. 解析更新说明（将成为 GitHub Release 的正文）
+# ---------------------------------------------------------------------------
+
+Write-Step '解析更新说明'
+
+$notes = ''
+if ($ChangelogFile.Trim() -ne '') {
+  $notesPath = $ChangelogFile
+  if (-not [System.IO.Path]::IsPathRooted($notesPath)) {
+    $notesPath = Join-Path $repoRoot $notesPath
+  }
+  if (-not (Test-Path -LiteralPath $notesPath -PathType Leaf)) {
+    throw "找不到 -ChangelogFile 指定的文件：$notesPath"
+  }
+  $notes = [System.IO.File]::ReadAllText($notesPath, [System.Text.UTF8Encoding]::new($false))
+} elseif ($Changelog.Trim() -ne '') {
+  $notes = $Changelog
+}
+
+# 允许在 -Changelog 里用 \n 写换行：PowerShell 自己的转义符是反引号，
+# 在命令行和 CI 里都容易输错，支持 \n 更顺手。
+$notes = $notes -replace '\\n', "`n"
+$notes = $notes.Replace("`r`n", "`n").Trim()
+
+if ($notes -eq '') {
+  Write-Warn '未提供更新说明：Release 只会有自动生成的变更对比链接。'
+  Write-Warn '  建议用 -Changelog "..." 或 -ChangelogFile <md 文件> 写清楚新功能/改进/修复。'
+} else {
+  Write-Ok "更新说明 $((($notes -split "`n").Count)) 行："
+  foreach ($line in ($notes -split "`n")) {
+    Write-Host "      $line" -ForegroundColor DarkGray
+  }
+}
+
+# ---------------------------------------------------------------------------
 # 1. 写入新版本号
 # ---------------------------------------------------------------------------
 
@@ -293,8 +341,8 @@ if ($SkipTests) {
 Write-Step '提交版本号变更'
 
 $message = "chore(electron): bump $Version"
-if ($Changelog.Trim() -ne '') {
-  $message += "`n`n$Changelog"
+if ($notes -ne '') {
+  $message += "`n`n$notes"
 }
 
 Invoke-Step 'git' @('add', 'electron-app/package.json')
@@ -328,7 +376,19 @@ if ($Force) {
   }
 }
 
-Invoke-Step 'git' @('tag', '-a', $tag, '-m', "IMusic Desktop $tag")
+# tag 说明就是 Release 正文的来源：workflow 用
+#   git tag -l --format='%(contents)' vX.Y.Z
+# 把它取出来交给 softprops/action-gh-release。
+# 用 -F 从文件读而不是 -m：多行中文说明经 PowerShell 5.1 传给原生程序时
+# 换行容易被弄丢，写文件最稳。
+$tagMessage = if ($notes -ne '') { $notes } else { "IMusic Desktop $tag" }
+$msgFile = [System.IO.Path]::GetTempFileName()
+try {
+  [System.IO.File]::WriteAllText($msgFile, $tagMessage, [System.Text.UTF8Encoding]::new($false))
+  Invoke-Step 'git' @('tag', '-a', $tag, '-F', $msgFile)
+} finally {
+  Remove-Item -LiteralPath $msgFile -Force -ErrorAction SilentlyContinue
+}
 
 if ($NoPush) {
   Write-Warn "本地 tag $tag 已创建但未推送"
@@ -357,8 +417,11 @@ Write-Host "    https://github.com/$repo/actions" -ForegroundColor White
 Write-Host ''
 Write-Host '  发布完成后验证：' -ForegroundColor Gray
 Write-Host "    curl -s https://github.com/$repo/releases/latest/download/desktop-update.json" -ForegroundColor White
+Write-Host "    https://github.com/$repo/releases/tag/$tag" -ForegroundColor White
 Write-Host ''
-if ($Changelog.Trim() -eq '') {
-  Write-Warn '本次未填 -Changelog，建议以后带上，方便回溯每次发了什么。'
+if ($notes -ne '') {
+  Write-Host '  Release 正文与 tag 说明已设为上面的更新说明。' -ForegroundColor Gray
+} else {
+  Write-Warn '本次未填更新说明，Release 只会有自动生成的变更对比链接。'
 }
 Write-Host ''

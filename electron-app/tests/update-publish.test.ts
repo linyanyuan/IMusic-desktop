@@ -111,3 +111,31 @@ test('带 build 号时 downloadUrl 必须指向含 build 号的 asset 名', () =
   // 本地落地名刻意去掉 build 号，与下载地址不同名
   assert.equal(installerFileName(manifest), 'IMusic-Setup-2.3.3-x64.exe')
 })
+
+// 更新说明链路：发布脚本把 -Changelog/-ChangelogFile 写进 tag 说明，workflow 用
+// git tag -l --format='%(contents)' 取出来，同时写进 manifest.changelog，
+// 应用内更新弹窗（UpdateDialog 的 ChangelogBox）展示它。
+// 这里锁定最后一公里：多行 Markdown（含引号/反斜杠）必须原样带出来。
+test('多行 Markdown 更新说明能原样通过 parseManifest', () => {
+  const notes = ['新功能', '- 支持 A', '', '修复', '- 修了 "引号" 与 \\ 反斜杠'].join('\n')
+  const parsed = parseManifest({
+    version: VERSION,
+    downloadUrl: `https://github.com/${REPO}/releases/download/${TAG}/IMusic-Setup-${VERSION}-x64.exe`,
+    sha256: 'd'.repeat(64),
+    changelog: notes,
+  })
+  assert.ok(parsed != null)
+  assert.equal(parsed?.changelog, notes, '多行说明不能被截断或改写')
+  assert.ok(manifestIsValid(parsed))
+})
+
+// 没写更新说明时 workflow 写入空 changelog，应用端归一化为 null，弹窗走兜底文案
+test('更新说明为空时 changelog 归一化为 null', () => {
+  const parsed = parseManifest({
+    version: VERSION,
+    downloadUrl: `https://github.com/${REPO}/releases/download/${TAG}/IMusic-Setup-${VERSION}-x64.exe`,
+    sha256: 'e'.repeat(64),
+    changelog: '',
+  })
+  assert.equal(parsed?.changelog, null)
+})
