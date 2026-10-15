@@ -1,7 +1,7 @@
 {
   "name": "imusic-desktop",
   "private": true,
-  "version": "2.3.6",
+  "version": "2.3.7",
   "author": "DeepVibe",
   "description": "IMusic Desktop - 多音源桌面音乐播放器（Electron 重构版）",
   "type": "module",
