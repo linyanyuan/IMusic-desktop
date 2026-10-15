@@ -88,3 +88,26 @@ test('sha256 不是 64 位 hex 时拒绝', () => {
   const bad = { ...githubManifest(), sha256: 'notahash' }
   assert.equal(manifestIsValid(bad), false)
 })
+
+// 回归锚点：electron-builder 的 ${version} 宏是 package.json 的完整 version
+//（含 +build），所以 GitHub 上的 asset 名是 IMusic-Setup-2.3.3+7-x64.exe。
+// 更新端 installerFileName() 会去掉 +build，只用于「下载后落地的本地文件名」；
+// 真正下载用的是 manifest.downloadUrl。若 workflow 按去掉 build 号的名字拼
+// URL 就会 404 —— 这里锁定 URL 必须带 build 号。
+test('带 build 号时 downloadUrl 必须指向含 build 号的 asset 名', () => {
+  const version = '2.3.3+7'
+  const manifest = {
+    version,
+    downloadUrl: `https://github.com/${REPO}/releases/download/${TAG}/IMusic-Setup-${version}-x64.exe`,
+    sha256: 'c'.repeat(64),
+    changelog: null,
+  }
+  assert.ok(manifestIsValid(manifest))
+  assert.equal(
+    manifest.downloadUrl.split('/').pop(),
+    'IMusic-Setup-2.3.3+7-x64.exe',
+    'downloadUrl 必须匹配 electron-builder 的实际产物名',
+  )
+  // 本地落地名刻意去掉 build 号，与下载地址不同名
+  assert.equal(installerFileName(manifest), 'IMusic-Setup-2.3.3-x64.exe')
+})

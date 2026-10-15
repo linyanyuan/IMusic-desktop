@@ -52,19 +52,27 @@ jobs:
 
       - name: 校验 tag 与 package.json 版本一致
         shell: bash
+        env:
+          # 经 env 传入而不是 ${{ }} 插值：手动触发时 inputs.version 是人填的，
+          # 直接插进 shell 就是命令注入面。
+          INPUT_VERSION: ${{ github.event.inputs.version }}
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
-          # 触发方式是 tag 时 GITHUB_REF_NAME 形如 v2.3.3；手动触发时用输入值
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            TAG="v${{ github.event.inputs.version }}"
+          # 手动触发（workflow_dispatch）时 GITHUB_REF_NAME 是分支名而非 tag，
+          # 这时用 inputs.version 推导期望 tag；只有 tag 推送才是真正的 vX.Y.Z。
+          if [ "${GITHUB_REF_TYPE}" != "tag" ] && [ -n "${INPUT_VERSION}" ]; then
+            TAG="v${INPUT_VERSION}"
+            echo "::warning::手动触发模式：按 ${TAG} 校验版本，但 Release 的" \
+              "tag_name 仍是 ${GITHUB_REF_NAME}（分支名）。建议改用打 tag 发布。"
           fi
           EXPECT="${TAG#v}"
           ACTUAL="$(node -p "require('./electron-app/package.json').version")"
-          echo "tag=$TAG  package.json=$ACTUAL"
-          if [ "$EXPECT" != "$ACTUAL" ]; then
-            echo "::error::tag ($EXPECT) 与 electron-app/package.json 的 version ($ACTUAL) 不一致。" \
-                 "请先改 package.json 的 version 并提交，再打同名 tag。"
+          echo "ref=${GITHUB_REF_NAME} type=${GITHUB_REF_TYPE}"
+          echo "期望 tag=${EXPECT}  package.json=${ACTUAL}"
+          if [ "${EXPECT}" != "${ACTUAL}" ]; then
+            echo "::error::tag (${EXPECT}) 与 package.json 的 version" \
+              "(${ACTUAL}) 不一致。请先改 version 并提交，再打同名 tag。"
             exit 1
           fi
 
@@ -94,41 +102,52 @@ jobs:
       - name: 生成更新清单与校验和
         shell: bash
         working-directory: electron-app
+        env:
+          # 经 env 传入而不是 ${{ }} 插值：tag 名由推 tag 的人控制，
+          # 直接插进 shell 等于给推送者一个命令注入面（actionlint 亦会告警）。
+          REPO: ${{ github.repository }}
+          REF: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          VERSION="$(node -p "require('./package.json').version")"
+          FULL_VERSION="$(node -p "require('./package.json').version")"
           cd release
 
-          SETUP="IMusic-Setup-${VERSION}-x64.exe"
-          ZIP="IMusic-${VERSION}-x64.zip"
+          # electron-builder 的 ${version} 宏是 package.json 的完整 version（含 +build），
+          # 所以产物名带 build 号；而更新端 installerFileName() 会去掉 +build。
+          # manifest 的 version 用「完整版本号」（版本比较要用 build 号区分），
+          # 但 downloadUrl 必须指向**实际**的 asset 名。
+          SETUP_FULL="IMusic-Setup-${FULL_VERSION}-x64.exe"
+          ZIP_FULL="IMusic-${FULL_VERSION}-x64.zip"
 
-          # 更新清单的 downloadUrl 指向本次 Release 的 asset
-          REPO="${{ github.repository }}"
-          REF="${{ github.ref_name }}"
+          if [ ! -f "${SETUP_FULL}" ]; then
+            echo "::error::找不到 ${SETUP_FULL}，实际产物：$(ls)"
+            exit 1
+          fi
+
           BASE="https://github.com/${REPO}/releases/download/${REF}"
 
-          # 去掉 build 号（1.2.3+4 -> 1.2.3），与更新端 installerFileName 的取法一致
-          VERSION_ONLY="${VERSION%%+*}"
+          SHA256="$(sha256sum "${SETUP_FULL}" | awk '{print $1}')"
 
-          SETUP_URL="${BASE}/${SETUP}"
-          SHA256="$(sha256sum "${SETUP}" | awk '{print $1}')"
-
+          # manifest.version 保留完整版本号：更新端的 parseVersion 支持 +build，
+          # 且 build 号参与比较（pub_semver 语义），少了它就分不出 2.3.3+7 / 2.3.3+8。
           cat > desktop-update.json <<EOF
           {
-            "version": "${VERSION}",
-            "downloadUrl": "${SETUP_URL}",
+            "version": "${FULL_VERSION}",
+            "downloadUrl": "${BASE}/${SETUP_FULL}",
             "sha256": "${SHA256}",
             "changelog": "见 Release notes：${BASE}"
           }
           EOF
 
           # 全产物校验和（绿色包 zip + 安装包）
-          sha256sum "${ZIP}" "${SETUP}" > SHA256SUMS.txt
+          sha256sum "${ZIP_FULL}" "${SETUP_FULL}" > SHA256SUMS.txt
 
           echo "---- desktop-update.json ----"
           cat desktop-update.json
           echo "---- SHA256SUMS.txt ----"
           cat SHA256SUMS.txt
+          echo "---- release dir ----"
+          ls -1
 
       - name: 上传 Release 资产
         uses: softprops/action-gh-release@v2

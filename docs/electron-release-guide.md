@@ -106,6 +106,21 @@ https://github.com/linyanyuan/IMusic-desktop/releases/latest/download/desktop-up
 - manifest 里的 `downloadUrl` 直接指向 GitHub asset，域名白名单已内置 `github.com`（GitHub asset 会 302 到 `objects.githubusercontent.com`，而校验只针对原始 URL，所以无需额外放行）。
 - 老用户从 2.3.2 升级上来时，第一次检查仍会连旧的 `60.205.218.90`。要么让用户手动下载这一版，要么在旧服务器上放一个 `desktop-update.json` 指到 GitHub 的 2.3.3 做一次跳转。
 
+### 6. 版本号与 build 号（容易踩的坑）
+
+`package.json` 的 `version` 可以带 build 号，例如 `"2.3.3+7"`：
+
+- **electron-builder 的 `${version}` 宏用完整字符串**，所以产物叫
+  `IMusic-Setup-2.3.3+7-x64.exe` / `IMusic-2.3.3+7-x64.zip`。
+- **更新器 `installerFileName()` 会去掉 `+7`**，生成 `IMusic-Setup-2.3.3-x64.exe`
+  —— 这个名字只用来给下载回来的文件落地，不用来拼 URL。
+- 所以 workflow 生成 manifest 时，`downloadUrl` 必须用**含 build 号**的产物名，
+  否则 404。而 `version` 字段要写完整版本号：更新端按 pub_semver 语义比较，
+  build 号参与比较（`2.3.3+8 > 2.3.3+7`），写少了就分不出两次构建。
+- tag 校验比的是完整版本号，`v2.3.3+7` 这种 tag 也能对上（`${TAG#v}`）。
+
+上面这条链路有 `tests/update-publish.test.ts` 锁定，别绕开它改。
+
 ---
 
 ## 四、代码签名（可选）
