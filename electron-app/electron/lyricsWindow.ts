@@ -16,6 +16,10 @@ import path from 'node:path'
 
 const LYRICS_HASH = '#/lyrics-window'
 
+/** vite-plugin-electron 在 dev 注入的 dev server 地址；非空即 development 模式 */
+const devServerUrl = process.env.VITE_DEV_SERVER_URL ?? ''
+const isDev = devServerUrl !== ''
+
 export interface LyricsWindowIpcOptions {
   currentDir: string
   getMainWindow: () => BrowserWindow | null
@@ -86,6 +90,9 @@ export function registerLyricsWindowIpc(options: LyricsWindowIpcOptions): void {
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: false,
+        // 与主窗口同一策略：dev 页面是 http://localhost:5173 这个真实 web origin，
+        // 不关 webSecurity 时窗内的音源/接口请求会被 CORS 拦（打包版 file:// 不受限）。
+        webSecurity: !isDev,
       },
     })
 
@@ -100,9 +107,8 @@ export function registerLyricsWindowIpc(options: LyricsWindowIpcOptions): void {
       notifyToggled()
     })
 
-    const devUrl = process.env.VITE_DEV_SERVER_URL
-    if (devUrl !== undefined && devUrl !== '') {
-      void lyricsWindow.loadURL(`${devUrl}${LYRICS_HASH}`)
+    if (isDev) {
+      void lyricsWindow.loadURL(`${devServerUrl}${LYRICS_HASH}`)
     } else {
       void lyricsWindow.loadFile(path.join(options.currentDir, '../dist/index.html'), {
         hash: LYRICS_HASH,

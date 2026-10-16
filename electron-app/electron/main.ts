@@ -21,6 +21,10 @@ registerAudioSchemeAsPrivileged()
 
 let mainWindow: BrowserWindow | null = null
 
+/** vite-plugin-electron 在 dev 注入的 dev server 地址；非空即 development 模式 */
+const devServerUrl = process.env.VITE_DEV_SERVER_URL ?? ''
+const isDev = devServerUrl !== ''
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -35,6 +39,12 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      // 仅 dev 关闭 webSecurity —— dev 页面是真实 web origin（http://localhost:5173），
+      // 未带 Access-Control-Allow-Origin 的音源接口（music.163.com / api.bilibili.com /
+      // gateway.karpov.cn）会被 CORS 直接拦死；打包版走 file://，Electron 不对 file 页面
+      // 施加 CORS，两边网络语义不一致，现象就是「dev 下请求不到数据、打包版正常」。
+      // 打包与 QA（launch-app.cjs）不设 VITE_DEV_SERVER_URL，webSecurity 仍为 true。
+      webSecurity: !isDev,
     },
   })
 
@@ -43,9 +53,8 @@ function createWindow() {
   // B 站等音源域名请求头注入（必须在加载页面前完成）
   setupSourceHeaders()
 
-  const devUrl = process.env.VITE_DEV_SERVER_URL
-  if (devUrl !== undefined && devUrl !== '') {
-    mainWindow.loadURL(devUrl)
+  if (isDev) {
+    mainWindow.loadURL(devServerUrl)
   } else {
     mainWindow.loadFile(path.join(currentDir, '../dist/index.html'))
   }
@@ -85,6 +94,9 @@ function bootstrap() {
 // 且两个进程会并发覆写同一份设置/音乐库缓存。
 const gotSingleInstanceLock = app.requestSingleInstanceLock()
 if (!gotSingleInstanceLock) {
+  // 必须打印：拿不到锁时进程会以状态码 0 静默退出，终端只看到「启动了但立刻退出」
+  // 而没有任何线索（dev 脚本重复启动、或打包版没退出时最容易撞上）。
+  console.log('[imusic] 另一个 IMusic 实例已在运行（单实例锁未获取到），本次启动退出。')
   app.quit()
 } else {
   // 已有实例被再次启动时，把已有窗口提到前台而不是新开一个

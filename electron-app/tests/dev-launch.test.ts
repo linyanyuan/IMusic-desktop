@@ -46,6 +46,31 @@ test('electron:dev 先备好 preload，再起 vite（插件启动的 Electron �
   )
 })
 
+test('dev 模式关闭 webSecurity，但打包/QA 路径不动它', () => {
+  // dev 页面是真实 web origin（http://localhost:5173），未带 ACAO 的音源接口
+  // （music.163.com / api.bilibili.com / gateway.karpov.cn）会被 CORS 拦死；打包版走
+  // file:// 不受 CORS 约束 —— 不关的话 dev 下直接「请求不到数据」。
+  // 测试先被 esbuild 打成 tests/dist/*.cjs，按包根（npm test 的 cwd）定位源码
+  for (const file of ['electron/main.ts', 'electron/lyricsWindow.ts']) {
+    const source = readFileSync(path.resolve(process.cwd(), file), 'utf8')
+    assert.match(
+      source,
+      /webSecurity:\s*!isDev/,
+      `${file}: dev 必须关掉 webSecurity，否则音源接口被 CORS 拦（打包版 file:// 却能通）`,
+    )
+    assert.ok(
+      !/webSecurity:\s*false\s*,/.test(source),
+      `${file}: 不能无条件关闭 webSecurity，打包与 QA 路径必须保持开启`,
+    )
+  }
+  const main = readFileSync(path.resolve(process.cwd(), 'electron/main.ts'), 'utf8')
+  assert.match(
+    main,
+    /const isDev = devServerUrl !== ''/,
+    'isDev 只能由 VITE_DEV_SERVER_URL 决定（launch-app.cjs 会把它置空）',
+  )
+})
+
 test('vite.config.ts 保留 vite-plugin-electron 且未用 onstart 关掉自动启动', () => {
   // 测试先被 esbuild 打成 tests/dist/*.cjs，import.meta.url 不可用，按包根（npm test 的 cwd）定位
   const config = readFileSync(path.resolve(process.cwd(), 'vite.config.ts'), 'utf8')
