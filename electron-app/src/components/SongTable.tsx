@@ -1,6 +1,6 @@
 /**
  * 极简歌曲表格 —— 收藏/歌单详情/历史共用。
- * 列：#序号或播放动效、封面+标题、歌手、专辑、喜欢、时长（+可选相对时间）
+ * 列：#序号或播放动效、喜欢、封面+标题、歌手、专辑、时长（+可选相对时间）
  */
 
 import { useState, type ReactNode } from 'react'
@@ -31,8 +31,10 @@ export interface SongTableProps {
 
 // 最后一列 28px 是「更多」按钮的独立列：不这么做时按钮会挤在时长右侧，
 // 把数值往左推、右边缘与表头的「时长」对不齐。
-const GRID_WITH_ALBUM = 'grid-cols-[40px_minmax(0,2.4fr)_minmax(0,1.4fr)_minmax(0,1.6fr)_44px_64px_28px]'
-const GRID_NO_ALBUM = 'grid-cols-[40px_minmax(0,3fr)_minmax(0,1.6fr)_44px_64px_28px]'
+// 列：#序号（或播放动效）、喜欢、封面+标题、歌手、专辑、时长、更多
+// 「喜欢」紧跟序号、贴在标题左侧（对齐 Flutter：搜索页/歌单详情行的 IconButton 都在标题左边）
+const GRID_WITH_ALBUM = 'grid-cols-[40px_32px_minmax(0,2.4fr)_minmax(0,1.4fr)_minmax(0,1.6fr)_64px_28px]'
+const GRID_NO_ALBUM = 'grid-cols-[40px_32px_minmax(0,3fr)_minmax(0,1.6fr)_64px_28px]'
 
 export function SongTable({
   songs,
@@ -185,12 +187,13 @@ export function SongTable({
         className={`sticky top-0 z-10 grid ${grid} gap-4 border-b border-subtle bg-card/85 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-secondary backdrop-blur-xl`}
       >
         <div className="text-center">#</div>
-        <div>标题</div>
-        <div>歌手</div>
-        {showAlbum && <div>专辑</div>}
+        {/* 「喜欢」列表头：心形图标（与行内的喜欢按钮同列，保持列宽固定） */}
         <div className="text-center">
           <Heart size={13} strokeWidth={1.75} className="mx-auto" />
         </div>
+        <div>标题</div>
+        <div>歌手</div>
+        {showAlbum && <div>专辑</div>}
         <div className="text-right">{timeOf != null ? '播放时间' : '时长'}</div>
         {/* 「更多」按钮列（始终渲染，保持列宽固定） */}
         <div aria-hidden="true" />
@@ -238,6 +241,21 @@ export function SongTable({
               )}
             </div>
 
+            {/* 喜欢 */}
+            <div className="flex items-center justify-center">
+              <button
+                type="button"
+                data-testid="song-like"
+                aria-label={liked ? '取消喜欢' : '喜欢'}
+                onClick={() => toggleLikeGuarded(auth, library, song)}
+                className={`transition-transform active:scale-90 ${
+                  liked ? 'text-accent' : 'text-secondary'
+                }`}
+              >
+                <Heart size={15} strokeWidth={1.75} fill={liked ? 'currentColor' : 'none'} />
+              </button>
+            </div>
+
             {/* 封面 + 标题 */}
             <div className="flex min-w-0 items-center gap-3">
               <Cover src={songCover(song)} size={36} radius="rounded-lg" iconSize={14} seed={song.title} />
@@ -260,20 +278,6 @@ export function SongTable({
                 {song.extra['album']?.toString() ?? '—'}
               </div>
             )}
-
-            {/* 喜欢 */}
-            <div className="flex justify-center">
-              <button
-                type="button"
-                aria-label={liked ? '取消喜欢' : '喜欢'}
-                onClick={() => toggleLikeGuarded(auth, library, song)}
-                className={`transition-transform active:scale-90 ${
-                  liked ? 'text-accent' : 'text-secondary opacity-0 group-hover:opacity-100'
-                }`}
-              >
-                <Heart size={15} strokeWidth={1.75} fill={liked ? 'currentColor' : 'none'} />
-              </button>
-            </div>
 
             {/* 时长 / 相对时间 */}
             <div className="text-right text-[12.5px] tabular-nums text-secondary">

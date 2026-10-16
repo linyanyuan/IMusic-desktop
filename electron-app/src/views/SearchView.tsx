@@ -1,7 +1,8 @@
 /**
  * 搜索视图 —— 空关键词显示分类浏览 + 最近搜索；有关键词显示结果 Tabs。
  * 注：我们的后端返回 resultType = song | playlist，故结果 Tab 为「单曲 / 歌单」，
- * 另加「音源范围」选择器（全部 / 元数据 / B站歌单 / ChKSz），对应 MusicSearchScope。
+ * 另加「音源范围」选择器（B站混合 / 元数据歌曲 / B站歌单 / ChKSz），对应 MusicSearchScope；
+ * 选择器下方常显当前范围的说明，避免「B站歌单」被误读成「B站全部内容」。
  */
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
@@ -23,34 +24,26 @@ import {
   useSearchState,
   type SearchRunner,
 } from '../state/searchState'
+import {
+  clearRecentSearches,
+  loadRecentSearches,
+  pushRecentSearch,
+  removeRecentSearch,
+} from '../state/recentSearches'
 import type { Song } from '../services/models'
 
-const RECENT_KEY = 'imusic:recentSearches'
-
-const SCOPE_TABS: Array<{ key: Scope; label: string }> = [
-  { key: MusicSearchScope.All, label: '全部音源' },
-  { key: MusicSearchScope.MetadataSongs, label: '元数据歌曲' },
-  { key: MusicSearchScope.BilibiliPlaylists, label: 'B站歌单' },
-  { key: MusicSearchScope.ChkszSongs, label: 'ChKSz' },
+/**
+ * 音源范围 —— 对应 MusicSearchScope；label 是 chip 上的短标签，hint 是它的说明。
+ * 用词对齐 Flutter 搜索栏的音源下拉（desktop_search_screen.dart 第 425-445 行）：
+ * 「默认源 · B站混合 —— 歌曲、歌单、合集综合搜索」。用户反馈「B站歌单里怎么只能搜歌单」
+ * 就是被旧标签误导：B站单曲其实在「B站混合」里，这里把两者说清楚。
+ */
+const SCOPE_TABS: Array<{ key: Scope; label: string; hint: string }> = [
+  { key: MusicSearchScope.All, label: 'B站混合', hint: 'B站单曲 / 歌单 / 合集 + 元数据单曲（默认源，综合搜索）' },
+  { key: MusicSearchScope.MetadataSongs, label: '元数据歌曲', hint: '仅元数据音源（GDStudio / Meting），不含 B站' },
+  { key: MusicSearchScope.BilibiliPlaylists, label: 'B站歌单', hint: '仅 B站歌单，不含单曲；单曲请用「B站混合」' },
+  { key: MusicSearchScope.ChkszSongs, label: 'ChKSz', hint: 'ChKSz 网易云，仅单曲；需先在设置里填 API Key' },
 ]
-
-function loadRecent(): string[] {
-  try {
-    const raw = localStorage.getItem(RECENT_KEY)
-    return raw != null ? (JSON.parse(raw) as string[]) : []
-  } catch {
-    return []
-  }
-}
-
-function pushRecent(query: string): void {
-  const list = [query, ...loadRecent().filter((q) => q !== query)].slice(0, 8)
-  try {
-    localStorage.setItem(RECENT_KEY, JSON.stringify(list))
-  } catch {
-    /* ignore */
-  }
-}
 
 export function SearchView() {
   const route = useRoute()
@@ -63,7 +56,7 @@ export function SearchView() {
   // 输入框文字不跨卸载持久化，单独用组件内 state。
   const search = useSearchState()
   const [input, setInput] = useState(route.searchSeed !== '' ? route.searchSeed : search.query)
-  const [recent, setRecent] = useState<string[]>(() => loadRecent())
+  const [recent, setRecent] = useState<string[]>(() => loadRecentSearches())
 
   const runner = useCallback<SearchRunner>(
     async (q, p, sc) => toSongs(await getServices().music.searchSongs(q, p, sc)),
@@ -82,8 +75,7 @@ export function SearchView() {
 
   const submit = (q: string) => {
     setInput(q)
-    pushRecent(q)
-    setRecent(loadRecent())
+    setRecent(pushRecentSearch(q))
     // 把实际提交的关键词回填到当前历史条目的 seed（不产生新历史条目）：
     // 否则后退/进出专注模式重挂载时，路由里的旧 seed 与 store 的 query 发散，
     // 会拿旧关键词重搜一次，把本该保留的结果冲掉。
@@ -272,6 +264,9 @@ export function SearchView() {
           <button
             key={s.key}
             type="button"
+            data-testid={`search-scope-${s.key}`}
+            title={s.hint}
+            aria-label={`${s.label}：${s.hint}`}
             onClick={() => {
               // 输入框有未提交的文字就用它，否则用已提交的关键词重搜
               // （输入框被手动清空但结果还在时，切音源范围不该把结果清掉）
@@ -294,22 +289,50 @@ export function SearchView() {
         ))}
       </div>
 
+      {/* 当前音源范围的说明：常显，避免「B站歌单」被误读成 B站全部内容 */}
+      <p className="text-[12px] text-secondary">
+        {SCOPE_TABS.find((s) => s.key === search.scope)?.hint ?? ''}
+      </p>
+
       {/* 空状态：最近搜索 + 分类（判定源与结果区一致，都用已提交的关键词 —— 对齐 Dart 的 searchQueryProvider） */}
       {search.query.trim() === '' && (
         <div className="space-y-8">
           {recent.length > 0 && (
             <div>
-              <h2 className="mb-3 text-[15px] font-semibold text-primary">最近搜索</h2>
+              <div className="mb-3 flex items-center gap-3">
+                <h2 className="text-[15px] font-semibold text-primary">最近搜索</h2>
+                <button
+                  type="button"
+                  data-testid="recent-search-clear"
+                  onClick={() => setRecent(clearRecentSearches())}
+                  className="ml-auto text-[12px] text-secondary transition-colors hover:text-primary"
+                >
+                  清空
+                </button>
+              </div>
               <div className="flex flex-wrap gap-2">
                 {recent.map((q) => (
-                  <button
+                  <span
                     key={q}
-                    type="button"
-                    onClick={() => submit(q)}
-                    className="rounded-full bg-fill px-3.5 py-1.5 text-[12.5px] text-primary transition-colors hover:bg-hover"
+                    className="group flex items-center rounded-full bg-fill transition-colors hover:bg-hover"
                   >
-                    {q}
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => submit(q)}
+                      className="py-1.5 pl-3.5 pr-1 text-[12.5px] text-primary"
+                    >
+                      {q}
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="recent-search-remove"
+                      aria-label={`删除最近搜索 ${q}`}
+                      onClick={() => setRecent(removeRecentSearch(q))}
+                      className="pr-2.5 pl-0.5 text-secondary opacity-0 transition-opacity group-hover:opacity-100 hover:text-primary"
+                    >
+                      <X size={12} strokeWidth={2.2} />
+                    </button>
+                  </span>
                 ))}
               </div>
             </div>
