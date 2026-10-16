@@ -9,6 +9,15 @@ contextBridge.exposeInMainWorld('imusicAPI', {
   cacheClear: () => ipcRenderer.invoke('imusic:cacheClear'),
   cacheSetDirectory: (dir) => ipcRenderer.invoke('imusic:cacheSetDirectory', dir),
   cacheClearExpired: (maxAgeMs) => ipcRenderer.invoke('imusic:cacheClearExpired', maxAgeMs),
+  /** 播放前轻量命中检查：只 stat 缓存文件，不做 sha256；未命中 resolve null */
+  cacheLookup: (id) => ipcRenderer.invoke('imusic:cacheLookup', id),
+  /** 离线缓存列表（按入库时间倒序） */
+  cacheList: () => ipcRenderer.invoke('imusic:cacheList'),
+  /** 删除某曲的缓存文件 + 校验 receipt + 索引项；resolve 之前是否存在 */
+  cacheRemove: (id) => ipcRenderer.invoke('imusic:cacheRemove', id),
+  /** 下载并入库；resolve 可直接喂给 <audio> 的 imusic-audio:// URL */
+  cacheDownload: (meta, url, headers) =>
+    ipcRenderer.invoke('imusic:cacheDownload', meta, url, headers),
   /** 下发全局热键 accelerator 表；null 表示全部注销 */
   shortcutsRegister: (accelerators) => ipcRenderer.invoke('imusic:shortcutsRegister', accelerators),
   /** 监听主进程全局热键触发的动作名；返回退订函数 */

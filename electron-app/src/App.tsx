@@ -24,6 +24,7 @@ import { useAuth, useLibrary, useSettings } from './state/hooks'
 import { toSong } from './state/songUtils'
 import { useShortcuts } from './state/shortcuts'
 import { UpdateDialog } from './components/UpdateDialog'
+import { NoticeToast } from './components/NoticeToast'
 import { DesktopLyricsBridge } from './components/DesktopLyricsBridge'
 import { MediaSessionBridge } from './components/MediaSessionBridge'
 import { checkForUpdate, loadAppVersion } from './state/update'
@@ -154,6 +155,7 @@ function Shell() {
       <DesktopLyricsBridge />
       <MediaSessionBridge />
       <UpdateDialog />
+      <NoticeToast />
       <div className="flex h-screen w-screen flex-col overflow-hidden select-none">
         <TitleBar />
         <div className="flex min-h-0 flex-1">

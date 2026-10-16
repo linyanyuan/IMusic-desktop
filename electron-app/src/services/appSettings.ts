@@ -7,18 +7,21 @@
  * - shortcutSettings（快捷键映射）与 Dart 端结构、storage key 完全一致（settings_shortcuts）。
  * - cacheDirectory 的"默认路径解析"依赖 path_provider，Electron 端由主进程决定，
  *   这里只保留设置值的读写。
- * - ChKSz API key 优先级：设置页写入 localStorage 的值 > 构建期注入
- *   （import.meta.env.VITE_CHKSZ_API_KEY ?? ''），与 Dart 端
+ * - ChKSz API Key 改成「Key 池」：设置页可配置多条 key（settings_chksz_api_keys，
+ *   JSON 数组字符串），运行时由 ChkszKeyPool 轮询分摊并对失效 key 做冷却切换。
+ *   旧版单 key 设置（settings_chksz_api_key）在首次读取时自动迁移进池。构建期注入
+ *   （VITE_CHKSZ_API_KEY）**不进池**，只在池为空时由 client 兜底，与 Dart 端
  *   `--dart-define=CHKSZ_API_KEY` 的兜底角色一致。
  */
 
 import { createDefaultStorage, type KeyValueStorage } from './storage'
 import { ShortcutSettings } from './shortcutSettings'
+import { normalizeKeyList } from './chkszKeyPool'
 
-/** 构建期注入的兜底 key；仓库内不硬编码真实 key */
+/** 构建期注入的兜底 key；仓库内不硬编码真实 key。导出供 runtime 在 Key 池为空时兜底 */
 // SAFETY: import.meta.env 的类型由 Vite 在构建期注入，独立 tsc 类型检查时没有
 // vite/client 声明，这里收窄为可选 env 形状；env 缺失时 ?? '' 兜底，不会解引用 undefined。
-const BUILD_TIME_CHKSZ_API_KEY: string =
+export const BUILD_TIME_CHKSZ_API_KEY: string =
   (import.meta as unknown as { env?: Record<string, string | undefined> }).env
     ?.VITE_CHKSZ_API_KEY ?? ''
 
@@ -28,7 +31,8 @@ export interface AppSettingsSnapshot {
   cacheRetentionDays: number
   lyricsFontSize: number
   lyricsColorValue: number
-  chkszApiKey: string
+  /** ChKSz API Key 池：多条 key 轮询分摊，失效自动切换（见 ChkszKeyPool） */
+  chkszApiKeys: string[]
   /** 外观：浅色 / 深色 / 跟随系统（设置页三选一） */
   themeMode: ThemeMode
   shortcutSettings: ShortcutSettings
@@ -43,7 +47,8 @@ const DEFAULTS: AppSettingsSnapshot = {
   cacheRetentionDays: 7,
   lyricsFontSize: 22,
   lyricsColorValue: 0xff1ed760,
-  chkszApiKey: BUILD_TIME_CHKSZ_API_KEY,
+  // 池默认空；构建期注入的 key 由 client 层兜底，不混进池（否则会把内置 key 展示给用户）
+  chkszApiKeys: [],
   themeMode: 'system',
   shortcutSettings: ShortcutSettings.defaults(),
 }
@@ -55,7 +60,7 @@ export const APP_SETTINGS_KEYS = {
   cacheRetentionDays: 'settings_cache_retention_days',
   lyricsFontSize: 'settings_lyrics_font_size',
   lyricsColor: 'settings_lyrics_color',
-  chkszApiKey: 'settings_chksz_api_key',
+  chkszApiKeys: 'settings_chksz_api_keys',
   themeMode: 'settings_theme_mode',
   shortcutSettings: 'settings_shortcuts',
 } as const
@@ -102,8 +107,8 @@ export class AppSettings {
         s.getString(APP_SETTINGS_KEYS.lyricsColor),
         DEFAULTS.lyricsColorValue,
       ),
-      // 设置页值优先；从未设置过时回落到构建期注入值
-      chkszApiKey: s.getString(APP_SETTINGS_KEYS.chkszApiKey) ?? BUILD_TIME_CHKSZ_API_KEY,
+      // Key 池；首次读取时把旧版单 key 迁移进来（见 loadChkszApiKeys）
+      chkszApiKeys: loadChkszApiKeys(s),
       themeMode: normalizeThemeMode(s.getString(APP_SETTINGS_KEYS.themeMode)),
       shortcutSettings: loadShortcutSettings(s),
     }
@@ -133,8 +138,9 @@ export class AppSettings {
     return this.snapshot.lyricsColorValue
   }
 
-  getChkszApiKey(): string {
-    return this.snapshot.chkszApiKey
+  /** ChKSz Key 池（返回副本，调用方改动不会污染内部状态） */
+  getChkszApiKeys(): string[] {
+    return [...this.snapshot.chkszApiKeys]
   }
 
   get themeMode(): ThemeMode {
@@ -177,11 +183,11 @@ export class AppSettings {
     this.storage.setString(APP_SETTINGS_KEYS.lyricsColor, String(value))
   }
 
-  /** ChKSz API key，本地保存，设置页修改后无需重新构建 */
-  setChkszApiKey(value: string): void {
-    const normalized = value.trim()
-    this.update({ chkszApiKey: normalized })
-    this.storage.setString(APP_SETTINGS_KEYS.chkszApiKey, normalized)
+  /** 整体替换 ChKSz Key 池（设置页增/删一条即调用）；本地保存后立即生效 */
+  setChkszApiKeys(value: readonly string[]): void {
+    const normalized = normalizeKeyList(value)
+    this.update({ chkszApiKeys: normalized })
+    this.storage.setStringList(APP_SETTINGS_KEYS.chkszApiKeys, normalized)
   }
 
   /**
@@ -248,6 +254,53 @@ export class AppSettings {
     const current = this.getSnapshot()
     for (const listener of this.listeners) listener(current)
   }
+}
+
+/** 旧版单 Key 的存储 key（与 Dart SharedPreferences 同名）；只用于迁移，不再写入 */
+const LEGACY_CHKSZ_KEY_STORAGE = 'settings_chksz_api_key'
+
+/**
+ * 读 ChKSz Key 池。首次读取（新 key 不存在）时把旧版单 key 迁移进池（见
+ * migrateLegacyChkszKey）：写新 key → 删旧 key，之后旧 key 永不再读，
+ * 避免「删了又自己回来」。
+ */
+function loadChkszApiKeys(storage: KeyValueStorage): string[] {
+  if (storage.getString(APP_SETTINGS_KEYS.chkszApiKeys) != null) {
+    return normalizeKeyList(storage.getStringList(APP_SETTINGS_KEYS.chkszApiKeys))
+  }
+  return migrateLegacyChkszKey(storage)
+}
+
+/**
+ * 把旧版单 key（settings_chksz_api_key）迁移进池，返回迁移后的池内容。
+ *
+ * 构建期注入的 key（VITE_CHKSZ_API_KEY）**不迁入池**：它由 client 在池为空时兜底，
+ * 与「用户在设置页配置的 key」是两回事。旧版设置页的输入框预填的就是
+ * snapshot.chkszApiKey（默认值即构建期 key），用户点一次保存就把它写进了
+ * settings_chksz_api_key；迁进池等于把内置 key 展示给用户，并改变兜底语义。
+ * 旧存储项无论如何都删除，避免每次启动重复判断。
+ *
+ * builtIn 可注入：node 测试环境读不到 import.meta.env 注入值（恒为空串），
+ * 注入假值才能覆盖「旧值 == 构建期 key → 不迁入」这条分支。
+ */
+export function migrateLegacyChkszKey(
+  storage: KeyValueStorage,
+  builtIn: string = BUILD_TIME_CHKSZ_API_KEY,
+): string[] {
+  const legacy = storage.getString(LEGACY_CHKSZ_KEY_STORAGE)?.trim() ?? ''
+  if (legacy === '') {
+    storage.remove(LEGACY_CHKSZ_KEY_STORAGE)
+    return []
+  }
+  const builtInKey = builtIn.trim()
+  if (builtInKey !== '' && legacy === builtInKey) {
+    storage.remove(LEGACY_CHKSZ_KEY_STORAGE)
+    return []
+  }
+  const migrated = normalizeKeyList([legacy])
+  storage.setStringList(APP_SETTINGS_KEYS.chkszApiKeys, migrated)
+  storage.remove(LEGACY_CHKSZ_KEY_STORAGE)
+  return migrated
 }
 
 /** 读快捷键设置；解析失败/未设置 → 默认键位（Dart `_loadShortcutSettings`） */

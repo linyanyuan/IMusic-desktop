@@ -8,7 +8,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Search, X, Play, Heart, Loader2, KeyRound } from 'lucide-react'
 import { Cover } from '../components/Cover'
 import { usePlayer } from '../contexts/PlayerContext'
-import { useLibrary } from '../state/hooks'
+import { useAuth, useLibrary } from '../state/hooks'
+import { toggleLikeGuarded } from '../state/likeAction'
 import { getServices } from '../services/runtime'
 import { MusicSearchScope, type MusicSearchScope as Scope } from '../services/models'
 import { DeskRoute, useRoute } from '../state/route'
@@ -47,6 +48,7 @@ export function SearchView() {
   const route = useRoute()
   const player = usePlayer()
   const library = useLibrary()
+  const auth = useAuth()
 
   const [query, setQuery] = useState(route.searchSeed)
   const [scope, setScope] = useState<Scope>(MusicSearchScope.All)
@@ -196,7 +198,7 @@ export function SearchView() {
               <button
                 type="button"
                 aria-label={liked ? '取消喜欢' : '喜欢'}
-                onClick={() => void library.toggleLike(song).catch(() => {})}
+                onClick={() => toggleLikeGuarded(auth, library, song)}
                 className={`transition-transform active:scale-90 ${
                   liked ? 'text-accent' : 'text-secondary opacity-0 group-hover:opacity-100'
                 }`}

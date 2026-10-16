@@ -9,6 +9,7 @@ import {
   ListMusic,
   Clock,
   HardDrive,
+  Download,
   Play,
   Shuffle,
   Trash2,
@@ -18,10 +19,12 @@ import { SongTable } from '../components/SongTable'
 import { AddToPlaylistModal } from '../components/AddToPlaylistModal'
 import { Cover } from '../components/Cover'
 import { usePlayer } from '../contexts/PlayerContext'
-import { useLibrary } from '../state/hooks'
+import { useAuth, useLibrary } from '../state/hooks'
+import { toggleLikeGuarded } from '../state/likeAction'
 import { DeskRoute, useRoute } from '../state/route'
 import { durationSeconds, formatTotalDuration } from '../state/songUtils'
 import { formatBytes } from '../state/format'
+import { cacheSongsSequentially } from '../state/offlineCache'
 import type { Song } from '../services/models'
 
 type TabId = 'liked' | 'playlists' | 'history' | 'offline'
@@ -33,19 +36,26 @@ const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
   { id: 'offline', label: '离线缓存', icon: <HardDrive size={14} strokeWidth={1.75} /> },
 ]
 
-/** 离线缓存面板：统计来自主进程 audioCache（目录/清理都在主进程） */
+/** 离线缓存面板：统计/列表/删除/批量下载都走主进程 audioCache */
 function OfflinePanel() {
+  const library = useLibrary()
+  const liked = library.likedSongs
   const [stats, setStats] = useState<{ fileCount: number; totalBytes: number; directory: string } | null>(
     null,
   )
+  const [tracks, setTracks] = useState<CachedTrack[]>([])
   const [note, setNote] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  /** 批量缓存进度：done 为当前正在处理第几首（1 起），null 表示未在缓存 */
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
 
   const refresh = useCallback(async () => {
     const api = window.imusicAPI
     if (api == null) return
     try {
-      setStats(await api.cacheStats())
+      const [nextStats, nextTracks] = await Promise.all([api.cacheStats(), api.cacheList()])
+      setStats(nextStats)
+      setTracks(nextTracks)
     } catch (e) {
       setNote(`读取缓存信息失败：${String(e)}`)
     }
@@ -70,6 +80,56 @@ function OfflinePanel() {
     }
   }
 
+  const remove = async (id: string) => {
+    const api = window.imusicAPI
+    if (api == null || busy) return
+    setBusy(true)
+    try {
+      await api.cacheRemove(id)
+      await refresh()
+    } catch (e) {
+      setNote(`删除失败：${String(e)}`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** 把我喜欢的音乐整批缓存到本地（串行，单首失败不中断） */
+  const cacheLiked = async () => {
+    const api = window.imusicAPI
+    if (api == null || busy || liked.length === 0) return
+    setBusy(true)
+    setNote(null)
+    setProgress({ done: 1, total: liked.length })
+    try {
+      const result = await cacheSongsSequentially(liked, (done, total) => {
+        setProgress({ done: done + 1, total })
+      })
+      const sample = result.failed
+        .slice(0, 2)
+        .map((f) => f.song.title)
+        .join('、')
+      setNote(
+        `缓存完成：成功 ${result.ok} 首` +
+          (result.failed.length > 0 ? `，失败 ${result.failed.length} 首（如：${sample}）` : ''),
+      )
+      await refresh()
+    } catch (e) {
+      setNote(`缓存失败：${String(e)}`)
+    } finally {
+      setProgress(null)
+      setBusy(false)
+    }
+  }
+
+  /** 按钮文案：缓存进度 > 空列表 > 默认（用平铺 if/else，避免嵌套三元） */
+  let cacheLabel = '缓存我喜欢的音乐'
+  if (progress != null) {
+    cacheLabel = `缓存中 ${progress.done}/${progress.total}`
+  } else if (liked.length === 0) {
+    cacheLabel = '我喜欢的音乐为空'
+  }
+
   return (
     <div data-testid="library-offline" className="space-y-5">
       <div className="rounded-2xl border border-subtle bg-card/70 p-7">
@@ -77,7 +137,7 @@ function OfflinePanel() {
           <div>
             <h2 className="text-[22px] font-semibold tracking-tight text-primary">离线缓存</h2>
             <p className="mt-1.5 text-[13px] text-secondary">
-              B 站等需要请求头的音源会整首落盘后再播放；直链音源（netease/直链 API）不落盘。
+              缓存的歌曲保存在本地，播放时优先使用本地文件，断网也能听。
             </p>
           </div>
           <HardDrive size={34} strokeWidth={1.25} className="text-accent" />
@@ -105,6 +165,16 @@ function OfflinePanel() {
         <div className="mt-5 flex items-center gap-3">
           <button
             type="button"
+            data-testid="offline-cache-liked"
+            disabled={busy || liked.length === 0}
+            onClick={() => void cacheLiked()}
+            className="flex items-center gap-2 rounded-full bg-accent px-4 py-2 text-[13px] font-medium text-white transition-colors hover:bg-accent-hover disabled:opacity-40"
+          >
+            <Download size={14} strokeWidth={1.75} />
+            {cacheLabel}
+          </button>
+          <button
+            type="button"
             disabled={busy || (stats?.fileCount ?? 0) === 0}
             onClick={() => void clear()}
             className="flex items-center gap-2 rounded-full bg-fill px-4 py-2 text-[13px] text-secondary transition-colors hover:bg-hover hover:text-accent disabled:opacity-40"
@@ -122,6 +192,52 @@ function OfflinePanel() {
           {note != null && <span className="text-[12px] text-secondary">{note}</span>}
         </div>
       </div>
+
+      {/* 已缓存歌曲列表 */}
+      <div className="rounded-2xl border border-subtle bg-card/70 p-7">
+        <h3 className="text-[15px] font-semibold text-primary">已缓存歌曲</h3>
+        {tracks.length === 0 ? (
+          <div className="py-10 text-center text-[13px] text-secondary">还没有缓存任何歌曲</div>
+        ) : (
+          <div data-testid="offline-song-list" className="mt-4 divide-y divide-subtle">
+            {tracks.map((track) => (
+              <div
+                key={track.id}
+                data-testid="offline-song-row"
+                className="flex items-center gap-3 py-2.5"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[13.5px] font-medium text-primary" title={track.title}>
+                    {track.title}
+                  </div>
+                  <div className="truncate text-[12px] text-secondary" title={track.artist}>
+                    {track.artist}
+                  </div>
+                </div>
+                <span className="shrink-0 rounded bg-fill px-1.5 py-0.5 text-[10px] text-secondary">
+                  {track.source}
+                </span>
+                <span className="w-[74px] shrink-0 text-right text-[12px] tabular-nums text-secondary">
+                  {formatBytes(track.bytes)}
+                </span>
+                <span className="hidden w-[90px] shrink-0 text-right text-[12px] text-secondary sm:block">
+                  {new Date(track.cachedAt).toLocaleDateString()}
+                </span>
+                <button
+                  type="button"
+                  data-testid="offline-song-remove"
+                  disabled={busy}
+                  onClick={() => void remove(track.id)}
+                  className="flex shrink-0 items-center gap-1 rounded-full bg-fill px-2.5 py-1 text-[12px] text-secondary transition-colors hover:bg-hover hover:text-accent disabled:opacity-40"
+                >
+                  <Trash2 size={12} strokeWidth={1.75} />
+                  删除
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -129,6 +245,7 @@ function OfflinePanel() {
 export function LibraryView() {
   const player = usePlayer()
   const library = useLibrary()
+  const auth = useAuth()
   const route = useRoute()
   const [tab, setTab] = useState<TabId>('liked')
   const [addTarget, setAddTarget] = useState<Song | null>(null)
@@ -221,7 +338,7 @@ export function LibraryView() {
             songs={liked}
             onPlay={(song) => playQueue(liked, liked.findIndex((s) => s.id === song.id))}
             onAddToPlaylist={(song) => setAddTarget(song)}
-            onRemove={(song) => void library.toggleLike(song)}
+            onRemove={(song) => toggleLikeGuarded(auth, library, song)}
             removeLabel="取消喜欢"
             emptyText="还没有喜欢的歌曲 —— 在任意歌曲上点 ♥ 即可收藏"
           />

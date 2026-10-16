@@ -4,7 +4,8 @@
  */
 
 import { createMusicService, type MusicService } from './musicService'
-import { AppSettings } from './appSettings'
+import { AppSettings, BUILD_TIME_CHKSZ_API_KEY } from './appSettings'
+import { ChkszKeyPool } from './chkszKeyPool'
 import { AuthService } from './auth'
 import { LibraryService } from './library'
 
@@ -40,9 +41,18 @@ export function getServices(): Services {
     },
   })
 
+  // ChKSz Key 池：设置页可配置多条 key，轮询分摊配额，失效（401/403/429）自动切换。
+  // 池对象在设置变更时就地更新（AppSettings.subscribe）—— client 持有的是同一引用，
+  // 所以增/删 key 无需重建 MusicService，也不需要重启应用。
+  const chkszKeyPool = new ChkszKeyPool()
+  chkszKeyPool.setKeys(settings.getChkszApiKeys())
+  settings.subscribe((snapshot) => chkszKeyPool.setKeys(snapshot.chkszApiKeys))
+
   const music = createMusicService({
     tokenProvider: () => auth.getToken(),
-    chkszApiKeyProvider: () => settings.getChkszApiKey(),
+    // 池为空时才用到的单 key 兜底（构建期注入；池内有 key 时由池接管）
+    chkszApiKeyProvider: () => BUILD_TIME_CHKSZ_API_KEY,
+    chkszKeyPool,
   })
   cached = { settings, auth, music, library }
   return cached

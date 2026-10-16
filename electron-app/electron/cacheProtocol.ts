@@ -3,15 +3,15 @@
  * - standard + secure + stream（必须在 app ready 前注册 scheme）
  * - token（cache key 的 sha256）间接寻址，渲染层永远看不到真实路径
  * - 支持 HTTP Range（206/416），供 <audio> seek
+ *
+ * scheme 常量与 audioUrlFor() 在 audioCache.ts（那边才是 cache key 的源头）
  */
 
 import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { Readable } from 'node:stream'
 import { protocol } from 'electron'
-import { cacheKeyFor, cachePathForToken, verifyCachedFile } from './audioCache'
-
-export const AUDIO_SCHEME = 'imusic-audio'
+import { AUDIO_SCHEME, cachePathForToken, verifyCachedFile } from './audioCache'
 
 /** 必须在 app.whenReady() 之前调用 */
 export function registerAudioSchemeAsPrivileged(): void {
@@ -21,11 +21,6 @@ export function registerAudioSchemeAsPrivileged(): void {
       privileges: { standard: true, secure: true, stream: true },
     },
   ])
-}
-
-/** 由缓存 id 生成渲染层可用的协议 URL（token = cache key） */
-export function audioUrlFor(id: string): string {
-  return `${AUDIO_SCHEME}://local/${cacheKeyFor(id)}`
 }
 
 const MIME_BY_EXT: Record<string, string> = {

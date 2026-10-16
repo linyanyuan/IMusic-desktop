@@ -70,6 +70,11 @@ function clearBookmark(songId: string): void {
 
 // ---------------- 音量斜坡（150ms smoothstep） ----------------
 
+// 坑：requestAnimationFrame 只跟着「可见的」页面走。窗口最小化 / 被遮挡 /
+// 切到别的 Space 时，Chromium 会停发 rAF —— tick 再也不执行，斜坡永远到不了终点，
+// done() 不被调用，fadeVolume 后面那句 startSource(song, bookmark) 就永不执行：
+// 表现为「最小化时用全局热键切歌毫无反应」（footer 歌名变了，audio.src 一直是空、
+// 进度停在 0:00）。所以除了 rAF 之外必须挂一个挂钟兜底定时器强制收尾。
 const FADE_MS = 150
 
 function fadeVolume(
@@ -86,18 +91,42 @@ function fadeVolume(
   }
   const start = performance.now()
   let raf = 0
+  let timer = 0
+  // rAF 的 tick 到点、兜底定时器到点、外部 cancel 三者会竞争，用 finished 保证收尾恰好一次
+  let finished = false
+
+  const finish = () => {
+    if (finished) return
+    finished = true
+    if (raf) cancelAnimationFrame(raf)
+    if (timer) clearTimeout(timer)
+    audio.volume = to // 隐藏时直接一步到位，不做斜坡
+    done()
+  }
+
   const tick = (now: number) => {
+    if (finished) return
     const t = Math.min(1, (now - start) / durationMs)
     const s = t * t * (3 - 2 * t) // smoothstep
     audio.volume = from + (to - from) * s
     if (t < 1) {
       raf = requestAnimationFrame(tick)
     } else {
-      done()
+      finish()
     }
   }
+
   raf = requestAnimationFrame(tick)
-  return () => cancelAnimationFrame(raf)
+  // 可见时 rAF 先到点；隐藏时 rAF 被停发，由这个定时器兜底收尾
+  timer = window.setTimeout(finish, durationMs + 50)
+
+  return () => {
+    // 被外部取消（playSong/togglePlay 会先 cancel 上一次斜坡）后不得再触发 done()
+    if (finished) return
+    finished = true
+    if (raf) cancelAnimationFrame(raf)
+    if (timer) clearTimeout(timer)
+  }
 }
 
 // ---------------- 超时工具 ----------------
@@ -275,11 +304,23 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       setError(null)
       try {
         const id = songKey(song)
-        const playUrl = await getServices().music.getPlayUrl(id)
-        if (ctl.signal.aborted) return // 晚到的取链结果不得生效
 
-        audio.src = playUrl.url
-        void loadLyrics(song, playUrl.lyrics ?? '')
+        // 离线优先：命中本地缓存直接播 imusic-audio://（断网可播、可 seek），跳过取链。
+        // 未命中（或纯浏览器预览下没有 imusicAPI）走原来的取链路径，一字不动。
+        const hit = (await window.imusicAPI?.cacheLookup(id).catch(() => null)) ?? null
+        if (ctl.signal.aborted) return // 晚到的命中检查结果不得生效
+
+        if (hit != null) {
+          audio.src = hit.url
+          // 命中缓存时没有内联歌词，交给异步补取；离线拉取失败由 loadLyrics 自己兜底，不挡播放
+          void loadLyrics(song, '')
+        } else {
+          const playUrl = await getServices().music.getPlayUrl(id)
+          if (ctl.signal.aborted) return // 晚到的取链结果不得生效
+
+          audio.src = playUrl.url
+          void loadLyrics(song, playUrl.lyrics ?? '')
+        }
 
         await waitForMetadata(audio, METADATA_TIMEOUT_MS)
         if (ctl.signal.aborted) return

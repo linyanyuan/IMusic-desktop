@@ -5,13 +5,15 @@ import { Play, Shuffle, Heart } from 'lucide-react'
 import { SongTable } from '../components/SongTable'
 import { AddToPlaylistModal } from '../components/AddToPlaylistModal'
 import { usePlayer } from '../contexts/PlayerContext'
-import { useLibrary } from '../state/hooks'
+import { useAuth, useLibrary } from '../state/hooks'
+import { toggleLikeGuarded } from '../state/likeAction'
 import { durationSeconds, formatTotalDuration } from '../state/songUtils'
 import type { Song } from '../services/models'
 
 export function FavoritesView() {
   const player = usePlayer()
   const library = useLibrary()
+  const auth = useAuth()
   const songs = library.likedSongs
   const [addTarget, setAddTarget] = useState<Song | null>(null)
 
@@ -73,7 +75,7 @@ export function FavoritesView() {
           player.playSong(queue[index >= 0 ? index : 0], queue)
         }}
         onAddToPlaylist={(song) => setAddTarget(song)}
-        onRemove={(song) => void library.toggleLike(song)}
+        onRemove={(song) => toggleLikeGuarded(auth, library, song)}
         removeLabel="取消喜欢"
         emptyText="还没有喜欢的歌曲 —— 在任意歌曲上点 ♥ 即可收藏"
       />

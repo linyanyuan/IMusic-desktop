@@ -15,6 +15,11 @@ import { AddToPlaylistModal } from '../components/AddToPlaylistModal'
 import { usePlayer } from '../contexts/PlayerContext'
 import { DeskRoute, useRoute } from '../state/route'
 import { genreByKey } from '../state/genres'
+import {
+  readCategoryTab,
+  rememberCategoryTab,
+  type CategoryTabId,
+} from '../state/categoryTab'
 import { usePlayPlaylist } from '../state/playPlaylist'
 import { getServices } from '../services/runtime'
 import { toSongs, songCover } from '../state/songUtils'
@@ -23,7 +28,8 @@ import type { Song } from '../services/models'
 /** 热门歌单每页数量（「加载更多」按该步长翻页） */
 const PLAYLIST_PAGE_SIZE = 20
 
-type TabId = 'playlists' | 'songs'
+/** Tab 类型统一由 state/categoryTab 提供（记忆逻辑在那里，本组件只读写） */
+type TabId = CategoryTabId
 
 /**
  * 分类热门歌单卡 —— 悬浮效果对齐首页「今日精选」：封面缓慢放大 + 右下角播放键滑入。
@@ -89,7 +95,12 @@ export function CategoryView() {
   const genre = genreByKey(route.categoryKey ?? '')
   const cat = genre?.neteaseCat ?? ''
 
-  const [tab, setTab] = useState<TabId>('playlists')
+  const categoryKey = route.categoryKey ?? ''
+  const [tab, setTabState] = useState<TabId>(() => readCategoryTab(categoryKey) ?? 'playlists')
+  const setTab = (next: TabId) => {
+    rememberCategoryTab(categoryKey, next)
+    setTabState(next)
+  }
 
   const [playlists, setPlaylists] = useState<Song[]>([])
   const [plLoading, setPlLoading] = useState(true)

@@ -19,6 +19,7 @@ import { GdStudioMusicClient } from './gdstudio'
 import { MetingMusicProvider, DefaultMusicProvider } from './meting'
 import { BilibiliMusicProvider } from './bilibili'
 import { createChkszResolver } from './chksz'
+import type { ChkszKeyPool } from './chkszKeyPool'
 import { NeteasePublicClient } from './netease'
 
 /**
@@ -146,8 +147,10 @@ export class MusicService {
 export interface MusicServiceDeps {
   /** Bearer token（meting 后端鉴权） */
   tokenProvider: () => string
-  /** ChKSz key provider；返回 '' 表示未配置（ChKSz 源不启用）。每次取用都会重新询问 */
+  /** ChKSz key provider（Key 池为空时的单 key 兜底）；返回 '' 表示未配置。每次取用都会重新询问 */
   chkszApiKeyProvider: () => string
+  /** ChKSz Key 池（设置页多条 key）；非空时优先于 chkszApiKeyProvider */
+  chkszKeyPool?: ChkszKeyPool
   metingBaseUrl?: string
 }
 
@@ -166,8 +169,10 @@ export function createMusicService(deps: MusicServiceDeps): MusicService {
   )
   const playback = new BilibiliMusicProvider()
   const gdStudio = new GdStudioMusicClient()
-  // 解析器而不是快照：设置页改了 key 立即生效（对应 Dart 端 provider 重建）
-  const chksz = createChkszResolver(deps.chkszApiKeyProvider)
+  // 解析器而不是快照：设置页改了 key/池立即生效（对应 Dart 端 provider 重建）
+  const chksz = createChkszResolver(deps.chkszApiKeyProvider, {
+    keyPool: deps.chkszKeyPool,
+  })
   return new MusicService(
     new HybridMusicProvider(metadata, playback, gdStudio, chksz, new NeteasePublicClient()),
   )

@@ -25,6 +25,7 @@ import { Modal } from '../components/Modal'
 import { TasteGenreChips } from '../components/TasteGenreChips'
 import { usePlayer, usePlayerTime } from '../contexts/PlayerContext'
 import { useAuth, useLibrary, useTastePreferences } from '../state/hooks'
+import { toggleLikeGuarded } from '../state/likeAction'
 import { DeskRoute, useRoute } from '../state/route'
 import { genreLabel } from '../state/genres'
 import { usePlayPlaylist } from '../state/playPlaylist'
@@ -706,7 +707,7 @@ export function HomeView() {
                 <button
                   type="button"
                   aria-label="取消喜欢"
-                  onClick={() => void library.toggleLike(song)}
+                  onClick={() => toggleLikeGuarded(auth, library, song)}
                   className="text-accent transition-transform active:scale-90"
                 >
                   <Heart size={15} strokeWidth={1.75} fill="currentColor" />

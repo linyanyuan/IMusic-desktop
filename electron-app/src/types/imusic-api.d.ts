@@ -13,6 +13,18 @@ declare global {
       cacheSetDirectory: (dir: string | null) => Promise<string>
       /** 按 mtime 清理超过 maxAgeMs 的缓存条目 */
       cacheClearExpired: (maxAgeMs: number) => Promise<{ removed: number }>
+      /** 播放前的轻量命中检查（只 stat，不做 sha256）；未命中 resolve null */
+      cacheLookup: (id: string) => Promise<{ url: string; bytes: number } | null>
+      /** 离线缓存列表，按入库时间（cachedAt）倒序 */
+      cacheList: () => Promise<CachedTrack[]>
+      /** 删除某曲的缓存文件 + 校验 receipt + 索引项；返回之前是否存在 */
+      cacheRemove: (id: string) => Promise<boolean>
+      /** 下载并入库；resolve 可直接喂给 <audio> 的 imusic-audio:// URL */
+      cacheDownload: (
+        meta: { id: string; title: string; artist: string; source: string },
+        url: string,
+        headers: Record<string, string>,
+      ) => Promise<{ url: string; bytes: number }>
       /** 下发全局热键 accelerator 表（动作名 → Electron accelerator）；null 全部注销 */
       shortcutsRegister: (
         accelerators: Record<string, string> | null,
@@ -60,6 +72,17 @@ declare global {
       /** 主窗口：订阅前进/后退请求；返回退订函数 */
       onNavHistory: (callback: (direction: 'back' | 'forward') => void) => () => void
     }
+  }
+
+  /** 一条离线缓存记录（cache-index.json 的一项，见 electron/audioCache.ts） */
+  interface CachedTrack {
+    id: string
+    title: string
+    artist: string
+    source: string
+    bytes: number
+    /** 入库时间（epoch ms） */
+    cachedAt: number
   }
 
   interface UpdateManifest {

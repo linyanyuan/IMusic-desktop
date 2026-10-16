@@ -12,7 +12,8 @@ import { useAuth, useLibrary, useSettings, useTastePreferences } from '../state/
 import { MAX_TASTE_GENRES } from '../state/genres'
 import { SettingsShortcuts } from '../components/SettingsShortcuts'
 import { verifyChkszKey, type ChkszKeyCheck } from '../services/chksz'
-import type { ThemeMode } from '../services/appSettings'
+import { BUILD_TIME_CHKSZ_API_KEY, type ThemeMode } from '../services/appSettings'
+import { CHKSZ_KEY_COOLDOWN_MS } from '../services/chkszKeyPool'
 import { formatBytes } from '../state/format'
 import { argbToCss } from '../state/color'
 import {
@@ -39,6 +40,13 @@ const LYRICS_COLOR_PRESETS: Array<{ value: number; label: string }> = [
   { value: 0xff0a84ff, label: '系统蓝' },
   { value: 0xff1d1d1f, label: '墨黑' },
 ]
+
+/** Key 掩码：前 8 字符 + … + 后 4；过短的 key 原样显示 */
+function maskChkszKey(key: string): string {
+  const trimmed = key.trim()
+  if (trimmed.length <= 12) return trimmed
+  return `${trimmed.slice(0, 8)}…${trimmed.slice(-4)}`
+}
 
 function Section({
   title,
@@ -237,11 +245,59 @@ export function SettingsView() {
     }
   }, [auth])
 
-  // ---- ChKSz ----
-  const [apiKey, setApiKey] = useState(snapshot.chkszApiKey)
-  const [apiKeySaved, setApiKeySaved] = useState(false)
-  const [keyCheck, setKeyCheck] = useState<ChkszKeyCheck | null>(null)
-  const [keyChecking, setKeyChecking] = useState(false)
+  // ---- ChKSz Key 池 ----
+  const [apiKeyInput, setApiKeyInput] = useState('')
+  const [keyNotice, setKeyNotice] = useState<string | null>(null)
+  const [keyChecks, setKeyChecks] = useState<Record<string, ChkszKeyCheck>>({})
+  const [checkingKey, setCheckingKey] = useState<string | null>(null)
+
+  // 增删即写设置（服务实时读设置）；池的读取走 getChkszApiKeys，避免拿到旧快照
+  const addChkszKey = useCallback(() => {
+    const value = apiKeyInput.trim()
+    if (value === '') {
+      setKeyNotice('请先填写 API Key')
+      return
+    }
+    const current = settings.getChkszApiKeys()
+    if (current.includes(value)) {
+      setKeyNotice('该 Key 已在池中')
+      return
+    }
+    settings.setChkszApiKeys([...current, value])
+    setApiKeyInput('')
+    setKeyNotice(null)
+  }, [apiKeyInput, settings])
+
+  const removeChkszKey = useCallback(
+    (key: string) => {
+      settings.setChkszApiKeys(settings.getChkszApiKeys().filter((k) => k !== key))
+      setKeyChecks((prev) => {
+        if (prev[key] == null) return prev
+        const next = { ...prev }
+        delete next[key]
+        return next
+      })
+      setKeyNotice(null)
+    },
+    [settings],
+  )
+
+  const checkChkszKey = useCallback((key: string) => {
+    setCheckingKey(key)
+    setKeyChecks((prev) => {
+      if (prev[key] == null) return prev
+      const next = { ...prev }
+      delete next[key]
+      return next
+    })
+    void verifyChkszKey(key)
+      .then((result) => {
+        // 校验期间该 key 可能已被删除：不要再写回，避免留下脏条目/重加后显示旧结果
+        if (!settings.getChkszApiKeys().includes(key)) return
+        setKeyChecks((prev) => ({ ...prev, [key]: result }))
+      })
+      .finally(() => setCheckingKey((current) => (current === key ? null : current)))
+  }, [settings])
 
   // ---- 缓存 ----
   const [cacheDirInput, setCacheDirInput] = useState(snapshot.cacheDirectory)
@@ -297,6 +353,17 @@ export function SettingsView() {
   }, [refreshCacheInfo])
 
   const user = auth.user
+
+  // ChKSz 状态文案：池为空时 runtime 会回落到构建期内置 key（有则可用），
+  // 所以只有「池空且无内置 key」才是真的关闭该音源。平铺 if/else 不用嵌套三元。
+  let chkszStatusText: string
+  if (snapshot.chkszApiKeys.length > 0) {
+    chkszStatusText = `已配置 ${snapshot.chkszApiKeys.length} 个 Key（轮询使用，失效自动切换）`
+  } else if (BUILD_TIME_CHKSZ_API_KEY.trim() !== '') {
+    chkszStatusText = '池为空，当前使用构建期内置 Key'
+  } else {
+    chkszStatusText = '未配置（网易云音源已关闭）'
+  }
 
   return (
     <div className="mx-auto w-full max-w-[720px] space-y-5 px-6 py-6">
@@ -447,15 +514,71 @@ export function SettingsView() {
       {/* ChKSz */}
       <Section
         title="ChKSz 音源"
-        description="用于网易云音源（搜索 / 歌单 / 播放链接）。留空则关闭该音源，其余音源不受影响。保存后立即生效，无需重启。"
+        description={`用于网易云音源（搜索 / 歌单 / 播放链接）。可添加多条 Key，请求轮询分摊；某条 Key 失效（401/403/429）会自动切到其他 Key，冷却 ${
+          CHKSZ_KEY_COOLDOWN_MS / 1000
+        } 秒后再试。池为空时：若构建期内置了 Key 则使用内置 Key（不展示在列表中），否则关闭该音源；其余音源不受影响。增删后立即生效，无需重启。`}
       >
+        {snapshot.chkszApiKeys.length === 0 ? (
+          <p className="text-[12px] text-secondary">还没有 Key，在下方输入框添加。</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {snapshot.chkszApiKeys.map((key) => {
+              const check = keyChecks[key]
+              const checking = checkingKey === key
+              return (
+                <li key={key} className="rounded-lg border border-subtle bg-fill/60 px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-primary">
+                      {maskChkszKey(key)}
+                    </span>
+                    <Button
+                      ariaLabel={`验证 Key ${maskChkszKey(key)}`}
+                      disabled={checking}
+                      onClick={() => checkChkszKey(key)}
+                    >
+                      {checking ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <PlugZap size={14} strokeWidth={1.75} />
+                      )}
+                      验证
+                    </Button>
+                    <Button
+                      variant="danger"
+                      ariaLabel={`删除 Key ${maskChkszKey(key)}`}
+                      onClick={() => removeChkszKey(key)}
+                    >
+                      <Trash2 size={14} strokeWidth={1.75} />
+                      删除
+                    </Button>
+                  </div>
+                  {check != null && (
+                    <p
+                      data-chksz-check={check.ok ? 'ok' : 'fail'}
+                      className={`mt-1 flex items-center gap-1.5 text-[12px] ${
+                        check.ok ? 'text-primary' : 'text-accent'
+                      }`}
+                    >
+                      {check.ok ? (
+                        <Check size={13} strokeWidth={2} />
+                      ) : (
+                        <AlertCircle size={13} strokeWidth={2} />
+                      )}
+                      {check.message}
+                    </p>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        )}
+
         <div className="flex flex-wrap items-center gap-2">
           <TextInput
-            value={apiKey}
+            value={apiKeyInput}
             onChange={(v) => {
-              setApiKey(v)
-              setApiKeySaved(false)
-              setKeyCheck(null)
+              setApiKeyInput(v)
+              setKeyNotice(null)
             }}
             placeholder="chksz_..."
             ariaLabel="ChKSz API Key"
@@ -463,68 +586,17 @@ export function SettingsView() {
           />
           <Button
             variant="primary"
-            ariaLabel="保存 API Key"
-            onClick={() => {
-              // 写进设置后 ChKSz 解析器（createChkszResolver）下一次取用就会用新 key，
-              // 所以这里不需要重启，也不需要重建 MusicService
-              settings.setChkszApiKey(apiKey)
-              setApiKeySaved(true)
-            }}
+            ariaLabel="添加 ChKSz Key"
+            onClick={addChkszKey}
           >
-            {apiKeySaved ? <Check size={14} strokeWidth={2} /> : null}
-            保存
+            添加
           </Button>
-          <Button
-            ariaLabel="测试 ChKSz 连接"
-            disabled={keyChecking}
-            onClick={() => {
-              setKeyChecking(true)
-              setKeyCheck(null)
-              void verifyChkszKey(apiKey)
-                .then(setKeyCheck)
-                .finally(() => setKeyChecking(false))
-            }}
-          >
-            {keyChecking ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <PlugZap size={14} strokeWidth={1.75} />
-            )}
-            测试连接
-          </Button>
-          {apiKey.trim() !== '' && (
-            <Button
-              ariaLabel="清除 ChKSz Key"
-              onClick={() => {
-                setApiKey('')
-                settings.setChkszApiKey('')
-                setApiKeySaved(true)
-                setKeyCheck(null)
-              }}
-            >
-              <Trash2 size={14} strokeWidth={1.75} />
-              清除
-            </Button>
-          )}
         </div>
         <p className="text-[11.5px] text-secondary">
           当前状态：
-          {snapshot.chkszApiKey.trim() === '' ? '未配置（网易云音源已关闭）' : '已配置'}
-          {apiKeySaved && <span className="ml-1 text-[#1D9E5F]">已保存 · 立即生效</span>}
+          {chkszStatusText}
+          {keyNotice != null && <span className="ml-1 text-accent">{keyNotice}</span>}
         </p>
-        {keyCheck != null && (
-          <p
-            data-chksz-check={keyCheck.ok ? 'ok' : 'fail'}
-            className={`flex items-center gap-1.5 text-[12px] ${keyCheck.ok ? 'text-[#1D9E5F]' : 'text-accent'}`}
-          >
-            {keyCheck.ok ? (
-              <Check size={13} strokeWidth={2} />
-            ) : (
-              <AlertCircle size={13} strokeWidth={2} />
-            )}
-            {keyCheck.message}
-          </p>
-        )}
       </Section>
 
       {/* 缓存 */}

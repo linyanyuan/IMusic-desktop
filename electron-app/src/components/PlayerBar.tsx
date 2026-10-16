@@ -26,7 +26,8 @@ import { Cover } from './Cover'
 import { LyricsDrawer } from './LyricsDrawer'
 import { QueueDrawer } from './QueueDrawer'
 import { usePlayer, usePlayerTime } from '../contexts/PlayerContext'
-import { useLibrary } from '../state/hooks'
+import { useAuth, useLibrary } from '../state/hooks'
+import { toggleLikeGuarded } from '../state/likeAction'
 import { DeskRoute, useRoute } from '../state/route'
 import { PlayMode } from '../services/models'
 import { songCover, formatTime, toSong } from '../state/songUtils'
@@ -129,6 +130,7 @@ export function PlayerBar({
   // 进度单独订阅：播控栏是每 250ms 都要跟着动的，列表则不用
   const time = usePlayerTime()
   const library = useLibrary()
+  const auth = useAuth()
   const route = useRoute()
 
   // 独立桌面歌词窗口的开启状态（按钮高亮；热键开关时也要同步）
@@ -201,7 +203,7 @@ export function PlayerBar({
             <button
               type="button"
               aria-label={liked ? '取消喜欢' : '喜欢'}
-              onClick={() => void library.toggleLike(songModel)}
+              onClick={() => toggleLikeGuarded(auth, library, songModel)}
               className={`ml-1 shrink-0 transition-transform active:scale-90 ${
                 liked ? 'text-accent' : 'text-secondary hover:text-primary'
               }`}

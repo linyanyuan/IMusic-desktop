@@ -11,7 +11,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { usePlayer, usePlayerTime } from '../contexts/PlayerContext'
-import { useLibrary, useSettings } from '../state/hooks'
+import { useAuth, useLibrary, useSettings } from '../state/hooks'
+import { toggleLikeGuarded } from '../state/likeAction'
 import { toSong } from '../state/songUtils'
 
 const PROGRESS_INTERVAL_MS = 500
@@ -27,6 +28,7 @@ export function DesktopLyricsBridge() {
   const player = usePlayer()
   const time = usePlayerTime()
   const library = useLibrary()
+  const auth = useAuth()
   const settings = useSettings()
   const lastSentRef = useRef(0)
   const lastCoreRef = useRef('')
@@ -35,6 +37,8 @@ export function DesktopLyricsBridge() {
   playerRef.current = player
   const libraryRef = useRef(library)
   libraryRef.current = library
+  const authRef = useRef(auth)
+  authRef.current = auth
   // 歌词窗口刚打开时强制推一次当前状态，否则要等到下一次播放态变化才显示
   const [pushTick, setPushTick] = useState(0)
 
@@ -105,7 +109,7 @@ export function DesktopLyricsBridge() {
       else if (command === 'toggleFavorite') {
         const current = songRef.current
         if (current != null) {
-          void libraryRef.current.toggleLike(toSong(current)).catch(() => {})
+          toggleLikeGuarded(authRef.current, libraryRef.current, toSong(current))
         }
       }
     })

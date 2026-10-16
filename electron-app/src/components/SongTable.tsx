@@ -9,7 +9,8 @@ import type { Song } from '../services/models'
 import { Cover } from './Cover'
 import { usePlayer } from '../contexts/PlayerContext'
 import { PlayingIndicator } from './PlayingIndicator'
-import { useLibrary } from '../state/hooks'
+import { useAuth, useLibrary } from '../state/hooks'
+import { toggleLikeGuarded } from '../state/likeAction'
 import { durationSeconds, formatTime, songCover } from '../state/songUtils'
 
 export interface SongTableProps {
@@ -41,6 +42,7 @@ export function SongTable({
 }: SongTableProps) {
   const player = usePlayer()
   const library = useLibrary()
+  const auth = useAuth()
   const [menuFor, setMenuFor] = useState<string | null>(null)
 
   const currentId = player.currentSong?.['id']?.toString() ?? null
@@ -138,7 +140,7 @@ export function SongTable({
               <button
                 type="button"
                 aria-label={liked ? '取消喜欢' : '喜欢'}
-                onClick={() => void library.toggleLike(song)}
+                onClick={() => toggleLikeGuarded(auth, library, song)}
                 className={`transition-transform active:scale-90 ${
                   liked ? 'text-accent' : 'text-secondary opacity-0 group-hover:opacity-100'
                 }`}

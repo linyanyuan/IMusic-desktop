@@ -12,6 +12,7 @@
 import type { MusicProvider, RawSong } from './musicProvider'
 import type { PlaybackUrl } from './models'
 import { playbackUrl } from './models'
+import type { ChkszKeyPool } from './chkszKeyPool'
 
 /** 未配置 ChKSz API key 时抛出；UI 提示去设置页填写，播放绝不能回退 B 站（配置错误而非源故障） */
 export class ChkszApiKeyMissingError extends Error {
@@ -23,10 +24,27 @@ export class ChkszApiKeyMissingError extends Error {
 
 /** ChKSz 业务错误（HTTP 200 但 `code != 200`）或 HTTP 层错误 */
 export class ChkszApiError extends Error {
-  constructor(message: string) {
+  /**
+   * 失效状态码：**仅** HTTP 401/403/429（由 httpError 带上）。
+   * Key 池据此判定「该换一条 key」，其余错误（如单音质无地址）与 key 无关。
+   *
+   * 业务体里的 `code` 不得当作 key 失效信号（对齐 Dart 端：业务错误不带 status）。
+   * 业务 code 与 HTTP status 是两套命名空间，上游因版权/权限等非 key 原因也可能返回
+   * code 401/403/429；若把它塞进 status，池会去冷却健康 key 并轮换，损害可用性。
+   * 因此 Key 池只按真实 HTTP 401/403/429 换 key。
+   */
+  readonly status?: number
+
+  constructor(message: string, status?: number) {
     super(message)
     this.name = 'ChkszApiError'
+    this.status = status
   }
+}
+
+/** HTTP 状态码是否意味着「这条 key 失效 / 被限流」，应冷却并换 key（业务体 code 不算） */
+export function isKeyFailureStatus(status: number | undefined): boolean {
+  return status === 401 || status === 403 || status === 429
 }
 
 export type ChkszApiKeyProvider = () => string
@@ -37,6 +55,11 @@ export interface ChkszMusicClientOptions {
   apiKeyProvider?: ChkszApiKeyProvider
   /** 静态 key（等价于传入返回该值的 provider） */
   apiKey?: string
+  /**
+   * Key 池（设置页多条 key）；有可用 key 时优先走池并做失效切换，
+   * 池为空时回落到 apiKeyProvider / apiKey / 环境变量
+   */
+  keyPool?: ChkszKeyPool
   /** 搜索整体超时，毫秒；默认 12s */
   searchTimeout?: number
 }
@@ -93,14 +116,19 @@ export class ChkszMusicClient {
   /** dio receiveTimeout 等价物：非搜索请求的默认超时（毫秒） */
   static readonly defaultRequestTimeout = 15000
 
+  /** 单次逻辑请求最多换几条 key（Key 池路径）；避免整池配额被一次请求烧掉 */
+  static readonly maxKeyAttempts = 3
+
   readonly baseUrl: string
   readonly searchTimeout: number
   private readonly apiKeyProvider: ChkszApiKeyProvider
+  private readonly keyPool: ChkszKeyPool | null
 
   constructor(options: ChkszMusicClientOptions = {}) {
     this.baseUrl = options.baseUrl ?? ChkszMusicClient.defaultBaseUrl
     this.apiKeyProvider =
       options.apiKeyProvider ?? (() => options.apiKey ?? ChkszMusicClient.envApiKey)
+    this.keyPool = options.keyPool ?? null
     this.searchTimeout = options.searchTimeout ?? 12000
   }
 
@@ -412,17 +440,69 @@ export class ChkszMusicClient {
   /**
    * 带 `apikey` 的 GET JSON。未配置 key 时在发请求前抛
    * ChkszApiKeyMissingError；业务错误（`code` 存在且 != 200）抛 ChkszApiError。
+   *
+   * Key 池非空时走池路径（轮询 + 失效切换），池为空时保持原有单 key 语义。
    */
   private async getJson(
     path: string,
     query: Record<string, string | number>,
     timeoutMs: number = ChkszMusicClient.defaultRequestTimeout,
   ): Promise<Record<string, unknown>> {
+    const pool = this.keyPool
+    if (pool != null && pool.size > 0) {
+      return this.getJsonWithPool(path, query, timeoutMs, pool)
+    }
     const key = this.apiKey
     if (key === '') {
       throw new ChkszApiKeyMissingError()
     }
+    return this.requestJson(path, query, timeoutMs, key)
+  }
 
+  /**
+   * Key 池路径：单次逻辑请求最多试 min(池大小, maxKeyAttempts) 条 key。
+   * HTTP 401/403/429 视为该 key 失效 → 标记冷却并换下一条；其他错误（含单音质无地址、
+   * 网络超时、业务体非 200）与 key 无关，原样上抛，不做无意义的整池重试。
+   */
+  private async getJsonWithPool(
+    path: string,
+    query: Record<string, string | number>,
+    timeoutMs: number,
+    pool: ChkszKeyPool,
+  ): Promise<Record<string, unknown>> {
+    const attempts = Math.min(pool.size, ChkszMusicClient.maxKeyAttempts)
+    const tried = new Set<string>()
+    let lastError: ChkszApiError | null = null
+    for (let i = 0; i < attempts; i += 1) {
+      const key = pool.acquire()
+      // 全池冷却时 acquire 会返回最早到期的那条；同一请求不重复试同一条 key
+      if (key == null || tried.has(key)) break
+      tried.add(key)
+      try {
+        const data = await this.requestJson(path, query, timeoutMs, key)
+        pool.reportSuccess(key)
+        return data
+      } catch (e) {
+        if (!(e instanceof ChkszApiError) || !isKeyFailureStatus(e.status)) throw e
+        pool.reportFailure(key)
+        lastError = e
+      }
+    }
+    // 防御分支（不可达）：只有池非空才进本方法，acquire() 至少能返回一条
+    // （全池冷却时给最早到期的），且循环首轮 tried 必为空 → lastError 在退出前
+    // 一定已赋值。真走到这里说明池/游标处于未预期状态；如实报一个**非 Key 类**的
+    // 错误，绝不能报 ChkszApiKeyMissingError——那会把内部状态异常误导成用户没配 key。
+    if (lastError != null) throw lastError
+    throw new ChkszApiError('ChKSz 请求失败：Key 池未产生可用请求（内部状态异常）')
+  }
+
+  /** 单条 key 的实际请求（池路径与单 key 路径共用） */
+  private async requestJson(
+    path: string,
+    query: Record<string, string | number>,
+    timeoutMs: number,
+    key: string,
+  ): Promise<Record<string, unknown>> {
     const params = new URLSearchParams()
     for (const [k, v] of Object.entries({ ...query, apikey: key })) {
       params.set(k, String(v))
@@ -465,9 +545,8 @@ export class ChkszMusicClient {
     }
     const code = data['code']
     if (typeof code === 'number' && code !== 200) {
-      throw new ChkszApiError(
-        data['msg']?.toString() ?? `ChKSz 业务错误 (code=${code})`,
-      )
+      // 业务错误只带 message，不传 status（见 ChkszApiError.status 的说明）
+      throw new ChkszApiError(data['msg']?.toString() ?? `ChKSz 业务错误 (code=${code})`)
     }
     return data
   }
@@ -484,13 +563,17 @@ export function isQualityLevelMiss(error: ChkszApiError): boolean {
   return /quality level|music url not found/i.test(error.message)
 }
 
-/** HTTP 401/403 → 可读鉴权错误（apikey 无效或缺失）；其他 HTTP 失败保留状态码 */
+/** 401/403 → 可读鉴权错误；429 → 限流；其他 HTTP 失败保留状态码（供 Key 池判定是否换 key） */
 function httpError(status: number): ChkszApiError {
-  return new ChkszApiError(
-    status === 401 || status === 403
-      ? 'ChKSz API 密钥无效或未授权，请在设置中检查'
-      : `ChKSz 请求失败 (HTTP ${status})`,
-  )
+  let message: string
+  if (status === 401 || status === 403) {
+    message = 'ChKSz API 密钥无效或未授权，请在设置中检查'
+  } else if (status === 429) {
+    message = 'ChKSz 请求过于频繁，请稍后重试（HTTP 429）'
+  } else {
+    message = `ChKSz 请求失败 (HTTP ${status})`
+  }
+  return new ChkszApiError(message, status)
 }
 
 // === 共享映射 helpers（对应 client 的静态私有方法） ===
@@ -550,6 +633,8 @@ export interface ChkszMusicProviderOptions {
   apiKeyProvider?: ChkszApiKeyProvider
   /** 静态 key */
   apiKey?: string
+  /** Key 池（设置页多条 key）；非空时优先于 apiKey/apiKeyProvider */
+  keyPool?: ChkszKeyPool
   baseUrl?: string
 }
 
@@ -570,6 +655,7 @@ export class ChkszMusicProvider implements MusicProvider {
         baseUrl: options.baseUrl,
         apiKeyProvider: options.apiKeyProvider,
         apiKey: options.apiKey,
+        keyPool: options.keyPool,
       })
   }
 
@@ -653,27 +739,46 @@ export type ChkszResolver = () => ChkszMusicProvider | null
 /**
  * 构造随设置变化的 ChKSz 解析器。
  *
- * 内部按 key 缓存实例：key 不变时复用（保留 getSongDetail 的歌曲缓存），
- * key 变化（清空 / 换成另一个）时立即换成新实例 —— 与 Dart 端 provider 重建等价。
+ * 两种模式：
+ * - Key 池非空：池模式。provider 只建一次并长期复用（池对象由 runtime 就地更新，
+ *   client 持有的是同一引用），池内增删 key 无需重建服务。
+ * - 池为空：原有单 key 模式，按 key 值缓存实例（保留 getSongDetail 的歌曲缓存），
+ *   key 变化/清空时立即换成新实例或返回 null。
  */
 export function createChkszResolver(
   keyProvider: ChkszApiKeyProvider,
-  options: { baseUrl?: string } = {},
+  options: { baseUrl?: string; keyPool?: ChkszKeyPool } = {},
 ): ChkszResolver {
-  let key = ''
+  const pool = options.keyPool ?? null
+  /** 当前 provider 的取值模式：显式记录，不用哨兵字符串与真实 key 共用取值空间 */
+  let mode: 'none' | 'pool' | 'single' = 'none'
+  /** single 模式下缓存实例对应的 key 值 */
+  let singleKey = ''
   let provider: ChkszMusicProvider | null = null
   return () => {
-    const current = keyProvider().trim()
-    if (current === '') {
-      if (provider != null) {
-        provider = null
-        key = ''
+    const activePool = pool != null && pool.size > 0 ? pool : null
+    if (activePool != null) {
+      // 池模式：provider 只建一次并长期复用（池对象就地更新，client 持有同一引用）
+      if (mode !== 'pool' || provider == null) {
+        mode = 'pool'
+        singleKey = ''
+        provider = new ChkszMusicProvider({ keyPool: activePool, baseUrl: options.baseUrl })
       }
+      return provider
+    }
+
+    const key = keyProvider().trim()
+    if (key === '') {
+      mode = 'none'
+      singleKey = ''
+      provider = null
       return null
     }
-    if (provider == null || current !== key) {
-      key = current
-      provider = new ChkszMusicProvider({ apiKey: current, baseUrl: options.baseUrl })
+    // 单 key 模式：key 值变化才换实例（保留 provider 内的歌曲缓存）
+    if (mode !== 'single' || provider == null || singleKey !== key) {
+      mode = 'single'
+      singleKey = key
+      provider = new ChkszMusicProvider({ apiKey: key, baseUrl: options.baseUrl })
     }
     return provider
   }
