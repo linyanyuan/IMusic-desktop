@@ -153,6 +153,30 @@ function firstText(first: unknown, second: unknown): string {
   return asString(second).trim()
 }
 
+/** 歌曲 JSON 里可用的封面地址（空字符串 = 没有封面） */
+function coverUrlOf(song: Record<string, unknown>): string {
+  return asString(song['coverUrl']).trim()
+}
+
+/**
+ * 自建歌单首次加歌时回填封面：歌单此前没有封面（''、null、undefined），
+ * 而本次加入的歌有封面时写进歌单记录，否则自建歌单永远是一张渐变占位。
+ * - 收藏/远端歌单（isCollected === true）不受影响；
+ * - 已有封面的歌单不覆盖；`previousCover` 是本次乐观更新刚写进去的封面，
+ *   允许被解析后的最终封面（resolvedMap）替换。
+ */
+function withBackfilledCover(
+  playlist: Record<string, unknown>,
+  cover: string,
+  previousCover = '',
+): Record<string, unknown> {
+  if (cover === '') return playlist
+  if (playlist['isCollected'] === true) return playlist
+  const existing = coverUrlOf(playlist)
+  if (existing !== '' && existing !== previousCover) return playlist
+  return { ...playlist, coverUrl: cover }
+}
+
 function parseBilibiliPage(value: unknown): number {
   const text = asString(value).trim()
   const parsed = Number.parseInt(text.replace(/^[pP]/, ''), 10)
@@ -688,18 +712,21 @@ export class LibraryService {
     }
   }
 
-  /** 等价 Dart addSongToPlaylist */
+  /** 等价 Dart addSongToPlaylist（额外：首次加歌时回填自建歌单封面） */
   async addSongToPlaylist(playlistId: string, song: Song): Promise<void> {
     const rawSong = songToJson(song)
     let inserted = false
     const optimisticPlaylists = this.state.userPlaylists.map((playlist) => {
       if (asString(playlist['id']) === playlistId) {
         const songs = [...listOfMaps(playlist['songs'])]
-        if (!songs.some((item) => songsShareIdentity(item, rawSong))) {
-          songs.push(rawSong)
-          inserted = true
-        }
-        return { ...playlist, songs, songCount: songs.length }
+        if (songs.some((item) => songsShareIdentity(item, rawSong))) return playlist
+        songs.push(rawSong)
+        inserted = true
+        // 乐观更新阶段只能拿到 rawSong 的封面，解析后的封面稍后再补
+        return withBackfilledCover(
+          { ...playlist, songs, songCount: songs.length },
+          coverUrlOf(rawSong),
+        )
       }
       return playlist
     })
@@ -734,7 +761,11 @@ export class LibraryService {
       const songs = listOfMaps(playlist['songs']).map((item) =>
         item === rawSong ? resolvedMap : item,
       )
-      return { ...playlist, songs, songCount: songs.length }
+      return withBackfilledCover(
+        { ...playlist, songs, songCount: songs.length },
+        coverUrlOf(resolvedMap) || coverUrlOf(rawSong),
+        coverUrlOf(rawSong),
+      )
     })
 
     this.setState({ userPlaylists: updatedPlaylists })
@@ -749,7 +780,12 @@ export class LibraryService {
           if (!songs.some((item) => songsShareIdentity(item, resolvedMap))) {
             songs.push(resolvedMap)
           }
-          return { ...playlist, songs, songCount: songs.length }
+          // 远端存档与本地乐观更新保持一致：首次加歌同样回填封面
+          return withBackfilledCover(
+            { ...playlist, songs, songCount: songs.length },
+            coverUrlOf(resolvedMap) || coverUrlOf(rawSong),
+            coverUrlOf(rawSong),
+          )
         })
         if (!foundPlaylist) {
           throw new Error('Playlist no longer exists')

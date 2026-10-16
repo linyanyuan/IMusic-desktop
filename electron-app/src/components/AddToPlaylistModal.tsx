@@ -68,23 +68,23 @@ export function AddToPlaylistModal({
   return (
     <Modal open={open} title="添加到歌单" onClose={close}>
       {song != null && (
-        <div className="mb-4 flex items-center gap-3 rounded-xl bg-[#F5F5F7] p-2.5">
+        <div className="mb-4 flex items-center gap-3 rounded-xl bg-fill p-2.5">
           <Cover src={song.coverUrl} size={36} radius="rounded-lg" iconSize={14} seed={song.title} />
           <div className="min-w-0">
-            <div className="truncate text-[13px] font-medium text-[#1D1D1F]">{song.title}</div>
-            <div className="truncate text-[12px] text-[#86868B]">{song.artist}</div>
+            <div className="truncate text-[13px] font-medium text-primary">{song.title}</div>
+            <div className="truncate text-[12px] text-secondary">{song.artist}</div>
           </div>
         </div>
       )}
 
       {done != null && (
-        <div className="mb-3 rounded-lg bg-[#FA233B]/[0.07] px-3 py-2 text-[12.5px] text-[#FA233B]">
+        <div className="mb-3 rounded-lg bg-accent/[0.07] px-3 py-2 text-[12.5px] text-accent">
           已添加到「{done}」
         </div>
       )}
 
       {error != null && (
-        <div className="mb-3 rounded-lg bg-[#FA233B]/[0.07] px-3 py-2 text-[12.5px] text-[#FA233B]">
+        <div className="mb-3 rounded-lg bg-accent/[0.07] px-3 py-2 text-[12.5px] text-accent">
           操作失败：{error}
         </div>
       )}
@@ -99,13 +99,13 @@ export function AddToPlaylistModal({
               if (e.key === 'Enter') void createAndAdd()
             }}
             placeholder="新歌单名称"
-            className="w-full rounded-lg border border-[#E5E5EA] px-3 py-2 text-[13.5px] outline-none focus:border-[#FA233B]/40"
+            className="w-full rounded-lg border border-subtle px-3 py-2 text-[13.5px] outline-none focus:border-accent/40"
           />
           <div className="mt-3 flex justify-end gap-2">
             <button
               type="button"
               onClick={() => setCreating(false)}
-              className="rounded-lg px-3 py-1.5 text-[13px] text-[#86868B] hover:bg-black/5"
+              className="rounded-lg px-3 py-1.5 text-[13px] text-secondary hover:bg-hover"
             >
               返回
             </button>
@@ -113,7 +113,7 @@ export function AddToPlaylistModal({
               type="button"
               disabled={name.trim() === '' || busy}
               onClick={() => void createAndAdd()}
-              className="rounded-lg bg-[#FA233B] px-3 py-1.5 text-[13px] font-medium text-white hover:bg-[#E01E34] disabled:opacity-40"
+              className="rounded-lg bg-accent px-3 py-1.5 text-[13px] font-medium text-white hover:bg-accent-hover disabled:opacity-40"
             >
               {busy ? '处理中…' : '创建并添加'}
             </button>
@@ -124,15 +124,15 @@ export function AddToPlaylistModal({
           <button
             type="button"
             onClick={() => setCreating(true)}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-[13.5px] text-[#FA233B] transition-colors hover:bg-[#FA233B]/[0.07]"
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-[13.5px] text-accent transition-colors hover:bg-accent/[0.07]"
           >
-            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-[#FA233B]/10">
+            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-accent/10">
               <Plus size={14} strokeWidth={2} />
             </span>
             新建歌单
           </button>
           {library.userPlaylists.length === 0 && (
-            <p className="px-3 py-2 text-[12.5px] text-[#86868B]">还没有自建歌单</p>
+            <p className="px-3 py-2 text-[12.5px] text-secondary">还没有自建歌单</p>
           )}
           {library.userPlaylists.map((pl, index) => {
             const id = pl['id']?.toString() ?? ''
@@ -143,9 +143,9 @@ export function AddToPlaylistModal({
                 type="button"
                 disabled={busy}
                 onClick={() => void addTo(id, name)}
-                className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-[13.5px] text-[#1D1D1F] transition-colors hover:bg-[#F5F5F7] disabled:opacity-50"
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-[13.5px] text-primary transition-colors hover:bg-hover disabled:opacity-50"
               >
-                <span className="flex h-7 w-7 items-center justify-center rounded-md bg-black/[0.05] text-[#86868B]">
+                <span className="flex h-7 w-7 items-center justify-center rounded-md bg-hover text-secondary">
                   <ListMusic size={14} strokeWidth={1.75} />
                 </span>
                 <span className="truncate">{name}</span>

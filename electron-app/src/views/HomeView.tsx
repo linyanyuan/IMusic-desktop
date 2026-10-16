@@ -50,7 +50,7 @@ function SectionTitle({
   return (
     <div className="mb-4 flex items-baseline justify-between gap-3">
       <div className="flex min-w-0 items-baseline gap-2.5">
-        <h2 className="shrink-0 text-[19px] font-bold tracking-tight text-[#1D1D1F]">{children}</h2>
+        <h2 className="shrink-0 text-[19px] font-bold tracking-tight text-primary">{children}</h2>
         {aside}
       </div>
       {action}
@@ -71,7 +71,7 @@ function LyricPeek({ lyrics }: { lyrics: string }) {
 
   if (text === '') return null
   return (
-    <div data-home-lyric className="mt-1 line-clamp-2 text-[12.5px] leading-snug text-[#86868B]">
+    <div data-home-lyric className="mt-1 line-clamp-2 text-[12.5px] leading-snug text-secondary">
       {text}
     </div>
   )
@@ -83,14 +83,14 @@ function ContinuePlayingCard({ song }: { song: Song }) {
   const route = useRoute()
 
   return (
-    <div className="flex items-center gap-5 rounded-2xl border border-[#E5E5EA] bg-white/70 p-4 backdrop-blur-xl">
+    <div className="flex items-center gap-5 rounded-2xl border border-subtle bg-card/70 p-4 backdrop-blur-xl">
       <Cover src={songCover(song)} size={84} radius="rounded-xl" iconSize={26} seed={song.title} />
       <div className="min-w-0 flex-1">
-        <div className="text-[11px] font-semibold uppercase tracking-wider text-[#FA233B]">
+        <div className="text-[11px] font-semibold uppercase tracking-wider text-accent">
           继续播放
         </div>
-        <div className="truncate text-[17px] font-semibold text-[#1D1D1F]">{song.title}</div>
-        <div className="truncate text-[13px] text-[#86868B]">{song.artist}</div>
+        <div className="truncate text-[17px] font-semibold text-primary">{song.title}</div>
+        <div className="truncate text-[13px] text-secondary">{song.artist}</div>
         <LyricPeek lyrics={player.lyrics} />
       </div>
       <div className="flex shrink-0 items-center gap-2">
@@ -98,7 +98,7 @@ function ContinuePlayingCard({ song }: { song: Song }) {
           type="button"
           aria-label={player.isPlaying ? '暂停' : '继续播放'}
           onClick={() => player.togglePlay()}
-          className="flex h-11 w-11 items-center justify-center rounded-full bg-[#FA233B] text-white shadow-[0_6px_18px_rgba(250,35,59,0.28)] transition-transform hover:scale-105"
+          className="flex h-11 w-11 items-center justify-center rounded-full bg-accent text-white shadow-[0_6px_18px_rgba(250,35,59,0.28)] transition-transform hover:scale-105"
         >
           {player.isPlaying ? (
             <Pause size={17} strokeWidth={2} fill="currentColor" />
@@ -110,7 +110,7 @@ function ContinuePlayingCard({ song }: { song: Song }) {
           type="button"
           aria-label="打开歌词"
           onClick={() => route.go(DeskRoute.Focus)}
-          className="flex items-center gap-1.5 rounded-full bg-[#F5F5F7] px-4 py-2.5 text-[12.5px] font-medium text-[#1D1D1F] transition-colors hover:bg-black/[0.07]"
+          className="flex items-center gap-1.5 rounded-full bg-fill px-4 py-2.5 text-[12.5px] font-medium text-primary transition-colors hover:bg-hover"
         >
           歌词
           <ChevronRight size={14} strokeWidth={2} />
@@ -156,7 +156,7 @@ function FeaturedPlaylistCard({ playlist }: { playlist: Song }) {
         onClick={open}
         className="absolute inset-0"
       >
-        <div className="absolute inset-0 bg-gradient-to-br from-[#FA233B]/25 via-[#F5F5F7] to-[#86868B]/25" />
+        <div className="absolute inset-0 bg-gradient-to-br from-accent/25 via-fill to-secondary/25" />
         {cover != null && (
           <img
             src={cover}
@@ -210,17 +210,17 @@ function SongCard({ song, onPlay }: { song: Song; onPlay: () => void }) {
           className="!h-auto aspect-square w-full shadow-[0_4px_16px_rgba(0,0,0,0.05)] transition-shadow group-hover:shadow-[0_8px_24px_rgba(0,0,0,0.12)]"
           iconSize={28}
         />
-        <div className="absolute bottom-2 right-2 flex h-9 w-9 translate-y-1 items-center justify-center rounded-full bg-white/80 text-[#FA233B] opacity-0 shadow-md backdrop-blur-md transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100">
+        <div className="absolute bottom-2 right-2 flex h-9 w-9 translate-y-1 items-center justify-center rounded-full bg-card/80 text-accent opacity-0 shadow-md backdrop-blur-md transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100">
           <Play size={15} strokeWidth={2} fill="currentColor" className="ml-[1px]" />
         </div>
         {isCurrent && (
-          <div className="absolute left-2 top-2 rounded-md bg-[#FA233B] px-1.5 py-0.5 text-[10px] font-semibold text-white">
+          <div className="absolute left-2 top-2 rounded-md bg-accent px-1.5 py-0.5 text-[10px] font-semibold text-white">
             播放中
           </div>
         )}
       </div>
-      <div className="mt-2 truncate text-[13.5px] font-medium text-[#1D1D1F]">{song.title}</div>
-      <div className="truncate text-[12px] text-[#86868B]">{song.artist}</div>
+      <div className="mt-2 truncate text-[13.5px] font-medium text-primary">{song.title}</div>
+      <div className="truncate text-[12px] text-secondary">{song.artist}</div>
     </button>
   )
 }
@@ -240,15 +240,15 @@ function PlaylistCard({ playlist, onOpen }: { playlist: Song; onOpen: () => void
           iconSize={28}
         />
         <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/25 opacity-0 transition-opacity group-hover:opacity-100">
-          <span className="rounded-full bg-white/85 px-3 py-1 text-[11.5px] font-medium text-[#1D1D1F] backdrop-blur-md">
+          <span className="rounded-full bg-card/85 px-3 py-1 text-[11.5px] font-medium text-primary backdrop-blur-md">
             查看合集
           </span>
         </div>
       </div>
-      <div className="mt-2 line-clamp-2 text-[13.5px] font-medium leading-snug text-[#1D1D1F]">
+      <div className="mt-2 line-clamp-2 text-[13.5px] font-medium leading-snug text-primary">
         {playlist.title}
       </div>
-      <div className="truncate text-[12px] text-[#86868B]">
+      <div className="truncate text-[12px] text-secondary">
         {playlist.artist}
         {count > 0 ? ` · ${count} 首` : ''}
       </div>
@@ -268,15 +268,15 @@ function TasteOnboardingCard({
   return (
     <div
       data-testid="taste-onboarding"
-      className="mb-4 rounded-2xl border border-[#FA233B]/20 bg-gradient-to-br from-[#FA233B]/[0.06] via-transparent to-[#F5F5F7]/60 p-5"
+      className="mb-4 rounded-2xl border border-accent/20 bg-gradient-to-br from-accent/[0.06] via-transparent to-sidebar/60 p-5"
     >
       <div className="flex items-start gap-3">
-        <Sparkles size={18} strokeWidth={1.75} className="mt-0.5 shrink-0 text-[#FA233B]" />
+        <Sparkles size={18} strokeWidth={1.75} className="mt-0.5 shrink-0 text-accent" />
         <div className="min-w-0 flex-1">
-          <div className="text-[14px] font-semibold text-[#1D1D1F]">
+          <div className="text-[14px] font-semibold text-primary">
             选择你喜欢的音乐类型，为你定制推荐
           </div>
-          <div className="mt-1 text-[12px] text-[#86868B]">
+          <div className="mt-1 text-[12px] text-secondary">
             最多选 5 个；之后可在「调整口味」里随时修改。
           </div>
           <div className="mt-3">
@@ -288,7 +288,7 @@ function TasteOnboardingCard({
               data-testid="taste-start"
               disabled={selected.length === 0}
               onClick={() => onStart(selected)}
-              className="rounded-full bg-[#FA233B] px-4 py-2 text-[13px] font-medium text-white transition-colors hover:bg-[#E01E34] disabled:opacity-40"
+              className="rounded-full bg-accent px-4 py-2 text-[13px] font-medium text-white transition-colors hover:bg-accent-hover disabled:opacity-40"
             >
               开始推荐
             </button>
@@ -296,7 +296,7 @@ function TasteOnboardingCard({
               type="button"
               data-testid="taste-skip"
               onClick={onSkip}
-              className="rounded-full px-4 py-2 text-[13px] text-[#86868B] transition-colors hover:bg-black/[0.05]"
+              className="rounded-full px-4 py-2 text-[13px] text-secondary transition-colors hover:bg-hover"
             >
               跳过
             </button>
@@ -323,7 +323,7 @@ function TastePreferencesModal({
   const [selected, setSelected] = useState<string[]>(initial)
   return (
     <Modal open title="调整音乐口味" onClose={onClose} width={520}>
-      <p className="text-[12.5px] text-[#86868B]">
+      <p className="text-[12.5px] text-secondary">
         选中的分类会作为首页「推荐歌曲」的依据（最多 5 个）。
       </p>
       <div className="mt-4">
@@ -334,7 +334,7 @@ function TastePreferencesModal({
           type="button"
           data-testid="taste-clear"
           onClick={onClear}
-          className="rounded-full px-4 py-2 text-[13px] text-[#86868B] transition-colors hover:bg-black/[0.05] hover:text-[#FA233B]"
+          className="rounded-full px-4 py-2 text-[13px] text-secondary transition-colors hover:bg-hover hover:text-accent"
         >
           清除偏好
         </button>
@@ -342,7 +342,7 @@ function TastePreferencesModal({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full px-4 py-2 text-[13px] text-[#86868B] transition-colors hover:bg-black/[0.05]"
+            className="rounded-full px-4 py-2 text-[13px] text-secondary transition-colors hover:bg-hover"
           >
             取消
           </button>
@@ -351,7 +351,7 @@ function TastePreferencesModal({
             data-testid="taste-save"
             disabled={selected.length === 0}
             onClick={() => onSave(selected)}
-            className="rounded-full bg-[#FA233B] px-5 py-2 text-[13px] font-medium text-white transition-colors hover:bg-[#E01E34] disabled:opacity-40"
+            className="rounded-full bg-accent px-5 py-2 text-[13px] font-medium text-white transition-colors hover:bg-accent-hover disabled:opacity-40"
           >
             保存
           </button>
@@ -518,19 +518,29 @@ export function HomeView() {
     <div className="space-y-9">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold tracking-tight text-[#1D1D1F]">首页</h1>
+        <h1 className="text-3xl font-bold tracking-tight text-primary">首页</h1>
         <div className="flex items-center gap-3">
           <div className="text-right">
-            <div className="text-[13.5px] font-medium text-[#1D1D1F]">
+            <div className="text-[13.5px] font-medium text-primary">
               {user?.nickname ?? user?.username ?? '未登录'}
             </div>
-            <div className="text-[11.5px] text-[#86868B]">
+            <div className="text-[11.5px] text-secondary">
               {auth.isLoggedIn ? '已同步音乐库' : '登录后可同步收藏'}
             </div>
           </div>
           <UserAvatar user={user} size={36} />
         </div>
       </div>
+
+      {/* 首次口味引导 —— 从未设置且未跳过时出现。
+          紧跟在标题下方、继续播放之前：引导是「新用户第一件事」，不该埋在
+          推荐歌曲区里（滚动到那里才能看到 = 基本会被忽略）。整页只保留这一处。 */}
+      {showOnboarding && (
+        <TasteOnboardingCard
+          onStart={(genres) => applyTaste(genres)}
+          onSkip={() => taste.skip()}
+        />
+      )}
 
       {/* 继续播放（含当前歌词行） */}
       {current != null && <ContinuePlayingCard song={current} />}
@@ -542,7 +552,7 @@ export function HomeView() {
         <div data-home-section="featured">
           <SectionTitle
             action={
-              <span className="text-[12px] text-[#86868B]">主题 · {featuredTheme}</span>
+              <span className="text-[12px] text-secondary">主题 · {featuredTheme}</span>
             }
           >
             今日精选
@@ -564,7 +574,7 @@ export function HomeView() {
               aria-label="换一批热门歌单"
               onClick={() => void refreshHot()}
               disabled={hotRefreshing || hotLoading}
-              className="flex items-center gap-1.5 text-[12.5px] font-medium text-[#FA233B] transition-opacity hover:opacity-80 disabled:opacity-50"
+              className="flex items-center gap-1.5 text-[12.5px] font-medium text-accent transition-opacity hover:opacity-80 disabled:opacity-50"
             >
               <RefreshCw size={13} strokeWidth={2} className={hotRefreshing ? 'animate-spin' : ''} />
               {hotRefreshing ? '加载中…' : '换一批'}
@@ -574,11 +584,11 @@ export function HomeView() {
           热门歌单
         </SectionTitle>
         {hotLoading ? (
-          <div className="flex items-center justify-center gap-2 py-10 text-[13px] text-[#86868B]">
+          <div className="flex items-center justify-center gap-2 py-10 text-[13px] text-secondary">
             <Loader2 size={16} className="animate-spin" /> 正在加载热门歌单
           </div>
         ) : hotPlaylists.length === 0 ? (
-          <div className="flex items-center justify-center gap-2 py-10 text-[13px] text-[#86868B]">
+          <div className="flex items-center justify-center gap-2 py-10 text-[13px] text-secondary">
             <ListMusic size={16} strokeWidth={1.75} />
             暂无热门歌单
           </div>
@@ -597,19 +607,12 @@ export function HomeView() {
 
       {/* 推荐歌曲（单曲 feed，换一批整体替换 —— 对照 BiliMusic 推荐页） */}
       <div data-home-section="recommended">
-        {/* 首次引导：从未设置且未跳过时出现在「推荐歌曲」上方 */}
-        {showOnboarding && (
-          <TasteOnboardingCard
-            onStart={(genres) => applyTaste(genres)}
-            onSkip={() => taste.skip()}
-          />
-        )}
         <SectionTitle
           aside={
             <>
               <span
                 data-testid="taste-basis"
-                className="truncate text-[12px] font-normal text-[#86868B]"
+                className="truncate text-[12px] font-normal text-secondary"
               >
                 {tasteSubtitle}
               </span>
@@ -617,7 +620,7 @@ export function HomeView() {
                 type="button"
                 data-testid="taste-adjust"
                 onClick={() => setTasteModalOpen(true)}
-                className="shrink-0 text-[12px] font-medium text-[#FA233B] transition-opacity hover:opacity-80"
+                className="shrink-0 text-[12px] font-medium text-accent transition-opacity hover:opacity-80"
               >
                 调整口味
               </button>
@@ -629,7 +632,7 @@ export function HomeView() {
               aria-label="换一批推荐"
               onClick={() => refreshRecommended()}
               disabled={recRefreshing || loading}
-              className="flex items-center gap-1.5 text-[12.5px] font-medium text-[#FA233B] transition-opacity hover:opacity-80 disabled:opacity-50"
+              className="flex items-center gap-1.5 text-[12.5px] font-medium text-accent transition-opacity hover:opacity-80 disabled:opacity-50"
             >
               <RefreshCw size={13} strokeWidth={2} className={recRefreshing ? 'animate-spin' : ''} />
               {recRefreshing ? '加载中…' : '换一批'}
@@ -639,11 +642,11 @@ export function HomeView() {
           推荐歌曲
         </SectionTitle>
         {loading ? (
-          <div className="flex items-center justify-center gap-2 py-10 text-[13px] text-[#86868B]">
+          <div className="flex items-center justify-center gap-2 py-10 text-[13px] text-secondary">
             <Loader2 size={16} className="animate-spin" /> 加载中…
           </div>
         ) : recommended.length === 0 ? (
-          <div className="py-8 text-center text-[13px] text-[#86868B]">
+          <div className="py-8 text-center text-[13px] text-secondary">
             暂无推荐内容，试试搜索一首歌
           </div>
         ) : (
@@ -663,7 +666,7 @@ export function HomeView() {
               <button
                 type="button"
                 onClick={() => route.go(DeskRoute.History)}
-                className="text-[12.5px] font-medium text-[#FA233B] transition-opacity hover:opacity-80"
+                className="text-[12.5px] font-medium text-accent transition-opacity hover:opacity-80"
               >
                 查看全部
               </button>
@@ -687,7 +690,7 @@ export function HomeView() {
       <div data-home-section="favorites">
         <SectionTitle>我喜欢的音乐 · 快速畅听</SectionTitle>
         {quickFavorites.length === 0 ? (
-          <div className="py-6 text-center text-[13px] text-[#86868B]">
+          <div className="py-6 text-center text-[13px] text-secondary">
             还没有喜欢的歌曲 —— 点歌曲右侧的 ♥ 收藏
           </div>
         ) : (
@@ -696,7 +699,7 @@ export function HomeView() {
               <div
                 key={song.id}
                 onDoubleClick={() => playList(quickFavorites, quickFavorites.indexOf(song))}
-                className="group flex items-center gap-3 rounded-xl p-2 transition-colors hover:bg-[#F5F5F7]"
+                className="group flex items-center gap-3 rounded-xl p-2 transition-colors hover:bg-hover"
               >
                 <div className="relative">
                   <Cover src={songCover(song)} size={48} radius="rounded-lg" iconSize={16} seed={song.title} />
@@ -710,19 +713,19 @@ export function HomeView() {
                   </button>
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-[13.5px] font-medium text-[#1D1D1F]">
+                  <div className="truncate text-[13.5px] font-medium text-primary">
                     {song.title}
                   </div>
-                  <div className="truncate text-[12px] text-[#86868B]">{song.artist}</div>
+                  <div className="truncate text-[12px] text-secondary">{song.artist}</div>
                 </div>
-                <span className="text-[12px] tabular-nums text-[#86868B]">
+                <span className="text-[12px] tabular-nums text-secondary">
                   {formatTime(durationSeconds(song))}
                 </span>
                 <button
                   type="button"
                   aria-label="取消喜欢"
                   onClick={() => void library.toggleLike(song)}
-                  className="text-[#FA233B] transition-transform active:scale-90"
+                  className="text-accent transition-transform active:scale-90"
                 >
                   <Heart size={15} strokeWidth={1.75} fill="currentColor" />
                 </button>

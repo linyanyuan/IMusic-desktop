@@ -151,12 +151,12 @@ export function CategoryView() {
   if (genre == null) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
-        <Music2 size={40} strokeWidth={1.25} className="text-[#C7C7CC]" />
-        <p className="mt-3 text-[14px] text-[#86868B]">未知分类</p>
+        <Music2 size={40} strokeWidth={1.25} className="text-secondary" />
+        <p className="mt-3 text-[14px] text-secondary">未知分类</p>
         <button
           type="button"
           onClick={() => route.go(DeskRoute.Search)}
-          className="mt-4 rounded-full bg-[#F5F5F7] px-5 py-2 text-[13px] text-[#1D1D1F] transition-colors hover:bg-black/[0.07]"
+          className="mt-4 rounded-full bg-fill px-5 py-2 text-[13px] text-primary transition-colors hover:bg-hover"
         >
           返回搜索
         </button>
@@ -182,7 +182,7 @@ export function CategoryView() {
             type="button"
             disabled={playingHot || songLoading}
             onClick={() => void playHotSongs()}
-            className="flex items-center gap-2 rounded-full bg-white/95 px-5 py-2 text-[13.5px] font-medium text-[#1D1D1F] transition-transform hover:scale-[1.02] disabled:opacity-60"
+            className="flex items-center gap-2 rounded-full bg-card/95 px-5 py-2 text-[13.5px] font-medium text-primary transition-transform hover:scale-[1.02] disabled:opacity-60"
           >
             {playingHot ? (
               <Loader2 size={15} strokeWidth={2} className="animate-spin" />
@@ -195,7 +195,7 @@ export function CategoryView() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-[#E5E5EA]">
+      <div className="flex gap-1 border-b border-subtle">
         {(
           [
             ['playlists', '热门歌单'],
@@ -210,8 +210,8 @@ export function CategoryView() {
             onClick={() => setTab(key)}
             className={`-mb-px border-b-2 px-4 py-2.5 text-[13.5px] transition-colors ${
               tab === key
-                ? 'border-[#FA233B] font-medium text-[#FA233B]'
-                : 'border-transparent text-[#86868B] hover:text-[#1D1D1F]'
+                ? 'border-accent font-medium text-accent'
+                : 'border-transparent text-secondary hover:text-primary'
             }`}
           >
             {label}
@@ -223,22 +223,22 @@ export function CategoryView() {
         <div className="space-y-5">
           {plError != null ? (
             <div className="flex flex-col items-center gap-3 py-16 text-center">
-              <p className="text-[13px] text-[#86868B]">歌单加载失败：{plError}</p>
+              <p className="text-[13px] text-secondary">歌单加载失败：{plError}</p>
               <button
                 type="button"
                 onClick={() => void loadPlaylists(0, false, ++playlistReqRef.current)}
-                className="flex items-center gap-1.5 rounded-full bg-[#F5F5F7] px-4 py-2 text-[12.5px] text-[#1D1D1F] transition-colors hover:bg-black/[0.07]"
+                className="flex items-center gap-1.5 rounded-full bg-fill px-4 py-2 text-[12.5px] text-primary transition-colors hover:bg-hover"
               >
                 <RefreshCw size={13} strokeWidth={2} />
                 重试
               </button>
             </div>
           ) : plLoading ? (
-            <div className="flex items-center justify-center gap-2 py-16 text-[13px] text-[#86868B]">
+            <div className="flex items-center justify-center gap-2 py-16 text-[13px] text-secondary">
               <Loader2 size={16} className="animate-spin" /> 正在加载歌单…
             </div>
           ) : playlists.length === 0 ? (
-            <div className="flex items-center justify-center gap-2 py-16 text-[13px] text-[#86868B]">
+            <div className="flex items-center justify-center gap-2 py-16 text-[13px] text-secondary">
               <ListMusic size={16} strokeWidth={1.75} />
               该分类暂无歌单
             </div>
@@ -259,10 +259,10 @@ export function CategoryView() {
                       radius="rounded-xl"
                       className="!h-auto aspect-square w-full shadow-[0_4px_16px_rgba(0,0,0,0.05)] transition-shadow group-hover:shadow-[0_8px_24px_rgba(0,0,0,0.12)]"
                     />
-                    <div className="mt-2 line-clamp-2 text-[13.5px] font-medium leading-snug text-[#1D1D1F]">
+                    <div className="mt-2 line-clamp-2 text-[13.5px] font-medium leading-snug text-primary">
                       {pl.title}
                     </div>
-                    <div className="truncate text-[12px] text-[#86868B]">
+                    <div className="truncate text-[12px] text-secondary">
                       {pl.artist}
                       {pl.songCount > 0 ? ` · ${pl.songCount} 首` : ''}
                     </div>
@@ -275,7 +275,7 @@ export function CategoryView() {
                     type="button"
                     disabled={plLoadingMore}
                     onClick={() => void loadPlaylists(plOffsetRef.current, true, ++playlistReqRef.current)}
-                    className="rounded-full bg-[#F5F5F7] px-5 py-2 text-[13px] text-[#1D1D1F] transition-colors hover:bg-black/[0.07] disabled:opacity-50"
+                    className="rounded-full bg-fill px-5 py-2 text-[13px] text-primary transition-colors hover:bg-hover disabled:opacity-50"
                   >
                     {plLoadingMore ? '加载中…' : '加载更多'}
                   </button>
@@ -289,7 +289,7 @@ export function CategoryView() {
       {tab === 'songs' && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <div className="text-[13px] text-[#86868B]">
+            <div className="text-[13px] text-secondary">
               {songLoading ? '正在加载…' : `${songs.length} 首歌曲`}
             </div>
             <button
@@ -297,7 +297,7 @@ export function CategoryView() {
               aria-label="换一批热门单曲"
               disabled={songLoading}
               onClick={() => void loadSongs(songPage + 1, ++songReqRef.current)}
-              className="flex items-center gap-1.5 text-[12.5px] font-medium text-[#FA233B] transition-opacity hover:opacity-80 disabled:opacity-50"
+              className="flex items-center gap-1.5 text-[12.5px] font-medium text-accent transition-opacity hover:opacity-80 disabled:opacity-50"
             >
               <RefreshCw size={13} strokeWidth={2} className={songLoading ? 'animate-spin' : ''} />
               换一批
@@ -306,18 +306,18 @@ export function CategoryView() {
 
           {songError != null ? (
             <div className="flex flex-col items-center gap-3 py-16 text-center">
-              <p className="text-[13px] text-[#86868B]">单曲加载失败：{songError}</p>
+              <p className="text-[13px] text-secondary">单曲加载失败：{songError}</p>
               <button
                 type="button"
                 onClick={() => void loadSongs(songPage, ++songReqRef.current)}
-                className="flex items-center gap-1.5 rounded-full bg-[#F5F5F7] px-4 py-2 text-[12.5px] text-[#1D1D1F] transition-colors hover:bg-black/[0.07]"
+                className="flex items-center gap-1.5 rounded-full bg-fill px-4 py-2 text-[12.5px] text-primary transition-colors hover:bg-hover"
               >
                 <RefreshCw size={13} strokeWidth={2} />
                 重试
               </button>
             </div>
           ) : songLoading && songs.length === 0 ? (
-            <div className="flex items-center justify-center gap-2 py-16 text-[13px] text-[#86868B]">
+            <div className="flex items-center justify-center gap-2 py-16 text-[13px] text-secondary">
               <Loader2 size={16} className="animate-spin" /> 正在加载单曲…
             </div>
           ) : (

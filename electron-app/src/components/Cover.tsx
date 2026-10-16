@@ -81,7 +81,7 @@ export function Cover({
     <div
       data-testid={testid}
       data-cover-loaded={showImage ? String(loaded) : 'fallback'}
-      className={`relative shrink-0 overflow-hidden ${hasHue ? '' : 'bg-gradient-to-br from-[#F5F5F7] to-[#E5E5EA]'} ${radius} ${className}`}
+      className={`relative shrink-0 overflow-hidden ${hasHue ? '' : 'bg-gradient-to-br from-fill to-subtle'} ${radius} ${className}`}
       // size=0 是调用方约定：不下发内联尺寸，由 className 决定（w-full aspect-square 填满网格单元）。
       // 内联样式优先级高于 class —— 无条件写 width:0 会把封面压成 0 宽（2026-10 回归，首页三个分区封面全消失）。
       style={coverStyle(size, placeholderStyle)}

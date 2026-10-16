@@ -24,6 +24,7 @@ export const GENRES: Genre[] = [
   { key: 'western', label: '欧美', neteaseCat: '欧美', from: '#5E5CE6', to: '#64D2FF' },
   { key: 'cantonese', label: '粤语', neteaseCat: '粤语', from: '#0A84FF', to: '#30D158' },
   { key: 'japanese', label: '日语', neteaseCat: '日语', from: '#FF2D55', to: '#BF5AF2' },
+  { key: 'korean', label: '韩语', neteaseCat: '韩语', from: '#FF2D55', to: '#FF9F0A' },
   { key: 'rock', label: '摇滚', neteaseCat: '摇滚', from: '#5E5CE6', to: '#BF5AF2' },
   { key: 'electronic', label: '电子', neteaseCat: '电子', from: '#30D158', to: '#66D4CF' },
   { key: 'classical', label: '古典', neteaseCat: '古典', from: '#8E8E93', to: '#48484A' },

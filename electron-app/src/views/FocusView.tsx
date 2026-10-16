@@ -45,14 +45,14 @@ export function FocusView() {
     return (
       <div
         data-testid="focus-view"
-        className="flex h-full flex-col items-center justify-center gap-3 text-[#86868B]"
+        className="flex h-full flex-col items-center justify-center gap-3 text-secondary"
       >
         <Music4 size={40} strokeWidth={1.25} />
         <p className="text-[14px]">还没有在播放的歌曲 —— 先挑一首歌，再进入专注模式</p>
         <button
           type="button"
           onClick={route.toggleFocus}
-          className="mt-1 rounded-full bg-[#F5F5F7] px-4 py-2 text-[13px] text-[#86868B] transition-colors hover:bg-black/[0.07]"
+          className="mt-1 rounded-full bg-fill px-4 py-2 text-[13px] text-secondary transition-colors hover:bg-hover"
         >
           退出专注
         </button>
@@ -85,13 +85,13 @@ export function FocusView() {
             className="shadow-[0_28px_70px_rgba(0,0,0,0.28)]"
           />
           <div className="mt-8 max-w-full text-center">
-            <div className="truncate text-[26px] font-bold tracking-tight text-[#1D1D1F]" title={song.title}>
+            <div className="truncate text-[26px] font-bold tracking-tight text-primary" title={song.title}>
               {song.title}
             </div>
-            <div className="mt-2 truncate text-[15px] text-[#86868B]" title={song.artist}>
+            <div className="mt-2 truncate text-[15px] text-secondary" title={song.artist}>
               {song.artist}
             </div>
-            <div className="mt-1 truncate text-[12.5px] text-[#A1A1A6]">
+            <div className="mt-1 truncate text-[12.5px] text-secondary">
               {song.extra['album']?.toString() ?? ''}
             </div>
           </div>
@@ -105,7 +105,7 @@ export function FocusView() {
             className="h-[calc(100vh-220px)] overflow-y-auto py-[35vh] pr-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
             {player.lyrics.trim() === '' ? (
-              <p className="text-[15px] text-[#86868B]">暂无歌词</p>
+              <p className="text-[15px] text-secondary">暂无歌词</p>
             ) : lines.length > 0 ? (
               <div className="flex flex-col gap-1.5">
                 {lines.map((line, i) => {
@@ -126,7 +126,7 @@ export function FocusView() {
                       className={`shrink-0 whitespace-pre-line rounded-xl px-3 py-2 text-left leading-[1.45] transition-all duration-300 ${
                         isActive
                           ? 'font-bold'
-                          : 'text-[#86868B]/70 hover:bg-black/[0.03] hover:text-[#1D1D1F]'
+                          : 'text-secondary/70 hover:bg-hover hover:text-primary'
                       }`}
                     >
                       {line.text === '' ? '♪' : line.text}
@@ -135,7 +135,7 @@ export function FocusView() {
                 })}
               </div>
             ) : (
-              <div className="whitespace-pre-line text-[17px] leading-9 text-[#1D1D1F]/85">
+              <div className="whitespace-pre-line text-[17px] leading-9 text-primary/85">
                 {plain.join('\n')}
               </div>
             )}
@@ -148,7 +148,7 @@ export function FocusView() {
         type="button"
         data-testid="focus-exit"
         onClick={route.toggleFocus}
-        className="absolute right-8 top-6 flex items-center gap-2 rounded-full bg-white/70 px-3.5 py-2 text-[12.5px] text-[#86868B] shadow-[0_4px_14px_rgba(0,0,0,0.06)] backdrop-blur transition-colors hover:text-[#1D1D1F]"
+        className="absolute right-8 top-6 flex items-center gap-2 rounded-full bg-card/70 px-3.5 py-2 text-[12.5px] text-secondary shadow-[0_4px_14px_rgba(0,0,0,0.06)] backdrop-blur transition-colors hover:text-primary"
       >
         <Minimize2 size={14} strokeWidth={1.75} />
         退出专注

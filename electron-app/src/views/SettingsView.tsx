@@ -5,13 +5,14 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Check, LogOut, RefreshCw, Trash2, Loader2, PlugZap, AlertCircle, Camera } from 'lucide-react'
+import { Check, LogOut, RefreshCw, Trash2, Loader2, PlugZap, AlertCircle, Camera, Sun, Moon, Monitor } from 'lucide-react'
 import { UserAvatar } from '../components/UserAvatar'
 import { TasteGenreChips } from '../components/TasteGenreChips'
 import { useAuth, useLibrary, useSettings, useTastePreferences } from '../state/hooks'
 import { MAX_TASTE_GENRES } from '../state/genres'
 import { SettingsShortcuts } from '../components/SettingsShortcuts'
 import { verifyChkszKey, type ChkszKeyCheck } from '../services/chksz'
+import type { ThemeMode } from '../services/appSettings'
 import { formatBytes } from '../state/format'
 import { argbToCss } from '../state/color'
 import {
@@ -23,6 +24,13 @@ import {
 
 const LYRICS_FONT_MIN = 16
 const LYRICS_FONT_MAX = 32
+
+/** 外观三选一 —— 直接对应 AppSettings.setThemeMode */
+const THEME_OPTIONS: Array<{ mode: ThemeMode; label: string }> = [
+  { mode: 'light', label: '浅色' },
+  { mode: 'dark', label: '深色' },
+  { mode: 'system', label: '跟随系统' },
+]
 
 /** 歌词颜色预设（Dart ARGB int，与 AppSettings 存储一致） */
 const LYRICS_COLOR_PRESETS: Array<{ value: number; label: string }> = [
@@ -42,10 +50,10 @@ function Section({
   children: ReactNode
 }) {
   return (
-    <section className="rounded-2xl border border-[#E5E5EA] bg-white/70 p-5 backdrop-blur-xl">
-      <h2 className="text-[15px] font-semibold text-[#1D1D1F]">{title}</h2>
+    <section className="rounded-2xl border border-subtle bg-card/70 p-5 backdrop-blur-xl">
+      <h2 className="text-[15px] font-semibold text-primary">{title}</h2>
       {description != null && (
-        <p className="mt-1 text-[12px] leading-5 text-[#86868B]">{description}</p>
+        <p className="mt-1 text-[12px] leading-5 text-secondary">{description}</p>
       )}
       <div className="mt-4 space-y-4">{children}</div>
     </section>
@@ -74,7 +82,7 @@ function TextInput({
       aria-label={ariaLabel}
       placeholder={placeholder}
       onChange={(e) => onChange(e.target.value)}
-      className={`rounded-lg border border-[#E5E5EA] bg-white/80 px-3 py-2 text-[13px] text-[#1D1D1F] outline-none transition-colors placeholder:text-[#B0B0B5] focus:border-[#FA233B]/60 ${className}`}
+      className={`rounded-lg border border-subtle bg-card/80 px-3 py-2 text-[13px] text-primary outline-none transition-colors placeholder:text-secondary focus:border-accent/60 ${className}`}
     />
   )
 }
@@ -94,10 +102,10 @@ function Button({
 }) {
   const tone =
     variant === 'primary'
-      ? 'bg-[#FA233B] text-white hover:bg-[#E01E34]'
+      ? 'bg-accent text-white hover:bg-accent-hover'
       : variant === 'danger'
-        ? 'border border-[#FA233B]/40 text-[#FA233B] hover:bg-[#FA233B]/8'
-        : 'border border-[#E5E5EA] text-[#1D1D1F] hover:bg-black/5'
+        ? 'border border-accent/40 text-accent hover:bg-accent/8'
+        : 'border border-subtle text-primary hover:bg-hover'
   return (
     <button
       type="button"
@@ -292,7 +300,7 @@ export function SettingsView() {
 
   return (
     <div className="mx-auto w-full max-w-[720px] space-y-5 px-6 py-6">
-      <h1 className="text-[22px] font-semibold tracking-tight text-[#1D1D1F]">设置</h1>
+      <h1 className="text-[22px] font-semibold tracking-tight text-primary">设置</h1>
 
       {/* 账号 */}
       <Section title="账号" description="登录后可在多端同步歌单与收藏（后端与移动端共用）。">
@@ -329,10 +337,10 @@ export function SettingsView() {
                 }}
               />
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[13.5px] font-medium text-[#1D1D1F]">
+                <div className="truncate text-[13.5px] font-medium text-primary">
                   {user.nickname || user.username}
                 </div>
-                <div className="truncate text-[12px] text-[#86868B]">@{user.username}</div>
+                <div className="truncate text-[12px] text-secondary">@{user.username}</div>
               </div>
               <Button onClick={() => void logout()} disabled={authBusy} ariaLabel="退出登录">
                 <LogOut size={14} strokeWidth={1.75} />
@@ -340,12 +348,12 @@ export function SettingsView() {
               </Button>
             </div>
             {avatarMessage != null && (
-              <p className="text-[12px] text-[#86868B]">{avatarMessage}</p>
+              <p className="text-[12px] text-secondary">{avatarMessage}</p>
             )}
           </div>
         ) : (
           <>
-            <div className="flex gap-1 rounded-lg bg-black/[0.04] p-1">
+            <div className="flex gap-1 rounded-lg bg-hover p-1">
               {(['login', 'register'] as const).map((m) => (
                 <button
                   key={m}
@@ -353,7 +361,7 @@ export function SettingsView() {
                   aria-label={m === 'login' ? '登录' : '注册'}
                   onClick={() => setMode(m)}
                   className={`flex-1 rounded-md py-1.5 text-[12.5px] font-medium transition-colors ${
-                    mode === m ? 'bg-white text-[#1D1D1F] shadow-sm' : 'text-[#86868B]'
+                    mode === m ? 'bg-card text-primary shadow-sm' : 'text-secondary'
                   }`}
                 >
                   {m === 'login' ? '登录' : '注册'}
@@ -391,15 +399,49 @@ export function SettingsView() {
                 {authBusy ? '处理中…' : mode === 'login' ? '登录' : '注册并登录'}
               </Button>
               {authMessage != null && (
-                <span className="text-[12px] text-[#86868B]">{authMessage}</span>
+                <span className="text-[12px] text-secondary">{authMessage}</span>
               )}
             </div>
           </>
         )}
-        {authError != null && <p className="text-[12px] text-[#FA233B]">{authError}</p>}
+        {authError != null && <p className="text-[12px] text-accent">{authError}</p>}
         {user != null && authMessage != null && (
-          <p className="text-[12px] text-[#86868B]">{authMessage}</p>
+          <p className="text-[12px] text-secondary">{authMessage}</p>
         )}
+      </Section>
+
+      {/* 外观 —— 主题切换（浅色 / 深色 / 跟随系统），改动立即生效并持久保存 */}
+      <Section
+        title="外观"
+        description="切换浅色 / 深色主题，或跟随系统设置；改动立即生效，重启后保持。"
+      >
+        <div className="flex gap-1 rounded-lg bg-hover p-1" role="radiogroup" aria-label="外观主题">
+          {THEME_OPTIONS.map((option) => {
+            const active = snapshot.themeMode === option.mode
+            return (
+              <button
+                key={option.mode}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                data-theme-mode={option.mode}
+                onClick={() => settings.setThemeMode(option.mode)}
+                className={`flex flex-1 items-center justify-center gap-1.5 rounded-md py-1.5 text-[12.5px] font-medium transition-colors ${
+                  active ? 'bg-card text-primary shadow-sm' : 'text-secondary hover:text-primary'
+                }`}
+              >
+                {option.mode === 'light' ? (
+                  <Sun size={14} strokeWidth={1.75} />
+                ) : option.mode === 'dark' ? (
+                  <Moon size={14} strokeWidth={1.75} />
+                ) : (
+                  <Monitor size={14} strokeWidth={1.75} />
+                )}
+                {option.label}
+              </button>
+            )
+          })}
+        </div>
       </Section>
 
       {/* ChKSz */}
@@ -465,7 +507,7 @@ export function SettingsView() {
             </Button>
           )}
         </div>
-        <p className="text-[11.5px] text-[#86868B]">
+        <p className="text-[11.5px] text-secondary">
           当前状态：
           {snapshot.chkszApiKey.trim() === '' ? '未配置（网易云音源已关闭）' : '已配置'}
           {apiKeySaved && <span className="ml-1 text-[#1D9E5F]">已保存 · 立即生效</span>}
@@ -473,7 +515,7 @@ export function SettingsView() {
         {keyCheck != null && (
           <p
             data-chksz-check={keyCheck.ok ? 'ok' : 'fail'}
-            className={`flex items-center gap-1.5 text-[12px] ${keyCheck.ok ? 'text-[#1D9E5F]' : 'text-[#FA233B]'}`}
+            className={`flex items-center gap-1.5 text-[12px] ${keyCheck.ok ? 'text-[#1D9E5F]' : 'text-accent'}`}
           >
             {keyCheck.ok ? (
               <Check size={13} strokeWidth={2} />
@@ -506,8 +548,8 @@ export function SettingsView() {
             恢复默认
           </Button>
         </div>
-        <div className="flex items-center gap-2 text-[12.5px] text-[#1D1D1F]">
-          <span className="text-[#86868B]">当前占用：</span>
+        <div className="flex items-center gap-2 text-[12.5px] text-primary">
+          <span className="text-secondary">当前占用：</span>
           <span data-testid="cache-usage">
             {cacheInfo != null
               ? `${cacheInfo.fileCount} 个文件 · ${formatBytes(cacheInfo.totalBytes)}`
@@ -517,15 +559,15 @@ export function SettingsView() {
             type="button"
             aria-label="刷新缓存统计"
             onClick={() => void refreshCacheInfo()}
-            className="text-[#86868B] transition-colors hover:text-[#1D1D1F]"
+            className="text-secondary transition-colors hover:text-primary"
           >
             <RefreshCw size={13} strokeWidth={1.75} />
           </button>
         </div>
         {cacheInfo != null && (
-          <p className="break-all font-mono text-[11px] text-[#86868B]">{cacheInfo.directory}</p>
+          <p className="break-all font-mono text-[11px] text-secondary">{cacheInfo.directory}</p>
         )}
-        <label className="flex items-center gap-2 text-[12.5px] text-[#1D1D1F]">
+        <label className="flex items-center gap-2 text-[12.5px] text-primary">
           <input
             type="checkbox"
             aria-label="自动清理过期缓存"
@@ -535,8 +577,8 @@ export function SettingsView() {
           />
           自动清理过期缓存
         </label>
-        <div className="flex items-center gap-2 text-[12.5px] text-[#1D1D1F]">
-          <span className="text-[#86868B]">保留天数</span>
+        <div className="flex items-center gap-2 text-[12.5px] text-primary">
+          <span className="text-secondary">保留天数</span>
           <TextInput
             type="number"
             value={String(snapshot.cacheRetentionDays)}
@@ -544,7 +586,7 @@ export function SettingsView() {
             ariaLabel="缓存保留天数"
             className="w-[80px]"
           />
-          <span className="text-[11.5px] text-[#86868B]">1–90 天</span>
+          <span className="text-[11.5px] text-secondary">1–90 天</span>
         </div>
         <div className="flex items-center gap-3">
           <Button variant="danger" onClick={() => void clearCache()} disabled={cacheBusy} ariaLabel="清理缓存">
@@ -552,7 +594,7 @@ export function SettingsView() {
             清理缓存
           </Button>
           {cacheMessage != null && (
-            <span className="text-[12px] text-[#86868B]">{cacheMessage}</span>
+            <span className="text-[12px] text-secondary">{cacheMessage}</span>
           )}
         </div>
       </Section>
@@ -580,7 +622,7 @@ export function SettingsView() {
           >
             {desktopLyricsOpen ? '关闭桌面歌词窗口' : '打开桌面歌词窗口'}
           </Button>
-          <span className="text-[12px] text-[#86868B]">
+          <span className="text-[12px] text-secondary">
             当前：{desktopLyricsOpen ? '已打开' : '未打开'} · 播控栏右侧也可一键开关
           </span>
         </div>
@@ -589,7 +631,7 @@ export function SettingsView() {
       {/* 歌词 */}
       <Section title="歌词" description="歌词抽屉的字号与高亮颜色，改动即时生效。">
         <div className="flex items-center gap-4">
-          <span className="w-[60px] shrink-0 text-[12.5px] text-[#86868B]">字号</span>
+          <span className="w-[60px] shrink-0 text-[12.5px] text-secondary">字号</span>
           <input
             type="range"
             min={LYRICS_FONT_MIN}
@@ -599,12 +641,12 @@ export function SettingsView() {
             onChange={(e) => settings.setLyricsFontSize(Number(e.target.value))}
             className="h-1 flex-1 cursor-pointer accent-[#FA233B]"
           />
-          <span className="w-[46px] text-right text-[12.5px] tabular-nums text-[#1D1D1F]">
+          <span className="w-[46px] text-right text-[12.5px] tabular-nums text-primary">
             {snapshot.lyricsFontSize}px
           </span>
         </div>
         <div className="flex items-center gap-3">
-          <span className="w-[60px] shrink-0 text-[12.5px] text-[#86868B]">高亮色</span>
+          <span className="w-[60px] shrink-0 text-[12.5px] text-secondary">高亮色</span>
           <div className="flex items-center gap-2">
             {LYRICS_COLOR_PRESETS.map((preset) => {
               const selected = snapshot.lyricsColorValue === preset.value
@@ -617,7 +659,7 @@ export function SettingsView() {
                   onClick={() => settings.setLyricsColorValue(preset.value)}
                   style={{ backgroundColor: argbToCss(preset.value) }}
                   className={`h-6 w-6 rounded-full transition-transform ${
-                    selected ? 'ring-2 ring-offset-2 ring-[#1D1D1F]/30' : 'hover:scale-110'
+                    selected ? 'ring-2 ring-offset-2 ring-offset-card ring-primary/30' : 'hover:scale-110'
                   }`}
                 />
               )
@@ -636,7 +678,7 @@ export function SettingsView() {
           onChange={(genres) => taste.set({ genres })}
         />
         <div className="flex flex-wrap items-center gap-3">
-          <span data-testid="taste-summary" className="text-[12px] text-[#86868B]">
+          <span data-testid="taste-summary" className="text-[12px] text-secondary">
             {tastePrefs.genres.length > 0
               ? `已选 ${tastePrefs.genres.length}/${MAX_TASTE_GENRES} 个分类 · 改动即时生效`
               : '未选择分类（使用默认推荐）'}
@@ -689,10 +731,10 @@ function AboutSection() {
     <Section title="关于" description="检查新版本；下载会校验 sha256，安装时软件会退出并自动重启。">
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-baseline gap-2">
-          <span className="text-[12.5px] text-[#86868B]">当前版本</span>
+          <span className="text-[12.5px] text-secondary">当前版本</span>
           <span
             data-app-version={version ?? ''}
-            className="text-[13px] tabular-nums text-[#1D1D1F]"
+            className="text-[13px] tabular-nums text-primary"
           >
             v{version ?? '…'}
           </span>
@@ -708,8 +750,8 @@ function AboutSection() {
             }
             void checkForUpdate(true)
           }}
-          className={`flex items-center gap-1.5 rounded-lg border border-[#E5E5EA] bg-white px-3 py-1.5 text-[12.5px] transition-colors ${
-            disabled ? 'cursor-default text-[#86868B]' : 'hover:bg-black/[0.03] text-[#1D1D1F]'
+          className={`flex items-center gap-1.5 rounded-lg border border-subtle bg-card px-3 py-1.5 text-[12.5px] transition-colors ${
+            disabled ? 'cursor-default text-secondary' : 'hover:bg-hover text-primary'
           }`}
         >
           <RefreshCw

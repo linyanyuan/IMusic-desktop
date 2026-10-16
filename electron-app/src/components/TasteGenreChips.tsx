@@ -45,8 +45,8 @@ export function TasteGenreChips({
             onClick={() => toggle(genre.key)}
             className={`rounded-full px-3.5 py-1.5 text-[12.5px] transition-colors disabled:opacity-40 ${
               active
-                ? 'bg-[#FA233B] font-medium text-white'
-                : 'bg-[#F5F5F7] text-[#1D1D1F] hover:bg-black/[0.07]'
+                ? 'bg-accent font-medium text-white'
+                : 'bg-fill text-primary hover:bg-hover'
             }`}
           >
             {genre.label}

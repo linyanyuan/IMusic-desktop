@@ -18,8 +18,8 @@ export function TitleBar() {
   const api = window.imusicAPI
 
   return (
-    <div className="drag-region relative flex h-[38px] shrink-0 items-center justify-between border-b border-[#E5E5EA]/70 bg-[#F5F5F7]/70 backdrop-blur-xl">
-      <div className="pl-4 text-[13px] font-medium tracking-tight text-[#86868B]">
+    <div className="drag-region relative flex h-[38px] shrink-0 items-center justify-between border-b border-subtle/70 bg-sidebar/70 backdrop-blur-xl">
+      <div className="pl-4 text-[13px] font-medium tracking-tight text-secondary">
         IMusic
       </div>
       {/* 前进/后退：顶在侧栏右沿（侧栏区 240px 内右对齐，右内边距 12px） */}
@@ -31,7 +31,7 @@ export function TitleBar() {
           type="button"
           aria-label="最小化"
           onClick={() => void api?.winMinimize()}
-          className="flex h-full w-[46px] items-center justify-center text-[#86868B] transition-colors hover:bg-black/5"
+          className="flex h-full w-[46px] items-center justify-center text-secondary transition-colors hover:bg-hover"
         >
           <Minus size={14} strokeWidth={1.75} />
         </button>
@@ -42,7 +42,7 @@ export function TitleBar() {
             void api?.winMaximize()
             setMaximized((m) => !m)
           }}
-          className="flex h-full w-[46px] items-center justify-center text-[#86868B] transition-colors hover:bg-black/5"
+          className="flex h-full w-[46px] items-center justify-center text-secondary transition-colors hover:bg-hover"
         >
           {maximized ? (
             <Copy size={12} strokeWidth={1.75} />
@@ -54,7 +54,7 @@ export function TitleBar() {
           type="button"
           aria-label="关闭"
           onClick={() => void api?.winClose()}
-          className="flex h-full w-[46px] items-center justify-center text-[#86868B] transition-colors hover:bg-[#FA233B] hover:text-white"
+          className="flex h-full w-[46px] items-center justify-center text-secondary transition-colors hover:bg-accent hover:text-white"
         >
           <X size={15} strokeWidth={1.75} />
         </button>

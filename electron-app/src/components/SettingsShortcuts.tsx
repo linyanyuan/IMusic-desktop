@@ -47,9 +47,9 @@ const WINDOW_ACTIONS: ShortcutAction[] = ['toggleDesktopLyrics', 'toggleFocusMod
 
 /** 键帽的 3 种状态样式（录制 / 未绑定 / 已绑定）——抽成函数避免嵌套三元 */
 function bindingButtonClass(isRecording: boolean, bound: boolean): string {
-  if (isRecording) return 'border-[#FA233B] bg-[#FA233B]/10 text-[#FA233B]'
-  if (!bound) return 'border-dashed border-[#E5E5EA] bg-white text-[#86868B]'
-  return 'border-[#E5E5EA] bg-white text-[#1D1D1F] hover:border-[#FA233B]/50'
+  if (isRecording) return 'border-accent bg-accent/10 text-accent'
+  if (!bound) return 'border-dashed border-subtle bg-card text-secondary'
+  return 'border-subtle bg-card text-primary hover:border-accent/50'
 }
 
 function ActionIcon({ action }: { action: ShortcutAction }) {
@@ -124,11 +124,11 @@ export function SettingsShortcuts() {
   useEffect(() => () => setShortcutCaptureActive(false), [])
 
   const renderGroup = (title: string, actions: ShortcutAction[]) => (
-    <div className="overflow-hidden rounded-xl border border-[#E5E5EA] bg-white/60">
-      <div className="border-b border-[#E5E5EA] px-3.5 py-2 text-[11px] font-bold tracking-wide text-[#86868B]">
+    <div className="overflow-hidden rounded-xl border border-subtle bg-card/60">
+      <div className="border-b border-subtle px-3.5 py-2 text-[11px] font-bold tracking-wide text-secondary">
         {title}
       </div>
-      <ul className="divide-y divide-[#E5E5EA]">
+      <ul className="divide-y divide-subtle">
         {actions.map((action) => {
           const def = definitionFor(action)
           const binding = value.shortcutFor(action)
@@ -137,23 +137,23 @@ export function SettingsShortcuts() {
           const isRecording = recording === action
           return (
             <li key={action} className="flex items-center gap-3 px-3.5 py-2.5">
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[#F2F2F7] text-[#86868B]">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-fill text-secondary">
                 <ActionIcon action={action} />
               </span>
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 text-[12.5px] font-medium text-[#1D1D1F]">
+                <div className="flex items-center gap-2 text-[12.5px] font-medium text-primary">
                   {def.title}
                   <span
                     className={`rounded px-1.5 py-0.5 text-[10.5px] font-normal ${
                       def.scope === 'global'
-                        ? 'bg-[#FA233B]/10 text-[#FA233B]'
-                        : 'text-[#86868B] ring-1 ring-[#E5E5EA]'
+                        ? 'bg-accent/10 text-accent'
+                        : 'text-secondary ring-1 ring-subtle'
                     }`}
                   >
                     {def.scope === 'inApp' ? '应用内' : '全局'}
                   </span>
                 </div>
-                <div className="truncate text-[11.5px] text-[#86868B]">{def.description}</div>
+                <div className="truncate text-[11.5px] text-secondary">{def.description}</div>
                 {conflicts.length > 0 && (
                   <div className="mt-0.5 text-[11.5px] text-red-500">
                     已与 {conflicts.map((a) => definitionFor(a).title).join('、')} 冲突
@@ -181,7 +181,7 @@ export function SettingsShortcuts() {
                 type="button"
                 aria-label={`编辑快捷键 ${def.title}`}
                 onClick={() => setRecording(action)}
-                className="shrink-0 rounded-md p-1 text-[#86868B] hover:bg-[#F2F2F7] hover:text-[#1D1D1F]"
+                className="shrink-0 rounded-md p-1 text-secondary hover:bg-hover hover:text-primary"
               >
                 <Pencil size={14} strokeWidth={1.75} />
               </button>
@@ -195,7 +195,7 @@ export function SettingsShortcuts() {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center gap-3">
-        <label className="flex items-center gap-2 text-[12.5px] text-[#1D1D1F]">
+        <label className="flex items-center gap-2 text-[12.5px] text-primary">
           <input
             type="checkbox"
             data-testid="shortcut-global-toggle"
@@ -213,7 +213,7 @@ export function SettingsShortcuts() {
             setRecording(null)
             settings.setShortcutSettings(ShortcutSettings.defaults())
           }}
-          className="ml-auto flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] text-[#86868B] hover:bg-[#FA233B]/8 hover:text-[#1D1D1F]"
+          className="ml-auto flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] text-secondary hover:bg-accent/8 hover:text-primary"
         >
           <RotateCcw size={14} strokeWidth={1.75} />
           恢复默认
@@ -221,11 +221,11 @@ export function SettingsShortcuts() {
       </div>
       {renderGroup('播放控制', PLAYBACK_ACTIONS)}
       {renderGroup('窗口与歌词', WINDOW_ACTIONS)}
-      <p className="text-[11.5px] text-[#86868B]">
+      <p className="text-[11.5px] text-secondary">
         点键帽进入录制：Esc 取消、Backspace 解除绑定。全局热键被其他程序占用时不会生效，可改绑
         Ctrl + Alt + Shift + 键 等组合（部分系统会占用 Ctrl + Alt + 字母）。
       </p>
-      <p className="text-[11.5px] text-[#86868B]">
+      <p className="text-[11.5px] text-secondary">
         「显示/隐藏桌面歌词」切换 Electron 的独立桌面歌词窗口（`electron/lyricsWindow.ts`，全局热键
         Ctrl + Alt + D）。
       </p>

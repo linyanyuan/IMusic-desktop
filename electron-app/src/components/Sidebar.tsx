@@ -30,8 +30,8 @@ function NavItem({
       onClick={onClick}
       className={`flex w-full items-center gap-3 rounded-lg px-3 py-[7px] text-left text-[13.5px] transition-colors ${
         active
-          ? 'bg-[#FA233B]/10 font-medium text-[#FA233B]'
-          : 'text-[#1D1D1F] hover:bg-black/5'
+          ? 'bg-accent/10 font-medium text-accent'
+          : 'text-primary hover:bg-hover'
       }`}
     >
       {icon}
@@ -43,7 +43,7 @@ function NavItem({
 function GroupTitle({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) {
   return (
     <div className="mb-1 mt-5 flex items-center justify-between px-3">
-      <span className="text-[11px] font-semibold uppercase tracking-wider text-[#86868B]">
+      <span className="text-[11px] font-semibold uppercase tracking-wider text-secondary">
         {children}
       </span>
       {action}
@@ -76,14 +76,14 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="flex w-[240px] shrink-0 flex-col bg-[#F5F5F7]/85 backdrop-blur-xl">
+    <aside className="flex w-[240px] shrink-0 flex-col bg-sidebar/85 backdrop-blur-xl">
       {/* 搜索框 */}
       <div className="px-3 pt-3">
         <div className="group relative">
           <Search
             size={14}
             strokeWidth={1.75}
-            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[#86868B]"
+            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-secondary"
           />
           <input
             value={query}
@@ -93,14 +93,14 @@ export function Sidebar() {
             }}
             onFocus={() => route.openSearch(query)}
             placeholder="搜索歌曲、歌手、歌单"
-            className="w-full rounded-lg border border-transparent bg-black/[0.04] py-[7px] pl-8 pr-7 text-[13px] text-[#1D1D1F] outline-none transition-colors placeholder:text-[#86868B] focus:border-[#FA233B]/30 focus:bg-white"
+            className="w-full rounded-lg border border-transparent bg-hover py-[7px] pl-8 pr-7 text-[13px] text-primary outline-none transition-colors placeholder:text-secondary focus:border-accent/30 focus:bg-card"
           />
           {query !== '' && (
             <button
               type="button"
               aria-label="清空"
               onClick={() => setQuery('')}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-[#86868B] hover:text-[#1D1D1F]"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-secondary hover:text-primary"
             >
               <X size={13} strokeWidth={1.75} />
             </button>
@@ -155,7 +155,7 @@ export function Sidebar() {
               type="button"
               aria-label="新建歌单"
               onClick={() => setCreating(true)}
-              className="flex h-5 w-5 items-center justify-center rounded-md text-[#86868B] transition-colors hover:bg-black/5 hover:text-[#1D1D1F]"
+              className="flex h-5 w-5 items-center justify-center rounded-md text-secondary transition-colors hover:bg-hover hover:text-primary"
             >
               <Plus size={14} strokeWidth={2} />
             </button>
@@ -165,7 +165,7 @@ export function Sidebar() {
         </GroupTitle>
         <div className="space-y-0.5">
           {playlists.length === 0 && (
-            <p className="px-3 py-1 text-[12.5px] text-[#86868B]">还没有歌单</p>
+            <p className="px-3 py-1 text-[12.5px] text-secondary">还没有歌单</p>
           )}
           {playlists.map((pl) => {
             const id = pl['id']?.toString() ?? ''
@@ -180,14 +180,14 @@ export function Sidebar() {
                   onClick={() => route.go(DeskRoute.PlaylistDetail, { playlistId: id })}
                   className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-[6px] text-left text-[13.5px] transition-colors ${
                     active
-                      ? 'bg-[#FA233B]/10 font-medium text-[#FA233B]'
-                      : 'text-[#1D1D1F] hover:bg-black/5'
+                      ? 'bg-accent/10 font-medium text-accent'
+                      : 'text-primary hover:bg-hover'
                   }`}
                 >
                   {cover != null ? (
                     <Cover src={cover} size={28} radius="rounded-md" iconSize={12} seed={pl['name']?.toString()} />
                   ) : (
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-black/[0.05] text-[#86868B]">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-hover text-secondary">
                       <ListMusic size={14} strokeWidth={1.75} />
                     </span>
                   )}
@@ -203,7 +203,7 @@ export function Sidebar() {
                       void library.deletePlaylist(id)
                     }
                   }}
-                  className="absolute right-2 top-1/2 hidden -translate-y-1/2 rounded-md p-1 text-[#86868B] transition-colors hover:bg-black/10 hover:text-[#FA233B] group-hover/pl:block"
+                  className="absolute right-2 top-1/2 hidden -translate-y-1/2 rounded-md p-1 text-secondary transition-colors hover:bg-hover hover:text-accent group-hover/pl:block"
                 >
                   <Trash2 size={13} strokeWidth={2} />
                 </button>
@@ -213,7 +213,7 @@ export function Sidebar() {
         </div>
       </nav>
 
-      <div className="border-t border-[#E5E5EA]/70 p-2">
+      <div className="border-t border-subtle/70 p-2">
         <NavItem
           active={route.route === DeskRoute.Settings}
           icon={<Settings size={16} strokeWidth={1.75} />}
@@ -228,14 +228,14 @@ export function Sidebar() {
           onClick={() => route.go(DeskRoute.Profile)}
           className={`mt-0.5 flex w-full items-center gap-3 rounded-lg px-3 py-[7px] text-left text-[13.5px] transition-colors ${
             route.route === DeskRoute.Profile
-              ? 'bg-[#FA233B]/10 font-medium text-[#FA233B]'
-              : 'text-[#1D1D1F] hover:bg-black/5'
+              ? 'bg-accent/10 font-medium text-accent'
+              : 'text-primary hover:bg-hover'
           }`}
         >
           {auth.user != null ? (
             <UserAvatar user={auth.user} size={20} />
           ) : (
-            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-black/[0.08] text-[9px] font-semibold text-[#86868B]">
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-hover text-[9px] font-semibold text-secondary">
               ·
             </span>
           )}
@@ -254,13 +254,13 @@ export function Sidebar() {
             if (e.key === 'Enter') void submitCreate()
           }}
           placeholder="歌单名称"
-          className="w-full rounded-lg border border-[#E5E5EA] px-3 py-2 text-[13.5px] outline-none focus:border-[#FA233B]/40"
+          className="w-full rounded-lg border border-subtle px-3 py-2 text-[13.5px] outline-none focus:border-accent/40"
         />
         <div className="mt-4 flex justify-end gap-2">
           <button
             type="button"
             onClick={() => setCreating(false)}
-            className="rounded-lg px-3.5 py-1.5 text-[13px] text-[#86868B] hover:bg-black/5"
+            className="rounded-lg px-3.5 py-1.5 text-[13px] text-secondary hover:bg-hover"
           >
             取消
           </button>
@@ -268,7 +268,7 @@ export function Sidebar() {
             type="button"
             disabled={newName.trim() === '' || busy}
             onClick={() => void submitCreate()}
-            className="rounded-lg bg-[#FA233B] px-3.5 py-1.5 text-[13px] font-medium text-white transition-colors hover:bg-[#E01E34] disabled:opacity-40"
+            className="rounded-lg bg-accent px-3.5 py-1.5 text-[13px] font-medium text-white transition-colors hover:bg-accent-hover disabled:opacity-40"
           >
             创建
           </button>

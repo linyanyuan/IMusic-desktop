@@ -18,8 +18,8 @@ export function HistoryView() {
     <div className="space-y-7">
       <div className="flex items-end justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-[#1D1D1F]">历史播放</h1>
-          <p className="mt-1.5 text-[13px] text-[#86868B]">
+          <h1 className="text-3xl font-bold tracking-tight text-primary">历史播放</h1>
+          <p className="mt-1.5 text-[13px] text-secondary">
             共 {songs.length} 首{library.isLoading ? ' · 同步中…' : ''}
           </p>
         </div>
@@ -27,7 +27,7 @@ export function HistoryView() {
           type="button"
           disabled={songs.length === 0}
           onClick={() => void library.clearHistory()}
-          className="flex items-center gap-2 rounded-full bg-[#F5F5F7] px-4 py-2 text-[13px] text-[#86868B] transition-colors hover:bg-black/[0.07] hover:text-[#FA233B] disabled:opacity-40"
+          className="flex items-center gap-2 rounded-full bg-fill px-4 py-2 text-[13px] text-secondary transition-colors hover:bg-hover hover:text-accent disabled:opacity-40"
         >
           <Trash2 size={14} strokeWidth={1.75} />
           清空历史

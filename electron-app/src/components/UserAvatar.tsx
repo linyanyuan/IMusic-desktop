@@ -34,7 +34,7 @@ export function UserAvatar({
     <div
       data-user-avatar
       className={`flex shrink-0 items-center justify-center overflow-hidden rounded-full text-white ${
-        showImage ? 'bg-black/10' : 'bg-gradient-to-br from-[#FA233B] to-[#86868B]'
+        showImage ? 'bg-hover' : 'bg-gradient-to-br from-accent to-secondary'
       } ${className}`}
       style={{ width: size, height: size, fontSize: Math.round(size * 0.42), fontWeight: 600 }}
     >

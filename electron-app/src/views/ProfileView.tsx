@@ -12,9 +12,9 @@ import { DeskRoute, useRoute } from '../state/route'
 
 function Metric({ value, label }: { value: number; label: string }) {
   return (
-    <div className="rounded-xl bg-white/60 px-4 py-2.5 text-center backdrop-blur">
-      <div className="text-[19px] font-semibold tabular-nums text-[#1D1D1F]">{value}</div>
-      <div className="mt-0.5 text-[11.5px] text-[#86868B]">{label}</div>
+    <div className="rounded-xl bg-card/60 px-4 py-2.5 text-center backdrop-blur">
+      <div className="text-[19px] font-semibold tabular-nums text-primary">{value}</div>
+      <div className="mt-0.5 text-[11.5px] text-secondary">{label}</div>
     </div>
   )
 }
@@ -36,20 +36,20 @@ function PlaylistCard({
     <button
       type="button"
       onClick={onClick}
-      className="group flex items-center gap-4 rounded-2xl border border-[#E5E5EA] bg-white/70 p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-[0_10px_28px_rgba(0,0,0,0.08)]"
+      className="group flex items-center gap-4 rounded-2xl border border-subtle bg-card/70 p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-[0_10px_28px_rgba(0,0,0,0.08)]"
     >
       {cover != null ? (
         <Cover src={cover} size={56} radius="rounded-xl" iconSize={18} seed={name} />
       ) : (
-        <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-[#FA233B]/10 text-[#FA233B]">
+        <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent">
           {collected ? <Heart size={20} strokeWidth={1.75} /> : <ListMusic size={20} strokeWidth={1.75} />}
         </span>
       )}
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[14px] font-semibold text-[#1D1D1F]">{name}</div>
-        <div className="mt-1 text-[12px] text-[#86868B]">{count} 首</div>
+        <div className="truncate text-[14px] font-semibold text-primary">{name}</div>
+        <div className="mt-1 text-[12px] text-secondary">{count} 首</div>
       </div>
-      <ChevronRight size={18} strokeWidth={1.75} className="shrink-0 text-[#C7C7CC] group-hover:text-[#86868B]" />
+      <ChevronRight size={18} strokeWidth={1.75} className="shrink-0 text-secondary/60 transition-colors group-hover:text-secondary" />
     </button>
   )
 }
@@ -73,14 +73,14 @@ export function ProfileView() {
   if (user == null) {
     return (
       <div data-testid="profile-view" className="flex h-full flex-col items-center justify-center gap-3">
-        <UserCircle2 size={44} strokeWidth={1.25} className="text-[#C7C7CC]" />
-        <p className="text-[15px] font-medium text-[#1D1D1F]">还没有登录</p>
-        <p className="text-[13px] text-[#86868B]">登录后可在多端同步歌单与收藏</p>
+        <UserCircle2 size={44} strokeWidth={1.25} className="text-secondary" />
+        <p className="text-[15px] font-medium text-primary">还没有登录</p>
+        <p className="text-[13px] text-secondary">登录后可在多端同步歌单与收藏</p>
         <button
           type="button"
           data-testid="profile-login-entry"
           onClick={() => route.go(DeskRoute.Settings)}
-          className="mt-2 rounded-full bg-[#FA233B] px-5 py-2 text-[13px] font-medium text-white transition-colors hover:bg-[#E01E34]"
+          className="mt-2 rounded-full bg-accent px-5 py-2 text-[13px] font-medium text-white transition-colors hover:bg-accent-hover"
         >
           去登录
         </button>
@@ -91,14 +91,14 @@ export function ProfileView() {
   return (
     <div data-testid="profile-view" className="space-y-6">
       {/* 用户头部 */}
-      <div className="relative overflow-hidden rounded-3xl border border-[#E5E5EA] bg-gradient-to-br from-[#FFF5F6] to-[#F5F5F7] p-8">
+      <div className="relative overflow-hidden rounded-3xl border border-subtle bg-gradient-to-br from-accent/[0.08] to-sidebar p-8">
         <div className="flex items-center gap-6">
           <UserAvatar user={user} size={104} className="shadow-[0_12px_32px_rgba(250,35,59,0.3)]" />
           <div className="min-w-0 flex-1">
-            <h1 data-testid="profile-nickname" className="truncate text-[30px] font-bold tracking-tight text-[#1D1D1F]">
+            <h1 data-testid="profile-nickname" className="truncate text-[30px] font-bold tracking-tight text-primary">
               {user.nickname || user.username}
             </h1>
-            <p data-testid="profile-username" className="mt-1 truncate text-[13.5px] text-[#86868B]">
+            <p data-testid="profile-username" className="mt-1 truncate text-[13.5px] text-secondary">
               @{user.username}
             </p>
             <div className="mt-4 flex gap-3">
@@ -110,7 +110,7 @@ export function ProfileView() {
           <button
             type="button"
             onClick={() => void auth.logout()}
-            className="flex shrink-0 items-center gap-2 rounded-full bg-white/70 px-4 py-2 text-[12.5px] text-[#86868B] backdrop-blur transition-colors hover:text-[#FA233B]"
+            className="flex shrink-0 items-center gap-2 rounded-full bg-card/70 px-4 py-2 text-[12.5px] text-secondary backdrop-blur transition-colors hover:text-accent"
           >
             <LogOut size={14} strokeWidth={1.75} />
             退出登录
@@ -120,46 +120,46 @@ export function ProfileView() {
 
       {/* 音乐库 */}
       <section>
-        <h2 className="mb-3 text-[16px] font-semibold tracking-tight text-[#1D1D1F]">音乐库</h2>
+        <h2 className="mb-3 text-[16px] font-semibold tracking-tight text-primary">音乐库</h2>
         <div className="grid grid-cols-2 gap-4">
           <button
             type="button"
             data-testid="profile-liked-card"
             onClick={() => route.go(DeskRoute.Favorites)}
-            className="flex items-center gap-4 rounded-2xl border border-[#E5E5EA] bg-white/70 p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-[0_10px_28px_rgba(0,0,0,0.08)]"
+            className="flex items-center gap-4 rounded-2xl border border-subtle bg-card/70 p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-[0_10px_28px_rgba(0,0,0,0.08)]"
           >
-            <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#FA233B] to-[#FF7A59] text-white">
+            <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-[#FF7A59] text-white">
               <Heart size={22} strokeWidth={1.75} fill="currentColor" />
             </span>
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[14px] font-semibold text-[#1D1D1F]">我喜欢的音乐</div>
-              <div className="mt-1 text-[12px] text-[#86868B]">{library.likedSongs.length} 首</div>
+              <div className="truncate text-[14px] font-semibold text-primary">我喜欢的音乐</div>
+              <div className="mt-1 text-[12px] text-secondary">{library.likedSongs.length} 首</div>
             </div>
-            <ChevronRight size={18} strokeWidth={1.75} className="shrink-0 text-[#C7C7CC]" />
+            <ChevronRight size={18} strokeWidth={1.75} className="shrink-0 text-secondary" />
           </button>
           <button
             type="button"
             data-testid="profile-history-card"
             onClick={() => route.go(DeskRoute.History)}
-            className="flex items-center gap-4 rounded-2xl border border-[#E5E5EA] bg-white/70 p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-[0_10px_28px_rgba(0,0,0,0.08)]"
+            className="flex items-center gap-4 rounded-2xl border border-subtle bg-card/70 p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-[0_10px_28px_rgba(0,0,0,0.08)]"
           >
-            <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-[#F5F5F7] text-[#1D1D1F]">
+            <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-fill text-primary">
               <Clock size={22} strokeWidth={1.75} />
             </span>
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[14px] font-semibold text-[#1D1D1F]">历史播放</div>
-              <div className="mt-1 text-[12px] text-[#86868B]">{library.history.length} 条</div>
+              <div className="truncate text-[14px] font-semibold text-primary">历史播放</div>
+              <div className="mt-1 text-[12px] text-secondary">{library.history.length} 条</div>
             </div>
-            <ChevronRight size={18} strokeWidth={1.75} className="shrink-0 text-[#C7C7CC]" />
+            <ChevronRight size={18} strokeWidth={1.75} className="shrink-0 text-secondary" />
           </button>
         </div>
       </section>
 
       {/* 创建的歌单 */}
       <section data-testid="profile-created">
-        <h2 className="mb-3 text-[16px] font-semibold tracking-tight text-[#1D1D1F]">创建的歌单</h2>
+        <h2 className="mb-3 text-[16px] font-semibold tracking-tight text-primary">创建的歌单</h2>
         {created.length === 0 ? (
-          <p className="text-[13px] text-[#86868B]">还没有创建的歌单</p>
+          <p className="text-[13px] text-secondary">还没有创建的歌单</p>
         ) : (
           <div className="grid grid-cols-2 gap-4">
             {created.map((pl) => (
@@ -180,9 +180,9 @@ export function ProfileView() {
 
       {/* 收藏的歌单 */}
       <section data-testid="profile-collected">
-        <h2 className="mb-3 text-[16px] font-semibold tracking-tight text-[#1D1D1F]">收藏的歌单</h2>
+        <h2 className="mb-3 text-[16px] font-semibold tracking-tight text-primary">收藏的歌单</h2>
         {collected.length === 0 ? (
-          <p className="text-[13px] text-[#86868B]">还没有收藏的歌单</p>
+          <p className="text-[13px] text-secondary">还没有收藏的歌单</p>
         ) : (
           <div className="grid grid-cols-2 gap-4">
             {collected.map((pl) => (

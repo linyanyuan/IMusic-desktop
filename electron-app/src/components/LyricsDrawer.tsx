@@ -41,7 +41,7 @@ export function LyricsDrawer({ onClose }: { onClose: () => void }) {
   // 用 if/else 先选分支，避免 JSX 里的嵌套三元（项目约定禁用）
   let body: ReactNode
   if (player.lyrics.trim() === '') {
-    body = <p className="text-[13px] text-[#86868B]">暂无歌词</p>
+    body = <p className="text-[13px] text-secondary">暂无歌词</p>
   } else if (lines.length > 0) {
     body = (
       <div className="flex flex-col gap-1 pb-24 pt-24">
@@ -60,7 +60,7 @@ export function LyricsDrawer({ onClose }: { onClose: () => void }) {
               className={`shrink-0 whitespace-pre-line rounded-lg px-2 py-1.5 text-left leading-[1.5] transition-all duration-200 ${
                 isActive
                   ? 'font-semibold'
-                  : 'text-[#86868B] hover:bg-black/[0.03] hover:text-[#1D1D1F]'
+                  : 'text-secondary hover:bg-hover hover:text-primary'
               }`}
             >
               {line.text === '' ? '♪' : line.text}
@@ -71,7 +71,7 @@ export function LyricsDrawer({ onClose }: { onClose: () => void }) {
     )
   } else {
     body = (
-      <div className="whitespace-pre-line text-[13.5px] leading-7 text-[#1D1D1F]">
+      <div className="whitespace-pre-line text-[13.5px] leading-7 text-primary">
         {plain.join('\n')}
       </div>
     )
@@ -79,11 +79,11 @@ export function LyricsDrawer({ onClose }: { onClose: () => void }) {
 
   return (
     <>
-      <div className="flex items-center justify-between border-b border-[#E5E5EA]/70 px-5 py-3">
+      <div className="flex items-center justify-between border-b border-subtle/70 px-5 py-3">
         <div className="min-w-0">
-          <h3 className="text-[14px] font-semibold text-[#1D1D1F]">歌词</h3>
+          <h3 className="text-[14px] font-semibold text-primary">歌词</h3>
           {song != null && (
-            <p className="truncate text-[11.5px] text-[#86868B]">
+            <p className="truncate text-[11.5px] text-secondary">
               {song.title} · {song.artist}
             </p>
           )}
@@ -92,7 +92,7 @@ export function LyricsDrawer({ onClose }: { onClose: () => void }) {
           type="button"
           aria-label="关闭抽屉"
           onClick={onClose}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[#86868B] hover:bg-black/5"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-secondary hover:bg-hover"
         >
           <X size={15} strokeWidth={1.75} />
         </button>
@@ -103,7 +103,7 @@ export function LyricsDrawer({ onClose }: { onClose: () => void }) {
       </div>
 
       {lines.length > 0 && (
-        <div className="pointer-events-none absolute bottom-3 left-0 right-0 text-center text-[11px] text-[#86868B]">
+        <div className="pointer-events-none absolute bottom-3 left-0 right-0 text-center text-[11px] text-secondary">
           点击歌词行可跳转进度
         </div>
       )}

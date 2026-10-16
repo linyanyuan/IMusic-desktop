@@ -33,8 +33,8 @@ function NavButton({
       onClick={onClick}
       className={`flex h-7 w-7 items-center justify-center rounded-full transition-all ${
         disabled
-          ? 'cursor-default text-[#C7C7CC]'
-          : 'text-[#1D1D1F] hover:bg-black/[0.06] active:scale-90'
+          ? 'cursor-default text-secondary'
+          : 'text-primary hover:bg-hover active:scale-90'
       }`}
     >
       {children}

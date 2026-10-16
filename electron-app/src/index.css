@@ -12,7 +12,7 @@ body {
   font-family:
     -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC',
     sans-serif;
-  color: var(--color-text-primary);
+  color: var(--color-primary);
   background: var(--color-bg-main);
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
@@ -48,6 +48,13 @@ body {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(0, 0, 0, 0.28);
+}
+/* 暗色下滚动条反转为浅色，否则在深底上几乎看不见 */
+html.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.25);
+}
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.4);
 }
 ::-webkit-scrollbar-track {
   background: transparent;

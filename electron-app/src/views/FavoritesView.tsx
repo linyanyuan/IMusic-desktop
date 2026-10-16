@@ -28,17 +28,17 @@ export function FavoritesView() {
     <div className="space-y-7">
       {/* 头部 */}
       <div className="flex items-end gap-7">
-        <div className="flex h-[192px] w-[192px] shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#FA233B] to-[#FF7A59] shadow-[0_12px_36px_rgba(250,35,59,0.28)]">
+        <div className="flex h-[192px] w-[192px] shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-[#FF7A59] shadow-[0_12px_36px_rgba(250,35,59,0.28)]">
           <Heart size={72} strokeWidth={1.5} fill="white" className="text-white" />
         </div>
         <div className="pb-2">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-[#86868B]">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-secondary">
             Playlist
           </div>
-          <h1 className="mt-1 text-[40px] font-bold leading-tight tracking-tight text-[#1D1D1F]">
+          <h1 className="mt-1 text-[40px] font-bold leading-tight tracking-tight text-primary">
             我喜欢的音乐
           </h1>
-          <div className="mt-2 text-[13px] text-[#86868B]">
+          <div className="mt-2 text-[13px] text-secondary">
             {songs.length} 首歌曲
             {totalSeconds > 0 ? ` · ${formatTotalDuration(totalSeconds)}` : ''}
           </div>
@@ -47,7 +47,7 @@ export function FavoritesView() {
               type="button"
               disabled={songs.length === 0}
               onClick={() => playAll(false)}
-              className="flex items-center gap-2 rounded-full bg-[#FA233B] px-5 py-2 text-[13.5px] font-medium text-white transition-colors hover:bg-[#E01E34] disabled:opacity-40"
+              className="flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-[13.5px] font-medium text-white transition-colors hover:bg-accent-hover disabled:opacity-40"
             >
               <Play size={15} strokeWidth={2} fill="currentColor" />
               播放全部
@@ -56,7 +56,7 @@ export function FavoritesView() {
               type="button"
               disabled={songs.length === 0}
               onClick={() => playAll(true)}
-              className="flex items-center gap-2 rounded-full bg-[#F5F5F7] px-5 py-2 text-[13.5px] font-medium text-[#FA233B] transition-colors hover:bg-black/[0.07] disabled:opacity-40"
+              className="flex items-center gap-2 rounded-full bg-fill px-5 py-2 text-[13.5px] font-medium text-accent transition-colors hover:bg-hover disabled:opacity-40"
             >
               <Shuffle size={15} strokeWidth={2} />
               随机播放

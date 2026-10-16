@@ -13,7 +13,7 @@ export function PlayingIndicator({ size = 14, className = '' }: { size?: number;
       {[0, 1, 2].map((i) => (
         <span
           key={i}
-          className="w-[2.5px] rounded-full bg-[#FA233B] animate-[eq_900ms_ease-in-out_infinite]"
+          className="w-[2.5px] rounded-full bg-accent animate-[eq_900ms_ease-in-out_infinite]"
           style={{ animationDelay: `${i * 160}ms` }}
         />
       ))}

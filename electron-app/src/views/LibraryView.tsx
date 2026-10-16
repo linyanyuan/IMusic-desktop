@@ -72,33 +72,33 @@ function OfflinePanel() {
 
   return (
     <div data-testid="library-offline" className="space-y-5">
-      <div className="rounded-2xl border border-[#E5E5EA] bg-white/70 p-7">
+      <div className="rounded-2xl border border-subtle bg-card/70 p-7">
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="text-[22px] font-semibold tracking-tight text-[#1D1D1F]">离线缓存</h2>
-            <p className="mt-1.5 text-[13px] text-[#86868B]">
+            <h2 className="text-[22px] font-semibold tracking-tight text-primary">离线缓存</h2>
+            <p className="mt-1.5 text-[13px] text-secondary">
               B 站等需要请求头的音源会整首落盘后再播放；直链音源（netease/直链 API）不落盘。
             </p>
           </div>
-          <HardDrive size={34} strokeWidth={1.25} className="text-[#FA233B]" />
+          <HardDrive size={34} strokeWidth={1.25} className="text-accent" />
         </div>
 
         <div className="mt-6 grid grid-cols-2 gap-4">
-          <div className="rounded-xl bg-[#F5F5F7]/70 px-4 py-3">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-[#86868B]">缓存文件</div>
-            <div data-testid="offline-file-count" className="mt-1 text-[22px] font-semibold tabular-nums text-[#1D1D1F]">
+          <div className="rounded-xl bg-fill/70 px-4 py-3">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-secondary">缓存文件</div>
+            <div data-testid="offline-file-count" className="mt-1 text-[22px] font-semibold tabular-nums text-primary">
               {stats?.fileCount ?? '—'}
             </div>
           </div>
-          <div className="rounded-xl bg-[#F5F5F7]/70 px-4 py-3">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-[#86868B]">占用空间</div>
-            <div data-testid="offline-total-bytes" className="mt-1 text-[22px] font-semibold tabular-nums text-[#1D1D1F]">
+          <div className="rounded-xl bg-fill/70 px-4 py-3">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-secondary">占用空间</div>
+            <div data-testid="offline-total-bytes" className="mt-1 text-[22px] font-semibold tabular-nums text-primary">
               {stats != null ? formatBytes(stats.totalBytes) : '—'}
             </div>
           </div>
         </div>
 
-        <div className="mt-4 truncate text-[12px] text-[#86868B]" title={stats?.directory ?? ''}>
+        <div className="mt-4 truncate text-[12px] text-secondary" title={stats?.directory ?? ''}>
           缓存目录：{stats?.directory ?? '读取中…'}
         </div>
 
@@ -107,7 +107,7 @@ function OfflinePanel() {
             type="button"
             disabled={busy || (stats?.fileCount ?? 0) === 0}
             onClick={() => void clear()}
-            className="flex items-center gap-2 rounded-full bg-[#F5F5F7] px-4 py-2 text-[13px] text-[#86868B] transition-colors hover:bg-black/[0.07] hover:text-[#FA233B] disabled:opacity-40"
+            className="flex items-center gap-2 rounded-full bg-fill px-4 py-2 text-[13px] text-secondary transition-colors hover:bg-hover hover:text-accent disabled:opacity-40"
           >
             <Trash2 size={14} strokeWidth={1.75} />
             清空缓存
@@ -115,11 +115,11 @@ function OfflinePanel() {
           <button
             type="button"
             onClick={() => void refresh()}
-            className="rounded-full px-4 py-2 text-[13px] text-[#86868B] transition-colors hover:bg-black/[0.05]"
+            className="rounded-full px-4 py-2 text-[13px] text-secondary transition-colors hover:bg-hover"
           >
             刷新
           </button>
-          {note != null && <span className="text-[12px] text-[#86868B]">{note}</span>}
+          {note != null && <span className="text-[12px] text-secondary">{note}</span>}
         </div>
       </div>
     </div>
@@ -149,13 +149,13 @@ export function LibraryView() {
       {/* 标题 */}
       <div className="flex items-end justify-between">
         <div>
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-[#86868B]">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-secondary">
             Library
           </div>
-          <h1 className="mt-1 text-[32px] font-bold leading-tight tracking-tight text-[#1D1D1F]">
+          <h1 className="mt-1 text-[32px] font-bold leading-tight tracking-tight text-primary">
             我的音乐
           </h1>
-          <p className="mt-1 text-[13px] text-[#86868B]">
+          <p className="mt-1 text-[13px] text-secondary">
             {liked.length} 首喜欢 · {playlists.length} 个歌单 · {history.length} 条播放记录
             {library.isLoading ? ' · 同步中…' : ''}
           </p>
@@ -166,7 +166,7 @@ export function LibraryView() {
               type="button"
               disabled={liked.length === 0}
               onClick={() => playQueue(liked, 0)}
-              className="flex items-center gap-2 rounded-full bg-[#FA233B] px-4 py-2 text-[13px] font-medium text-white transition-colors hover:bg-[#E01E34] disabled:opacity-40"
+              className="flex items-center gap-2 rounded-full bg-accent px-4 py-2 text-[13px] font-medium text-white transition-colors hover:bg-accent-hover disabled:opacity-40"
             >
               <Play size={14} strokeWidth={2} fill="currentColor" />
               播放全部
@@ -175,7 +175,7 @@ export function LibraryView() {
               type="button"
               disabled={liked.length === 0}
               onClick={() => playQueue(liked, Math.floor(Math.random() * liked.length))}
-              className="flex items-center gap-2 rounded-full bg-[#F5F5F7] px-4 py-2 text-[13px] font-medium text-[#FA233B] transition-colors hover:bg-black/[0.07] disabled:opacity-40"
+              className="flex items-center gap-2 rounded-full bg-fill px-4 py-2 text-[13px] font-medium text-accent transition-colors hover:bg-hover disabled:opacity-40"
             >
               <Shuffle size={14} strokeWidth={2} />
               随机
@@ -185,7 +185,7 @@ export function LibraryView() {
       </div>
 
       {/* 标签页 */}
-      <div className="flex gap-1 border-b border-[#E5E5EA]" role="tablist">
+      <div className="flex gap-1 border-b border-subtle" role="tablist">
         {TABS.map((t) => {
           const active = tab === t.id
           return (
@@ -198,13 +198,13 @@ export function LibraryView() {
               data-active={active ? 'true' : 'false'}
               onClick={() => setTab(t.id)}
               className={`relative flex items-center gap-2 px-4 py-2.5 text-[13.5px] transition-colors ${
-                active ? 'font-medium text-[#FA233B]' : 'text-[#86868B] hover:text-[#1D1D1F]'
+                active ? 'font-medium text-accent' : 'text-secondary hover:text-primary'
               }`}
             >
               {t.icon}
               {t.label}
               {active && (
-                <span className="absolute inset-x-2 -bottom-px h-[2px] rounded-full bg-[#FA233B]" />
+                <span className="absolute inset-x-2 -bottom-px h-[2px] rounded-full bg-accent" />
               )}
             </button>
           )
@@ -213,7 +213,7 @@ export function LibraryView() {
 
       {tab === 'liked' && (
         <div data-testid="library-liked" className="space-y-4">
-          <div className="text-[13px] text-[#86868B]">
+          <div className="text-[13px] text-secondary">
             {liked.length} 首歌曲
             {totalSeconds > 0 ? ` · ${formatTotalDuration(totalSeconds)}` : ''}
           </div>
@@ -231,7 +231,7 @@ export function LibraryView() {
       {tab === 'playlists' && (
         <div data-testid="library-playlists">
           {playlists.length === 0 ? (
-            <div className="py-16 text-center text-[13px] text-[#86868B]">
+            <div className="py-16 text-center text-[13px] text-secondary">
               还没有歌单 —— 在左侧「创建的歌单」点 + 新建
             </div>
           ) : (
@@ -247,22 +247,22 @@ export function LibraryView() {
                     key={id}
                     type="button"
                     onClick={() => route.go(DeskRoute.PlaylistDetail, { playlistId: id })}
-                    className="group flex items-center gap-4 rounded-2xl border border-[#E5E5EA] bg-white/70 p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-[0_10px_28px_rgba(0,0,0,0.08)]"
+                    className="group flex items-center gap-4 rounded-2xl border border-subtle bg-card/70 p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-[0_10px_28px_rgba(0,0,0,0.08)]"
                   >
                     {cover != null ? (
                       <Cover src={cover} size={56} radius="rounded-xl" iconSize={18} seed={name} />
                     ) : (
-                      <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-[#FA233B]/10 text-[#FA233B]">
+                      <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent">
                         {collected ? <Heart size={20} strokeWidth={1.75} /> : <ListMusic size={20} strokeWidth={1.75} />}
                       </span>
                     )}
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-[14px] font-semibold text-[#1D1D1F]">{name}</div>
-                      <div className="mt-1 text-[12px] text-[#86868B]">
+                      <div className="truncate text-[14px] font-semibold text-primary">{name}</div>
+                      <div className="mt-1 text-[12px] text-secondary">
                         {collected ? '收藏的' : '创建的'} · {songs} 首
                       </div>
                     </div>
-                    <ChevronRight size={18} strokeWidth={1.75} className="shrink-0 text-[#C7C7CC] group-hover:text-[#86868B]" />
+                    <ChevronRight size={18} strokeWidth={1.75} className="shrink-0 text-secondary group-hover:text-secondary" />
                   </button>
                 )
               })}
@@ -274,12 +274,12 @@ export function LibraryView() {
       {tab === 'history' && (
         <div data-testid="library-history" className="space-y-4">
           <div className="flex items-center justify-between">
-            <div className="text-[13px] text-[#86868B]">共 {history.length} 首</div>
+            <div className="text-[13px] text-secondary">共 {history.length} 首</div>
             <button
               type="button"
               disabled={history.length === 0}
               onClick={() => void library.clearHistory()}
-              className="flex items-center gap-2 rounded-full bg-[#F5F5F7] px-4 py-1.5 text-[12.5px] text-[#86868B] transition-colors hover:bg-black/[0.07] hover:text-[#FA233B] disabled:opacity-40"
+              className="flex items-center gap-2 rounded-full bg-fill px-4 py-1.5 text-[12.5px] text-secondary transition-colors hover:bg-hover hover:text-accent disabled:opacity-40"
             >
               <Trash2 size={13} strokeWidth={1.75} />
               清空历史

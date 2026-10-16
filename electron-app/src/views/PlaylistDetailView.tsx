@@ -134,8 +134,8 @@ export function PlaylistDetailView() {
   if (loading && resolved == null) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
-        <Loader2 size={28} strokeWidth={1.5} className="animate-spin text-[#C7C7CC]" />
-        <p className="mt-3 text-[14px] text-[#86868B]">正在载入歌单…</p>
+        <Loader2 size={28} strokeWidth={1.5} className="animate-spin text-secondary" />
+        <p className="mt-3 text-[14px] text-secondary">正在载入歌单…</p>
       </div>
     )
   }
@@ -143,8 +143,8 @@ export function PlaylistDetailView() {
   if (resolved == null) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
-        <ListMusic size={40} strokeWidth={1.25} className="text-[#C7C7CC]" />
-        <p className="mt-3 text-[14px] text-[#86868B]">
+        <ListMusic size={40} strokeWidth={1.25} className="text-secondary" />
+        <p className="mt-3 text-[14px] text-secondary">
           {error != null ? `歌单载入失败：${error}` : '歌单不存在或已被删除'}
         </p>
       </div>
@@ -194,21 +194,21 @@ export function PlaylistDetailView() {
         {cover != null ? (
           <Cover src={cover} size={192} radius="rounded-xl" className="shadow-[0_12px_36px_rgba(0,0,0,0.16)]" iconSize={48} seed={name} />
         ) : (
-          <div className="flex h-[192px] w-[192px] shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#F5F5F7] to-[#E5E5EA] shadow-[0_12px_36px_rgba(0,0,0,0.08)]">
-            <ListMusic size={64} strokeWidth={1.25} className="text-[#C7C7CC]" />
+          <div className="flex h-[192px] w-[192px] shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-fill to-subtle shadow-[0_12px_36px_rgba(0,0,0,0.08)]">
+            <ListMusic size={64} strokeWidth={1.25} className="text-secondary" />
           </div>
         )}
         <div className="pb-2">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-[#86868B]">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-secondary">
             {editable ? 'Playlist' : 'Collection'}
           </div>
           <h1
             data-playlist-title
-            className="mt-1 max-w-[620px] text-[40px] font-bold leading-tight tracking-tight text-[#1D1D1F]"
+            className="mt-1 max-w-[620px] text-[40px] font-bold leading-tight tracking-tight text-primary"
           >
             {name}
           </h1>
-          <div className="mt-2 text-[13px] text-[#86868B]">
+          <div className="mt-2 text-[13px] text-secondary">
             {songs.length} 首歌曲
             {totalSeconds > 0 ? ` · ${formatTotalDuration(totalSeconds)}` : ''}
           </div>
@@ -217,7 +217,7 @@ export function PlaylistDetailView() {
               type="button"
               disabled={songs.length === 0}
               onClick={() => playAll(false)}
-              className="flex items-center gap-2 rounded-full bg-[#FA233B] px-5 py-2 text-[13.5px] font-medium text-white transition-colors hover:bg-[#E01E34] disabled:opacity-40"
+              className="flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-[13.5px] font-medium text-white transition-colors hover:bg-accent-hover disabled:opacity-40"
             >
               <Play size={15} strokeWidth={2} fill="currentColor" />
               播放全部
@@ -226,7 +226,7 @@ export function PlaylistDetailView() {
               type="button"
               disabled={songs.length === 0}
               onClick={() => playAll(true)}
-              className="flex items-center gap-2 rounded-full bg-[#F5F5F7] px-5 py-2 text-[13.5px] font-medium text-[#FA233B] transition-colors hover:bg-black/[0.07] disabled:opacity-40"
+              className="flex items-center gap-2 rounded-full bg-fill px-5 py-2 text-[13.5px] font-medium text-accent transition-colors hover:bg-hover disabled:opacity-40"
             >
               <Shuffle size={15} strokeWidth={2} />
               随机播放
@@ -240,8 +240,8 @@ export function PlaylistDetailView() {
                 onClick={() => void toggleCollect()}
                 className={`flex items-center gap-2 rounded-full px-5 py-2 text-[13.5px] font-medium transition-colors disabled:opacity-50 ${
                   collected
-                    ? 'bg-[#FA233B] text-white hover:bg-[#E01E34]'
-                    : 'bg-[#F5F5F7] text-[#FA233B] hover:bg-black/[0.07]'
+                    ? 'bg-accent text-white hover:bg-accent-hover'
+                    : 'bg-fill text-accent hover:bg-hover'
                 }`}
               >
                 {collectBusy ? (
@@ -261,7 +261,7 @@ export function PlaylistDetailView() {
                     void library.deletePlaylist(id).then(() => route.go(DeskRoute.Library))
                   }
                 }}
-                className="flex items-center gap-2 rounded-full bg-[#F5F5F7] px-5 py-2 text-[13.5px] font-medium text-[#86868B] transition-colors hover:bg-[#FA233B]/10 hover:text-[#FA233B]"
+                className="flex items-center gap-2 rounded-full bg-fill px-5 py-2 text-[13.5px] font-medium text-secondary transition-colors hover:bg-accent/10 hover:text-accent"
               >
                 <Trash2 size={15} strokeWidth={2} />
                 删除歌单

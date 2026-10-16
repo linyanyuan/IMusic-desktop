@@ -29,8 +29,13 @@ export interface AppSettingsSnapshot {
   lyricsFontSize: number
   lyricsColorValue: number
   chkszApiKey: string
+  /** 外观：浅色 / 深色 / 跟随系统（设置页三选一） */
+  themeMode: ThemeMode
   shortcutSettings: ShortcutSettings
 }
+
+/** 主题模式 —— light/dark 为手动固定，system 跟随操作系统 */
+export type ThemeMode = 'light' | 'dark' | 'system'
 
 const DEFAULTS: AppSettingsSnapshot = {
   cacheDirectory: '',
@@ -39,6 +44,7 @@ const DEFAULTS: AppSettingsSnapshot = {
   lyricsFontSize: 22,
   lyricsColorValue: 0xff1ed760,
   chkszApiKey: BUILD_TIME_CHKSZ_API_KEY,
+  themeMode: 'system',
   shortcutSettings: ShortcutSettings.defaults(),
 }
 
@@ -50,6 +56,7 @@ export const APP_SETTINGS_KEYS = {
   lyricsFontSize: 'settings_lyrics_font_size',
   lyricsColor: 'settings_lyrics_color',
   chkszApiKey: 'settings_chksz_api_key',
+  themeMode: 'settings_theme_mode',
   shortcutSettings: 'settings_shortcuts',
 } as const
 
@@ -59,10 +66,20 @@ export class AppSettings {
   private readonly storage: KeyValueStorage
   private snapshot: AppSettingsSnapshot
   private readonly listeners = new Set<AppSettingsListener>()
+  /** system 模式下的 matchMedia 句柄；切到 light/dark 时释放，避免监听器重复注册 */
+  private systemThemeQuery: MediaQueryList | null = null
+
+  /** 系统主题变化回调：只在「跟随系统」时生效（手动选定后不被系统抢走） */
+  private readonly onSystemThemeChange = (): void => {
+    if (this.snapshot.themeMode === 'system') this.applyTheme('system')
+  }
 
   constructor(storage?: KeyValueStorage) {
     this.storage = storage ?? createDefaultStorage()
     this.snapshot = this.load()
+    // 启动即把主题落到 DOM —— 否则首帧会先按亮色渲染再跳暗色（闪白）
+    this.watchSystemTheme(this.snapshot.themeMode)
+    this.applyTheme(this.snapshot.themeMode)
   }
 
   private load(): AppSettingsSnapshot {
@@ -87,6 +104,7 @@ export class AppSettings {
       ),
       // 设置页值优先；从未设置过时回落到构建期注入值
       chkszApiKey: s.getString(APP_SETTINGS_KEYS.chkszApiKey) ?? BUILD_TIME_CHKSZ_API_KEY,
+      themeMode: normalizeThemeMode(s.getString(APP_SETTINGS_KEYS.themeMode)),
       shortcutSettings: loadShortcutSettings(s),
     }
   }
@@ -117,6 +135,10 @@ export class AppSettings {
 
   getChkszApiKey(): string {
     return this.snapshot.chkszApiKey
+  }
+
+  get themeMode(): ThemeMode {
+    return this.snapshot.themeMode
   }
 
   get shortcutSettings(): ShortcutSettings {
@@ -162,6 +184,45 @@ export class AppSettings {
     this.storage.setString(APP_SETTINGS_KEYS.chkszApiKey, normalized)
   }
 
+  /**
+   * 切换外观并立即生效：写存储 → 重新绑定 system 监听 → 同步 html.dark。
+   * 每次调用实时读取传入值（与其它设置一致），不做启动快照。
+   */
+  setThemeMode(value: ThemeMode): void {
+    const mode = normalizeThemeMode(value)
+    this.update({ themeMode: mode })
+    this.storage.setString(APP_SETTINGS_KEYS.themeMode, mode)
+    this.watchSystemTheme(mode)
+    this.applyTheme(mode)
+  }
+
+  /** 把主题落到 DOM：只切 html.dark 类，具体颜色由 CSS 变量接管（React 无需参与） */
+  private applyTheme(mode: ThemeMode): void {
+    if (typeof document === 'undefined') return
+    document.documentElement.classList.toggle(
+      'dark',
+      resolveThemeIsDark(mode, this.systemPrefersDark()),
+    )
+  }
+
+  private systemPrefersDark(): boolean {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false
+    return window.matchMedia('(prefers-color-scheme: dark)').matches
+  }
+
+  /** system 模式注册 change 监听；light/dark 时移除（重复调用不会叠加监听器） */
+  private watchSystemTheme(mode: ThemeMode): void {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+    if (mode === 'system') {
+      if (this.systemThemeQuery != null) return
+      this.systemThemeQuery = window.matchMedia('(prefers-color-scheme: dark)')
+      this.systemThemeQuery.addEventListener('change', this.onSystemThemeChange)
+    } else if (this.systemThemeQuery != null) {
+      this.systemThemeQuery.removeEventListener('change', this.onSystemThemeChange)
+      this.systemThemeQuery = null
+    }
+  }
+
   setShortcutSettings(value: ShortcutSettings): void {
     this.update({ shortcutSettings: value })
     this.storage.setString(APP_SETTINGS_KEYS.shortcutSettings, JSON.stringify(value.toJson()))
@@ -205,6 +266,18 @@ function parseBool(raw: string | null, fallback: boolean): boolean {
   if (raw === 'true') return true
   if (raw === 'false') return false
   return fallback
+}
+
+/** 收窄到三值之一；非法/缺失（旧版本存储、脏数据）一律回落到 system */
+export function normalizeThemeMode(raw: unknown): ThemeMode {
+  return raw === 'light' || raw === 'dark' || raw === 'system' ? raw : 'system'
+}
+
+/** 「跟随系统」时实际是否应用暗色（纯函数，便于单测） */
+export function resolveThemeIsDark(mode: ThemeMode, systemPrefersDark: boolean): boolean {
+  if (mode === 'dark') return true
+  if (mode === 'light') return false
+  return systemPrefersDark
 }
 
 function parseNumber(raw: string | null, fallback: number): number {

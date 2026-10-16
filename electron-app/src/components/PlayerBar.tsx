@@ -96,13 +96,14 @@ function Slider({
       {/* 轨道高度恒定 3px，hover 用 scaleY 视觉放大 —— transform 不参与布局，
           否则上方播控按钮会被顶上去 3px（用户反馈的跳动） */}
       <div
-        className={`h-[3px] w-full origin-center overflow-hidden rounded-full bg-black/[0.08] transition-transform duration-150 ${active ? 'scale-y-[2]' : ''}`}
+        className={`h-[3px] w-full origin-center overflow-hidden rounded-full bg-hover transition-transform duration-150 ${active ? 'scale-y-[2]' : ''}`}
       >
         <div
-          className="h-full rounded-full bg-[#FA233B]"
+          className="h-full rounded-full bg-accent"
           style={{ width: `${pct}%` }}
         />
       </div>
+      {/* 滑块保持白色：它压在红色进度条上，两种主题下都应是白点 */}
       <div
         className={`absolute h-3 w-3 -translate-x-1/2 rounded-full bg-white shadow-[0_1px_4px_rgba(0,0,0,0.3)] transition-opacity ${active ? 'opacity-100' : 'opacity-0'}`}
         style={{ left: `${pct}%` }}
@@ -152,7 +153,7 @@ export function PlayerBar({
     <>
       {/* 抽屉 */}
       {drawer != null && (
-        <div className="fixed bottom-[76px] right-0 top-[38px] z-40 w-[340px] overflow-hidden rounded-tl-2xl border-l border-[#E5E5EA] bg-white/85 shadow-[-8px_0_28px_rgba(0,0,0,0.06)] backdrop-blur-2xl">
+        <div className="fixed bottom-[76px] right-0 top-[38px] z-40 w-[340px] overflow-hidden rounded-tl-2xl border-l border-subtle bg-card/85 shadow-[-8px_0_28px_rgba(0,0,0,0.06)] backdrop-blur-2xl">
           <div className="relative h-full">
             {drawer === 'lyrics' ? (
               <LyricsDrawer onClose={() => onDrawerChange(null)} />
@@ -163,7 +164,7 @@ export function PlayerBar({
         </div>
       )}
 
-      <footer className="relative z-50 grid h-[76px] shrink-0 grid-cols-3 items-center border-t border-[#E5E5EA] bg-white/80 px-6 backdrop-blur-2xl">
+      <footer className="relative z-50 grid h-[76px] shrink-0 grid-cols-3 items-center border-t border-subtle bg-playerbar-bg px-6 backdrop-blur-2xl">
         {/* 左：当前曲目（点封面进专注模式，再点退出 —— 对应 Flutter 播控栏封面手势） */}
         <div className="flex min-w-0 items-center gap-3">
           <button
@@ -185,10 +186,10 @@ export function PlayerBar({
           </button>
           <div className="min-w-0 max-w-[240px]">
             {/* 定宽上限：长标题在这里截断，红心位置不随曲名长度漂移 */}
-            <div className="truncate text-[13.5px] font-medium text-[#1D1D1F]">
+            <div className="truncate text-[13.5px] font-medium text-primary">
               {songModel?.title ?? '未在播放'}
             </div>
-            <div className="truncate text-[12px] text-[#86868B]">
+            <div className="truncate text-[12px] text-secondary">
               {songModel?.artist ?? '选择一首歌开始'}
             </div>
           </div>
@@ -198,7 +199,7 @@ export function PlayerBar({
               aria-label={liked ? '取消喜欢' : '喜欢'}
               onClick={() => void library.toggleLike(songModel)}
               className={`ml-1 shrink-0 transition-transform active:scale-90 ${
-                liked ? 'text-[#FA233B]' : 'text-[#86868B] hover:text-[#1D1D1F]'
+                liked ? 'text-accent' : 'text-secondary hover:text-primary'
               }`}
             >
               <Heart size={16} strokeWidth={1.75} fill={liked ? 'currentColor' : 'none'} />
@@ -209,7 +210,7 @@ export function PlayerBar({
         {/* 中：播控 + 进度 */}
         <div className="flex flex-col items-center gap-0.5">
           {player.error != null && (
-            <div className="mb-0.5 truncate text-[11.5px] text-[#FA233B]">{player.error}</div>
+            <div className="mb-0.5 truncate text-[11.5px] text-accent">{player.error}</div>
           )}
           <div className="flex items-center gap-5">
             <button
@@ -218,8 +219,8 @@ export function PlayerBar({
               onClick={() => player.cyclePlayMode()}
               className={`transition-colors ${
                 player.playMode === PlayMode.List
-                  ? 'text-[#86868B] hover:text-[#1D1D1F]'
-                  : 'text-[#FA233B]'
+                  ? 'text-secondary hover:text-primary'
+                  : 'text-accent'
               }`}
             >
               <PlayModeIcon mode={player.playMode} />
@@ -228,7 +229,7 @@ export function PlayerBar({
               type="button"
               aria-label="上一首"
               onClick={() => player.prev()}
-              className="text-[#1D1D1F] transition-colors hover:text-[#FA233B]"
+              className="text-primary transition-colors hover:text-accent"
             >
               <SkipBack size={19} strokeWidth={1.75} fill="currentColor" />
             </button>
@@ -236,7 +237,7 @@ export function PlayerBar({
               type="button"
               aria-label={player.isPlaying ? '暂停' : '播放'}
               onClick={() => player.togglePlay()}
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-[#FA233B] text-white shadow-[0_4px_14px_rgba(250,35,59,0.35)] transition-transform hover:bg-[#E01E34] active:scale-95"
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-accent text-white shadow-[0_4px_14px_rgba(250,35,59,0.35)] transition-transform hover:bg-accent-hover active:scale-95"
             >
               {player.isPlaying ? (
                 <Pause size={17} strokeWidth={2} fill="currentColor" />
@@ -248,13 +249,13 @@ export function PlayerBar({
               type="button"
               aria-label="下一首"
               onClick={() => player.next()}
-              className="text-[#1D1D1F] transition-colors hover:text-[#FA233B]"
+              className="text-primary transition-colors hover:text-accent"
             >
               <SkipForward size={19} strokeWidth={1.75} fill="currentColor" />
             </button>
           </div>
           <div className="flex w-full max-w-[520px] items-center gap-3">
-            <span className="w-9 text-right text-[11.5px] tabular-nums text-[#86868B]">
+            <span className="w-9 text-right text-[11.5px] tabular-nums text-secondary">
               {formatTime(time.currentTime)}
             </span>
             <Slider
@@ -263,7 +264,7 @@ export function PlayerBar({
               onSeek={(v) => player.seek(v)}
               ariaLabel="播放进度"
             />
-            <span className="w-9 text-[11.5px] tabular-nums text-[#86868B]">
+            <span className="w-9 text-[11.5px] tabular-nums text-secondary">
               {formatTime(time.duration)}
             </span>
           </div>
@@ -279,8 +280,8 @@ export function PlayerBar({
             onClick={route.toggleFocus}
             className={`transition-colors ${
               route.route === DeskRoute.Focus
-                ? 'text-[#FA233B]'
-                : 'text-[#86868B] hover:text-[#1D1D1F]'
+                ? 'text-accent'
+                : 'text-secondary hover:text-primary'
             }`}
           >
             {route.route === DeskRoute.Focus ? (
@@ -293,7 +294,7 @@ export function PlayerBar({
             type="button"
             aria-label="歌词"
             onClick={() => onDrawerChange(drawer === 'lyrics' ? null : 'lyrics')}
-            className={`transition-colors ${drawer === 'lyrics' ? 'text-[#FA233B]' : 'text-[#86868B] hover:text-[#1D1D1F]'}`}
+            className={`transition-colors ${drawer === 'lyrics' ? 'text-accent' : 'text-secondary hover:text-primary'}`}
           >
             <Mic2 size={17} strokeWidth={1.75} />
           </button>
@@ -306,7 +307,7 @@ export function PlayerBar({
             onClick={() => {
               void window.imusicAPI?.lyricsToggle().then((open) => setDesktopLyricsOpen(open))
             }}
-            className={`transition-colors ${desktopLyricsOpen ? 'text-[#FA233B]' : 'text-[#86868B] hover:text-[#1D1D1F]'}`}
+            className={`transition-colors ${desktopLyricsOpen ? 'text-accent' : 'text-secondary hover:text-primary'}`}
           >
             <MonitorSmartphone size={17} strokeWidth={1.75} />
           </button>
@@ -314,7 +315,7 @@ export function PlayerBar({
             type="button"
             aria-label="播放队列"
             onClick={() => onDrawerChange(drawer === 'queue' ? null : 'queue')}
-            className={`transition-colors ${drawer === 'queue' ? 'text-[#FA233B]' : 'text-[#86868B] hover:text-[#1D1D1F]'}`}
+            className={`transition-colors ${drawer === 'queue' ? 'text-accent' : 'text-secondary hover:text-primary'}`}
           >
             <ListMusic size={17} strokeWidth={1.75} />
           </button>
@@ -323,7 +324,7 @@ export function PlayerBar({
               type="button"
               aria-label="静音"
               onClick={player.toggleMute}
-              className="text-[#86868B] transition-colors hover:text-[#1D1D1F]"
+              className="text-secondary transition-colors hover:text-primary"
             >
               <VolumeIcon size={16} strokeWidth={1.75} />
             </button>

@@ -1,21 +1,68 @@
 /**
  * 设计 token —— 与 docs/electron-rewrite-technical-design.md §8 一致。
- * Tailwind4 通过 @theme 映射为同名 utility（bg-accent、text-secondary 等）。
+ *
+ * 暗色模式：语义色全部走 CSS 变量（`:root` 亮 / `html.dark` 暗），再由
+ * `@theme inline` 把变量映射为 utility（bg-card、text-primary、bg-accent 等）。
+ * 切换 `html.dark` 时所有语义类即时变色，无需重新生成 CSS。
+ *
+ * 注意：`@theme inline` 会在 `@layer theme` 里输出一份占位声明
+ * （如 `--color-card: var(--color-card)`）；未分层（unlayered）的 `:root` /
+ * `html.dark` 声明优先级更高，所以实际取值始终来自下面两组变量 —— 这也是
+ * Tailwind 4 官方推荐的「变量 + @theme inline」暗色模式写法。
  */
-@theme {
-  --color-bg-main: #ffffff;
-  --color-bg-sidebar: #f5f5f7;
-  --color-text-primary: #1d1d1f;
-  --color-text-secondary: #86868b;
-  --color-accent: #fa233b;
-  --color-accent-hover: #e01e34;
-  --color-border-subtle: #e5e5ea;
+@theme inline {
+  --color-bg-main: var(--color-bg-main);
+  --color-sidebar: var(--color-sidebar);
+  --color-primary: var(--color-primary);
+  --color-secondary: var(--color-secondary);
+  --color-accent: var(--color-accent);
+  --color-accent-hover: var(--color-accent-hover);
+  --color-subtle: var(--color-subtle);
+  --color-card: var(--color-card);
+  --color-card-hover: var(--color-card-hover);
+  --color-fill: var(--color-fill);
+  --color-hover: var(--color-hover);
+  --color-playerbar-bg: var(--color-playerbar-bg);
+}
 
+@theme {
   --radius-banner: 16px;
   --radius-cover: 12px;
   --radius-item: 8px;
 }
 
+/* ---- 亮色（默认） ---- */
 :root {
-  --playerbar-bg: rgba(255, 255, 255, 0.8);
+  --color-bg-main: #ffffff;
+  --color-sidebar: #f5f5f7;
+  --color-primary: #1d1d1f;
+  --color-secondary: #86868b;
+  --color-accent: #fa233b;
+  --color-accent-hover: #e01e34;
+  --color-subtle: #e5e5ea;
+  --color-card: #ffffff;
+  --color-card-hover: #f5f5f7;
+  /* 药丸/次级按钮的表面色：暗色下需要比卡片更亮一档才能与卡片区分 */
+  --color-fill: #f5f5f7;
+  --color-hover: rgba(0, 0, 0, 0.05);
+  --color-playerbar-bg: rgba(255, 255, 255, 0.8);
+  /* 兼容既有引用：--playerbar-bg 始终跟随当前主题 */
+  --playerbar-bg: var(--color-playerbar-bg);
+}
+
+/* ---- 暗色（由 AppSettings.applyTheme 切换 html.dark） ---- */
+html.dark {
+  --color-bg-main: #1c1c1e;
+  --color-sidebar: #2c2c2e;
+  --color-primary: #f2f2f7;
+  --color-secondary: #98989d;
+  /* 品牌红两种模式下保持一致 */
+  --color-accent: #fa233b;
+  --color-accent-hover: #ff4d5e;
+  --color-subtle: #3a3a3c;
+  --color-card: #2c2c2e;
+  --color-card-hover: #3a3a3c;
+  --color-fill: #3a3a3c;
+  --color-hover: rgba(255, 255, 255, 0.08);
+  --color-playerbar-bg: rgba(28, 28, 30, 0.82);
 }

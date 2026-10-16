@@ -25,8 +25,8 @@ function formatSize(bytes: number): string {
 function ChangelogBox({ text, subtitle }: { text: string | null; subtitle?: string }) {
   return (
     <div className="space-y-2">
-      {subtitle != null && <p className="text-[13px] text-[#FA233B]">{subtitle}</p>}
-      <div className="max-h-56 overflow-y-auto whitespace-pre-wrap rounded-md border border-black/5 bg-black/[0.03] p-3 text-[14px] leading-relaxed text-[#6E6E73]">
+      {subtitle != null && <p className="text-[13px] text-accent">{subtitle}</p>}
+      <div className="max-h-56 overflow-y-auto whitespace-pre-wrap rounded-md border border-black/5 bg-hover p-3 text-[14px] leading-relaxed text-secondary">
         {text != null && text.trim().length > 0 ? text : '暂无更新说明'}
       </div>
     </div>
@@ -37,13 +37,13 @@ function ProgressBody({ received, total }: { received: number; total: number | n
   const fraction = total != null && total > 0 ? received / total : null
   return (
     <div className="space-y-2">
-      <div className="h-1.5 w-full overflow-hidden rounded bg-black/10">
+      <div className="h-1.5 w-full overflow-hidden rounded bg-hover">
         <div
-          className="h-full rounded bg-[#FA233B] transition-[width] duration-300"
+          className="h-full rounded bg-accent transition-[width] duration-300"
           style={{ width: fraction == null ? '40%' : `${Math.round(fraction * 100)}%` }}
         />
       </div>
-      <p className="text-[12px] text-[#6E6E73]">
+      <p className="text-[12px] text-secondary">
         {fraction == null
           ? `已下载 ${formatSize(received)}`
           : `已下载 ${formatSize(received)} / ${formatSize(total ?? 0)}  ·  ${(fraction * 100).toFixed(0)}%`}
@@ -66,7 +66,7 @@ function Actions({
           type="button"
           data-update-action={onSecondary.action}
           onClick={onSecondary.onClick}
-          className="rounded-md px-3.5 py-2 text-[13px] text-[#6E6E73] transition-colors hover:bg-black/5"
+          className="rounded-md px-3.5 py-2 text-[13px] text-secondary transition-colors hover:bg-hover"
         >
           {onSecondary.label}
         </button>
@@ -76,7 +76,7 @@ function Actions({
           type="button"
           data-update-action={onPrimary.action}
           onClick={onPrimary.onClick}
-          className="rounded-md bg-[#FA233B] px-4.5 py-2 text-[13px] font-medium text-white transition-opacity hover:opacity-90"
+          className="rounded-md bg-accent px-4.5 py-2 text-[13px] font-medium text-white transition-opacity hover:opacity-90"
         >
           {onPrimary.label}
         </button>
@@ -117,7 +117,7 @@ export function UpdateDialog() {
           />
         )}
         {state.kind === 'error' && (
-          <div className="rounded-md border border-black/5 bg-black/[0.03] p-3 text-[14px] leading-relaxed text-[#B25000]">
+          <div className="rounded-md border border-black/5 bg-hover p-3 text-[14px] leading-relaxed text-[#B25000]">
             {state.message}
           </div>
         )}

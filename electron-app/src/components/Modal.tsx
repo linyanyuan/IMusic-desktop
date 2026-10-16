@@ -40,16 +40,16 @@ export function Modal({
       }}
     >
       <div
-        className="rounded-2xl border border-[#E5E5EA] bg-white/95 p-6 shadow-[0_24px_64px_rgba(0,0,0,0.18)] backdrop-blur-2xl"
+        className="rounded-2xl border border-subtle bg-card/95 p-6 shadow-[0_24px_64px_rgba(0,0,0,0.18)] backdrop-blur-2xl"
         style={{ width }}
       >
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-[17px] font-semibold tracking-tight text-[#1D1D1F]">{title}</h2>
+          <h2 className="text-[17px] font-semibold tracking-tight text-primary">{title}</h2>
           <button
             type="button"
             aria-label="关闭"
             onClick={onClose}
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-[#86868B] transition-colors hover:bg-black/5"
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-secondary transition-colors hover:bg-hover"
           >
             <X size={15} strokeWidth={1.75} />
           </button>
