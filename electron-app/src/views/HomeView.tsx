@@ -185,12 +185,13 @@ function SongCard({ song, onPlay }: { song: Song; onPlay: () => void }) {
   const isCurrent = player.currentSong?.['id']?.toString() === song.id
   return (
     <button type="button" data-song-card={song.id} onClick={onPlay} className="group text-left">
-      <div className="relative">
+      {/* 封面 wrapper 负责圆角与阴影，缩放只作用在封面自己身上（对齐 CategoryPlaylistCard） */}
+      <div className="relative overflow-hidden rounded-xl shadow-[0_4px_16px_rgba(0,0,0,0.05)] transition-shadow duration-300 group-hover:shadow-[0_8px_24px_rgba(0,0,0,0.12)]">
         <Cover
           src={songCover(song)}
           size={0}
           radius="rounded-xl"
-          className="!h-auto aspect-square w-full shadow-[0_4px_16px_rgba(0,0,0,0.05)] transition-shadow group-hover:shadow-[0_8px_24px_rgba(0,0,0,0.12)]"
+          className="!h-auto aspect-square w-full transition-transform duration-500 group-hover:scale-105"
           iconSize={28}
         />
         <div className="absolute bottom-2 right-2 flex h-9 w-9 translate-y-1 items-center justify-center rounded-full bg-card/80 text-accent opacity-0 shadow-md backdrop-blur-md transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100">
@@ -208,25 +209,44 @@ function SongCard({ song, onPlay }: { song: Song; onPlay: () => void }) {
   )
 }
 
-/** 远端合集卡（热门歌单）：封面 + 标题 + 曲目数，点进歌单详情 */
-function PlaylistCard({ playlist, onOpen }: { playlist: Song; onOpen: () => void }) {
+/**
+ * 远端合集卡（热门歌单）：封面 + 标题 + 曲目数，点进歌单详情。
+ *
+ * 悬浮效果对齐「今日精选」：封面缓缓放大 + 右下角播放键滑入整单播放；
+ * 结构与 CategoryPlaylistCard 一致 —— 整卡点击由末尾的透明覆盖按钮承担，
+ * 播放键是独立 button 并抬到 z-10 浮在覆盖按钮之上（不能嵌套 button）。
+ */
+function PlaylistCard({ playlist }: { playlist: Song }) {
+  const route = useRoute()
   const cover = songCover(playlist)
   const count = Number(playlist.extra['songCount'] ?? playlist.extra['song_count'] ?? 0)
+  const { resolving, playAll } = usePlayPlaylist(playlist)
+
+  const open = () => route.go(DeskRoute.PlaylistDetail, { playlistId: playlist.id })
+
   return (
-    <button type="button" data-playlist-card={playlist.id} onClick={onOpen} className="group text-left">
-      <div className="relative">
+    <div data-playlist-card={playlist.id} className="group relative text-left">
+      <div className="relative overflow-hidden rounded-xl shadow-[0_4px_16px_rgba(0,0,0,0.05)] transition-shadow duration-300 group-hover:shadow-[0_8px_24px_rgba(0,0,0,0.12)]">
         <Cover
           src={cover}
           size={0}
           radius="rounded-xl"
-          className="!h-auto aspect-square w-full shadow-[0_4px_16px_rgba(0,0,0,0.05)] transition-shadow group-hover:shadow-[0_8px_24px_rgba(0,0,0,0.12)]"
+          className="!h-auto aspect-square w-full transition-transform duration-500 group-hover:scale-105"
           iconSize={28}
         />
-        <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/25 opacity-0 transition-opacity group-hover:opacity-100">
-          <span className="rounded-full bg-card/85 px-3 py-1 text-[11.5px] font-medium text-primary backdrop-blur-md">
-            查看合集
-          </span>
-        </div>
+        <button
+          type="button"
+          aria-label={`播放歌单 ${playlist.title}`}
+          disabled={resolving}
+          onClick={() => void playAll()}
+          className="pointer-events-none absolute bottom-2 right-2 z-10 flex h-9 w-9 translate-y-1 items-center justify-center rounded-full bg-card/85 text-accent opacity-0 shadow-md backdrop-blur-md transition-all duration-300 group-hover:pointer-events-auto group-hover:translate-y-0 group-hover:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 disabled:opacity-100"
+        >
+          {resolving ? (
+            <Loader2 size={15} strokeWidth={2} className="animate-spin" />
+          ) : (
+            <Play size={15} strokeWidth={2} fill="currentColor" className="ml-[1px]" />
+          )}
+        </button>
       </div>
       <div className="mt-2 line-clamp-2 text-[13.5px] font-medium leading-snug text-primary">
         {playlist.title}
@@ -235,7 +255,14 @@ function PlaylistCard({ playlist, onOpen }: { playlist: Song; onOpen: () => void
         {playlist.artist}
         {count > 0 ? ` · ${count} 首` : ''}
       </div>
-    </button>
+      {/* 整卡点击进详情：透明按钮铺满卡片（含标题区），放在最后 → 盖在封面与文字之上 */}
+      <button
+        type="button"
+        aria-label={`查看歌单 ${playlist.title}`}
+        onClick={open}
+        className="absolute inset-0 rounded-xl"
+      />
+    </div>
   )
 }
 
@@ -578,11 +605,7 @@ export function HomeView() {
         ) : (
           <div className="grid grid-cols-5 gap-5">
             {hotPlaylists.map((pl) => (
-              <PlaylistCard
-                key={pl.id}
-                playlist={pl}
-                onOpen={() => route.go(DeskRoute.PlaylistDetail, { playlistId: pl.id })}
-              />
+              <PlaylistCard key={pl.id} playlist={pl} />
             ))}
           </div>
         )}

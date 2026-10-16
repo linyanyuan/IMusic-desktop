@@ -60,6 +60,42 @@ function httpToHttps(url: string): string {
   return text
 }
 
+/** 封面请求边长：卡片最大渲染约 230px，500 足够清晰又不过分浪费流量 */
+export const NETEASE_COVER_SIZE = 500
+
+/**
+ * 归一化网易云封面 URL。
+ *
+ * 接口返回的 coverImgUrl 带一长串 imageView/watermark 参数，其中最后一处 thumbnail=140y140
+ * （水印图参数）会覆盖前面的 800y800 —— 实测拿到的就是 140×140 的图，卡片渲染 227px 时明显模糊。
+ * 这里丢掉整串 query，统一改成 ?param=<size>y<size>（实测 ?param=500y500 返回 500×500）。
+ * 非网易云图床（其他 host）原样返回，避免误改第三方封面。
+ *
+ * 注意：函数本身不改协议，http→https 仍由 httpToHttps 负责（调用点先转 https 再归一化）。
+ */
+export function normalizeNeteaseCover(
+  url: string,
+  size: number = NETEASE_COVER_SIZE,
+): string {
+  const text = url.trim()
+  if (text === '') return ''
+
+  let parsed: URL
+  try {
+    parsed = new URL(text)
+  } catch {
+    return text
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return text
+
+  // 精确匹配网易图床：music.126.net 本身或它的子域（p1./p2./m801. …）
+  const host = parsed.hostname.toLowerCase()
+  if (host !== 'music.126.net' && !host.endsWith('.music.126.net')) return text
+
+  const side = Number.isFinite(size) && size > 0 ? Math.floor(size) : NETEASE_COVER_SIZE
+  return `${parsed.origin}${parsed.pathname}?param=${side}y${side}`
+}
+
 /** `[{name:'a'},{name:'b'}]` → `'a / b'`（与 GDStudio 的 artist 连接方式一致） */
 function artistText(raw: unknown): string {
   if (Array.isArray(raw)) {
@@ -172,7 +208,9 @@ export class NeteasePublicClient {
     if (mediaId === '' || name === '') return null
 
     const album = isRecord(raw['al']) ? asString(raw['al']['name']) : ''
-    const picUrl = isRecord(raw['al']) ? httpToHttps(asString(raw['al']['picUrl'])) : ''
+    const picUrl = isRecord(raw['al'])
+      ? normalizeNeteaseCover(httpToHttps(asString(raw['al']['picUrl'])))
+      : ''
     const artist = artistText(raw['ar'])
     const durationValue = raw['dt'] ?? raw['duration']
     const duration = Number(durationValue)
@@ -205,7 +243,7 @@ export class NeteasePublicClient {
     if (rawId === '' || name === '') return null
 
     const creator = isRecord(raw['creator']) ? asString(raw['creator']['nickname']).trim() : ''
-    const cover = httpToHttps(asString(raw['coverImgUrl']))
+    const cover = normalizeNeteaseCover(httpToHttps(asString(raw['coverImgUrl'])))
     const songCount = Number(raw['trackCount'])
     const playCount = Number(raw['playCount'])
 
@@ -359,7 +397,7 @@ export class NeteasePublicClient {
     const creator = isRecord(playlist['creator'])
       ? asString(playlist['creator']['nickname']).trim()
       : ''
-    const cover = httpToHttps(asString(playlist['coverImgUrl']))
+    const cover = normalizeNeteaseCover(httpToHttps(asString(playlist['coverImgUrl'])))
     const playCount = Number(playlist['playCount'])
 
     return {

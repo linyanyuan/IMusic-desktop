@@ -19,7 +19,7 @@ import { usePlayer } from '../contexts/PlayerContext'
 import { useLibrary } from '../state/hooks'
 import { useRoute, DeskRoute } from '../state/route'
 import { getServices } from '../services/runtime'
-import { toSongs, durationSeconds, formatTotalDuration } from '../state/songUtils'
+import { toSongs, durationSeconds, formatTotalDuration, playlistCover } from '../state/songUtils'
 import type { Song } from '../services/models'
 
 const FAVORITES_ID = 'favorites'
@@ -120,7 +120,7 @@ export function PlaylistDetailView() {
       return {
         id: localPlaylist['id']?.toString() ?? '',
         name: localPlaylist['name']?.toString() || '未命名歌单',
-        coverUrl: localPlaylist['coverUrl']?.toString() || null,
+        coverUrl: playlistCover(localPlaylist),
         songs: Array.isArray(rawSongs) ? toSongs(rawSongs as Record<string, unknown>[]) : [],
         // 服务端同步/收藏来的歌单不应提供「删除/增删歌曲」（会去改远端别人的歌单）
         editable: localPlaylist['isCollected'] !== true,

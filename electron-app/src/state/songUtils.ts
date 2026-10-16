@@ -53,3 +53,30 @@ export function songCover(song: Song): string | null {
   const url = song.coverUrl?.trim()
   return url != null && url !== '' ? url : null
 }
+
+/** 非空字符串（trim 后）才算封面地址，其余一律 null */
+function nonEmptyCover(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed !== '' ? trimmed : null
+}
+
+/**
+ * 自建歌单的封面：优先歌单记录自己的 coverUrl；
+ * 其次回退到歌单内第一首带封面的歌 —— LibraryService.addSongToPlaylist 只在「首次加歌」时
+ * 往 coverUrl 回填，历史歌单（那次回填之前就存在的）永远没有这个字段，所以渲染时要自己兜底；
+ * 都没有则返回 null，交给 Cover 按 seed 渲染渐变占位。
+ */
+export function playlistCover(playlist: Record<string, unknown>): string | null {
+  const own = nonEmptyCover(playlist['coverUrl'])
+  if (own != null) return own
+
+  const songs = playlist['songs']
+  if (!Array.isArray(songs)) return null
+  for (const raw of songs) {
+    if (raw == null || typeof raw !== 'object') continue
+    const cover = nonEmptyCover((raw as Record<string, unknown>)['coverUrl'])
+    if (cover != null) return cover
+  }
+  return null
+}

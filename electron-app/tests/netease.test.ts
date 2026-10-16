@@ -81,8 +81,8 @@ test('分类歌单列表：id 前缀、http→https、创建者字段，并命�
   assert.equal(rows[0]['artist'], '网易云音乐')
   assert.equal(
     rows[0]['coverUrl'],
-    'https://p1.music.126.net/cover.jpg?thumbnail=800y800',
-    'http 封面必须升到 https（CSP 只放 https）',
+    'https://p1.music.126.net/cover.jpg?param=500y500',
+    'http 封面必须升到 https（CSP 只放 https），并归一到 ?param=（否则会被水印参数压成 140×140）',
   )
   assert.equal(rows[0]['songCount'], 48)
   assert.equal(rows[0]['playCount'], 613846)
@@ -128,7 +128,7 @@ test('歌单详情：tracks 不足时按 trackIds 顺序用 song/detail 补全',
   assert.equal(playlist['id'], 'netease-playlist:99')
   assert.equal(playlist['title'], '测试歌单')
   assert.equal(playlist['artist'], '阿云')
-  assert.equal(playlist['coverUrl'], 'https://p1.music.126.net/detail.jpg')
+  assert.equal(playlist['coverUrl'], 'https://p1.music.126.net/detail.jpg?param=500y500')
   assert.equal(playlist['songCount'], 3)
 
   const songs = playlist['songs'] as Record<string, unknown>[]
@@ -140,7 +140,7 @@ test('歌单详情：tracks 不足时按 trackIds 顺序用 song/detail 补全',
   assert.equal(songs[0]['id'], 'gdstudio:netease:1', 'id 必须是 GDStudio netease 形状')
   assert.equal(songs[0]['artist'], 'A / B', '多歌手用 " / " 连接')
   assert.equal(songs[0]['album'], '专辑')
-  assert.equal(songs[0]['coverUrl'], 'https://p1.music.126.net/1.jpg')
+  assert.equal(songs[0]['coverUrl'], 'https://p1.music.126.net/1.jpg?param=500y500')
   assert.equal(songs[0]['duration'], 200001)
   assert.equal(songs[0]['source'], 'netease')
   assert.equal(songs[0]['sourceLabel'], '网易云')

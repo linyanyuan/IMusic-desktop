@@ -3,12 +3,13 @@
  */
 
 import { useState } from 'react'
-import { Search, Home, Heart, Clock, Plus, ListMusic, X, Settings, Library, Trash2 } from 'lucide-react'
+import { Search, Home, Heart, Clock, Plus, X, Settings, Library, Trash2 } from 'lucide-react'
 import { UserAvatar } from './UserAvatar'
 import { Cover } from './Cover'
 import { Modal } from './Modal'
 import { DeskRoute, useRoute } from '../state/route'
 import { useAuth, useLibrary } from '../state/hooks'
+import { playlistCover } from '../state/songUtils'
 
 function NavItem({
   active,
@@ -170,7 +171,7 @@ export function Sidebar() {
           {playlists.map((pl) => {
             const id = pl['id']?.toString() ?? ''
             const name = pl['name']?.toString() ?? '未命名歌单'
-            const cover = pl['coverUrl']?.toString() ?? null
+            const cover = playlistCover(pl)
             const active =
               route.route === DeskRoute.PlaylistDetail && route.playlistId === id
             return (
@@ -184,13 +185,7 @@ export function Sidebar() {
                       : 'text-primary hover:bg-hover'
                   }`}
                 >
-                  {cover != null ? (
-                    <Cover src={cover} size={28} radius="rounded-md" iconSize={12} seed={pl['name']?.toString()} />
-                  ) : (
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-hover text-secondary">
-                      <ListMusic size={14} strokeWidth={1.75} />
-                    </span>
-                  )}
+                  <Cover src={cover} size={28} radius="rounded-md" iconSize={12} seed={id !== '' ? id : name} />
                   <span className="truncate">{name}</span>
                 </button>
                 <button

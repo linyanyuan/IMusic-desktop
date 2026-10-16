@@ -22,7 +22,7 @@ import { usePlayer } from '../contexts/PlayerContext'
 import { useAuth, useLibrary } from '../state/hooks'
 import { toggleLikeGuarded } from '../state/likeAction'
 import { DeskRoute, useRoute } from '../state/route'
-import { durationSeconds, formatTotalDuration } from '../state/songUtils'
+import { durationSeconds, formatTotalDuration, playlistCover } from '../state/songUtils'
 import { formatBytes } from '../state/format'
 import { cacheSongsSequentially } from '../state/offlineCache'
 import type { Song } from '../services/models'
@@ -356,7 +356,7 @@ export function LibraryView() {
               {playlists.map((pl) => {
                 const id = pl['id']?.toString() ?? ''
                 const name = pl['name']?.toString() ?? pl['title']?.toString() ?? '未命名歌单'
-                const cover = pl['coverUrl']?.toString() ?? null
+                const cover = playlistCover(pl)
                 const songs = Array.isArray(pl['songs']) ? (pl['songs'] as unknown[]).length : 0
                 const collected = pl['isCollected'] === true
                 return (
@@ -366,13 +366,7 @@ export function LibraryView() {
                     onClick={() => route.go(DeskRoute.PlaylistDetail, { playlistId: id })}
                     className="group flex items-center gap-4 rounded-2xl border border-subtle bg-card/70 p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-[0_10px_28px_rgba(0,0,0,0.08)]"
                   >
-                    {cover != null ? (
-                      <Cover src={cover} size={56} radius="rounded-xl" iconSize={18} seed={name} />
-                    ) : (
-                      <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent">
-                        {collected ? <Heart size={20} strokeWidth={1.75} /> : <ListMusic size={20} strokeWidth={1.75} />}
-                      </span>
-                    )}
+                    <Cover src={cover} size={56} radius="rounded-xl" iconSize={18} seed={id !== '' ? id : name} />
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-[14px] font-semibold text-primary">{name}</div>
                       <div className="mt-1 text-[12px] text-secondary">

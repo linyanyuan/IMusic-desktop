@@ -74,7 +74,7 @@ test('netease-playlist: 前缀走网易云客户端，歌曲 id 是 GDStudio net
   const playlist = await hybrid.getPlaylist('netease-playlist:13007986645')
 
   assert.equal(playlist['title'], '分类歌单')
-  assert.equal(playlist['coverUrl'], 'https://p1.music.126.net/x.jpg')
+  assert.equal(playlist['coverUrl'], 'https://p1.music.126.net/x.jpg?param=500y500')
   assert.ok(
     calls.some((url) => url.includes('music.163.com/api/v6/playlist/detail')),
     `必须打到网易云详情接口，实际: ${calls.join(', ')}`,
