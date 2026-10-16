@@ -50,7 +50,9 @@ export default defineConfig({
       },
     },
   },
-  // 端口必须与 package.json 的 wait-on tcp:5173 / VITE_DEV_SERVER_URL 保持一致；
-  // strictPort 让端口冲突直接失败，而不是静默换端口导致 electron:dev 卡住。
+  // 注意：Electron 由上面的 vite-plugin-electron 在 dev server 就绪后自行 spawn（并由插件
+  // 注入 VITE_DEV_SERVER_URL），所以 electron:dev 只跑 vite。dev 脚本里再手动 spawn 一个
+  // electron 会撞单实例锁 → 以状态码 0 静默退出 → 把 vite 一起带走（表现为「启动即退」）。
+  // strictPort 让端口冲突直接失败，而不是静默换端口让 CDP/QA 脚本连错端口。
   server: { port: 5173, strictPort: true },
 })
