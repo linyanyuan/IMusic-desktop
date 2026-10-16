@@ -16,6 +16,18 @@ import { registerLyricsWindowIpc } from './lyricsWindow'
 // 需从 import.meta.url 推导当前目录。
 const currentDir = path.dirname(fileURLToPath(import.meta.url))
 
+// 显卡规避开关（2026-10 排查机器蓝屏时加，默认关闭，不影响产品行为）：
+// 本机蓝屏 bugcheck 0x119 VIDEO_SCHEDULER_INTERNAL_ERROR（子码 0x3000）是**显卡驱动 /
+// 内核视频调度器的缺陷** —— 用户态进程只能「触发」不可能「造成」。触发点集中在
+// 「一个建过 GPU 队列的进程被销毁」时，所以开发/排查期可以让进程干脆不建 GPU 队列：
+//   IMUSIC_DISABLE_GPU=1 npm run dev      （或 npm run dev:nogpu）
+//   或直接给 electron.exe 传 --disable-gpu
+// 必须放在 app ready 之前调用，否则不生效。
+if (process.env.IMUSIC_DISABLE_GPU === '1' || process.argv.includes('--disable-gpu')) {
+  app.disableHardwareAcceleration()
+  console.log('[imusic] 已按 IMUSIC_DISABLE_GPU / --disable-gpu 关闭硬件加速（软件渲染）')
+}
+
 // 必须在 app ready 之前注册特权协议
 registerAudioSchemeAsPrivileged()
 
