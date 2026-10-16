@@ -216,7 +216,12 @@ export function Sidebar() {
       <div className="border-t border-subtle/70 p-2">
         <NavItem
           active={route.route === DeskRoute.Settings}
-          icon={<Settings size={16} strokeWidth={1.75} />}
+          // 与下方 20×20 的头像盒子同尺寸、同左缘起点，两行中轴才共线
+          icon={
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+              <Settings size={16} strokeWidth={1.75} />
+            </span>
+          }
           label="设置"
           testid="nav-settings"
           onClick={() => route.go(DeskRoute.Settings)}

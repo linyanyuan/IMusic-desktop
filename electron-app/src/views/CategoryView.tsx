@@ -15,6 +15,7 @@ import { AddToPlaylistModal } from '../components/AddToPlaylistModal'
 import { usePlayer } from '../contexts/PlayerContext'
 import { DeskRoute, useRoute } from '../state/route'
 import { genreByKey } from '../state/genres'
+import { usePlayPlaylist } from '../state/playPlaylist'
 import { getServices } from '../services/runtime'
 import { toSongs, songCover } from '../state/songUtils'
 import type { Song } from '../services/models'
@@ -23,6 +24,64 @@ import type { Song } from '../services/models'
 const PLAYLIST_PAGE_SIZE = 20
 
 type TabId = 'playlists' | 'songs'
+
+/**
+ * 分类热门歌单卡 —— 悬浮效果对齐首页「今日精选」：封面缓慢放大 + 右下角播放键滑入。
+ *
+ * 结构要点：
+ *   - 整卡可点（进歌单详情）由末尾那张铺满卡片的透明按钮承担（对照 FeaturedPlaylistCard 的
+ *     `absolute inset-0` 详情按钮）；封面包一层 overflow-hidden 的 wrapper 负责圆角与阴影，
+ *     缩放只作用在封面自己身上，阴影不跟着放大。
+ *   - 播放键是独立 button，锚在封面右下角（不是嵌套在详情按钮里，嵌套 button 是非法 HTML）。
+ *     它放在所有兄弟节点最后并抬到 z-10，因此浮在同样绝对定位的详情按钮之上、仍可点击。
+ */
+function CategoryPlaylistCard({ playlist }: { playlist: Song }) {
+  const route = useRoute()
+  const { resolving, playAll } = usePlayPlaylist(playlist)
+
+  const open = () => route.go(DeskRoute.PlaylistDetail, { playlistId: playlist.id })
+
+  return (
+    <div className="group relative text-left">
+      <div className="relative overflow-hidden rounded-xl shadow-[0_4px_16px_rgba(0,0,0,0.05)] transition-shadow duration-300 group-hover:shadow-[0_8px_24px_rgba(0,0,0,0.12)]">
+        <Cover
+          src={songCover(playlist)}
+          size={0}
+          radius="rounded-xl"
+          className="!h-auto aspect-square w-full transition-transform duration-500 group-hover:scale-105"
+        />
+        <button
+          type="button"
+          aria-label={`播放歌单 ${playlist.title}`}
+          disabled={resolving}
+          onClick={() => void playAll()}
+          className="pointer-events-none absolute bottom-2 right-2 z-10 flex h-9 w-9 translate-y-1 items-center justify-center rounded-full bg-card/85 text-accent opacity-0 shadow-md backdrop-blur-md transition-all duration-300 group-hover:pointer-events-auto group-hover:translate-y-0 group-hover:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 disabled:opacity-100"
+        >
+          {resolving ? (
+            <Loader2 size={15} strokeWidth={2} className="animate-spin" />
+          ) : (
+            <Play size={15} strokeWidth={2} fill="currentColor" className="ml-[1px]" />
+          )}
+        </button>
+      </div>
+      <div className="mt-2 line-clamp-2 text-[13.5px] font-medium leading-snug text-primary">
+        {playlist.title}
+      </div>
+      <div className="truncate text-[12px] text-secondary">
+        {playlist.artist}
+        {playlist.songCount > 0 ? ` · ${playlist.songCount} 首` : ''}
+      </div>
+      {/* 整卡点击进详情：透明按钮铺满卡片（含标题区），放在最后 → 盖在封面与文字之上。 */}
+      <button
+        type="button"
+        data-testid="category-playlist-card"
+        aria-label={`查看歌单 ${playlist.title}`}
+        onClick={open}
+        className="absolute inset-0 rounded-xl"
+      />
+    </div>
+  )
+}
 
 export function CategoryView() {
   const route = useRoute()
@@ -246,27 +305,7 @@ export function CategoryView() {
             <>
               <div className="grid grid-cols-4 gap-5">
                 {playlists.map((pl) => (
-                  <button
-                    key={pl.id}
-                    type="button"
-                    data-testid="category-playlist-card"
-                    onClick={() => route.go(DeskRoute.PlaylistDetail, { playlistId: pl.id })}
-                    className="group text-left"
-                  >
-                    <Cover
-                      src={songCover(pl)}
-                      size={0}
-                      radius="rounded-xl"
-                      className="!h-auto aspect-square w-full shadow-[0_4px_16px_rgba(0,0,0,0.05)] transition-shadow group-hover:shadow-[0_8px_24px_rgba(0,0,0,0.12)]"
-                    />
-                    <div className="mt-2 line-clamp-2 text-[13.5px] font-medium leading-snug text-primary">
-                      {pl.title}
-                    </div>
-                    <div className="truncate text-[12px] text-secondary">
-                      {pl.artist}
-                      {pl.songCount > 0 ? ` · ${pl.songCount} 首` : ''}
-                    </div>
-                  </button>
+                  <CategoryPlaylistCard key={pl.id} playlist={pl} />
                 ))}
               </div>
               {plHasMore && (

@@ -308,9 +308,26 @@ export function SearchView() {
         ))}
       </div>
 
-      {/* 空状态：分类 + 最近搜索 */}
+      {/* 空状态：最近搜索 + 分类 */}
       {query.trim() === '' && results.length === 0 && (
         <div className="space-y-8">
+          {recent.length > 0 && (
+            <div>
+              <h2 className="mb-3 text-[15px] font-semibold text-primary">最近搜索</h2>
+              <div className="flex flex-wrap gap-2">
+                {recent.map((q) => (
+                  <button
+                    key={q}
+                    type="button"
+                    onClick={() => submit(q)}
+                    className="rounded-full bg-fill px-3.5 py-1.5 text-[12.5px] text-primary transition-colors hover:bg-hover"
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <div>
             <h2 className="mb-4 text-[15px] font-semibold text-primary">热门分类浏览</h2>
             {/* 分类卡改走「分类详情」（真实分类歌单/单曲），不再当关键词去搜
@@ -330,23 +347,6 @@ export function SearchView() {
               ))}
             </div>
           </div>
-          {recent.length > 0 && (
-            <div>
-              <h2 className="mb-3 text-[15px] font-semibold text-primary">最近搜索</h2>
-              <div className="flex flex-wrap gap-2">
-                {recent.map((q) => (
-                  <button
-                    key={q}
-                    type="button"
-                    onClick={() => submit(q)}
-                    className="rounded-full bg-fill px-3.5 py-1.5 text-[12.5px] text-primary transition-colors hover:bg-hover"
-                  >
-                    {q}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       )}
 

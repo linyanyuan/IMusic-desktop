@@ -131,13 +131,12 @@ try {
   step('category.state', categoryState)
 
   // 进入一个分类歌单 → 详情页应有「收藏歌单」按钮
+  // 按 data-testid 定位整卡点击按钮，不再依赖卡片内部 DOM 形状（封面/标题曾是按钮子节点）
   const opened = await evalJs(`(() => {
-    const grids = [...document.querySelectorAll('[class*="grid"]')]
-    for (const g of grids) {
-      const btns = [...g.querySelectorAll('button')].filter((b) => b.querySelector('img,[class*="Cover"],div'))
-      if (btns.length > 0) { btns[0].click(); return (btns[0].textContent ?? '').trim().slice(0, 40) }
-    }
-    return null
+    const card = document.querySelector('[data-testid="category-playlist-card"]')
+    if (card == null) return null
+    card.click()
+    return (card.getAttribute('aria-label') ?? card.textContent ?? '').trim().slice(0, 40)
   })()`)
   step('category.openPlaylist', opened)
   const collectBtn = await waitFor(`document.querySelector('[data-testid="playlist-collect"]') != null`, 20000)

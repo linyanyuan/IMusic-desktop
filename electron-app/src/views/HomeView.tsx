@@ -27,6 +27,7 @@ import { usePlayer, usePlayerTime } from '../contexts/PlayerContext'
 import { useAuth, useLibrary, useTastePreferences } from '../state/hooks'
 import { DeskRoute, useRoute } from '../state/route'
 import { genreLabel } from '../state/genres'
+import { usePlayPlaylist } from '../state/playPlaylist'
 import { shouldOfferTasteOnboarding } from '../services/tastePreferences'
 import { getServices } from '../services/runtime'
 import { toSongs, formatTime, durationSeconds, songCover } from '../state/songUtils'
@@ -123,29 +124,10 @@ function ContinuePlayingCard({ song }: { song: Song }) {
 /** 今日精选歌单大卡 —— 点击进合集详情；hover 播放键直接取曲目整单播放（取不到则进详情） */
 function FeaturedPlaylistCard({ playlist }: { playlist: Song }) {
   const route = useRoute()
-  const player = usePlayer()
   const cover = songCover(playlist)
-  const [resolving, setResolving] = useState(false)
+  const { resolving, playAll } = usePlayPlaylist(playlist)
 
   const open = () => route.go(DeskRoute.PlaylistDetail, { playlistId: playlist.id })
-  const playAll = async () => {
-    setResolving(true)
-    try {
-      const detail = await getServices().music.getPlaylist(playlist.id)
-      const songs = toSongs(
-        Array.isArray(detail['songs']) ? (detail['songs'] as Record<string, unknown>[]) : [],
-      )
-      if (songs.length > 0) {
-        player.playSong(songs[0].extra, songs.map((s) => s.extra))
-      } else {
-        open()
-      }
-    } catch {
-      open()
-    } finally {
-      setResolving(false)
-    }
-  }
 
   return (
     <div className="group relative h-[220px] overflow-hidden rounded-2xl text-left shadow-[0_8px_24px_rgba(0,0,0,0.06)]">
@@ -185,7 +167,7 @@ function FeaturedPlaylistCard({ playlist }: { playlist: Song }) {
         aria-label={`播放精选歌单 ${playlist.title}`}
         disabled={resolving}
         onClick={() => void playAll()}
-        className="absolute bottom-5 right-5 flex h-11 w-11 translate-y-1 items-center justify-center rounded-full bg-white/25 text-white opacity-0 backdrop-blur-xl transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100 disabled:opacity-100"
+        className="pointer-events-none absolute bottom-5 right-5 flex h-11 w-11 translate-y-1 items-center justify-center rounded-full bg-white/25 text-white opacity-0 backdrop-blur-xl transition-all duration-300 group-hover:pointer-events-auto group-hover:translate-y-0 group-hover:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 disabled:opacity-100"
       >
         {resolving ? (
           <Loader2 size={17} strokeWidth={2} className="animate-spin" />

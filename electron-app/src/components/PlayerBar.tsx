@@ -153,15 +153,19 @@ export function PlayerBar({
     <>
       {/* 抽屉 */}
       {drawer != null && (
-        <div className="fixed bottom-[76px] right-0 top-[38px] z-40 w-[340px] overflow-hidden rounded-tl-2xl border-l border-subtle bg-card/85 shadow-[-8px_0_28px_rgba(0,0,0,0.06)] backdrop-blur-2xl">
-          <div className="relative h-full">
-            {drawer === 'lyrics' ? (
-              <LyricsDrawer onClose={() => onDrawerChange(null)} />
-            ) : (
-              <QueueDrawer onClose={() => onDrawerChange(null)} />
-            )}
+        <>
+          {/* 透明点击层：点抽屉外的任意位置关闭抽屉（z-30 < 抽屉 z-40 < footer z-50）；起点 top-[38px] 与抽屉一致，避免压住标题栏 */}
+          <div aria-hidden="true" className="fixed inset-x-0 bottom-0 top-[38px] z-30" onClick={() => onDrawerChange(null)} />
+          <div className="fixed bottom-[76px] right-0 top-[38px] z-40 w-[340px] overflow-hidden rounded-tl-2xl border-l border-subtle bg-card/85 shadow-[-8px_0_28px_rgba(0,0,0,0.06)] backdrop-blur-2xl">
+            <div className="relative h-full">
+              {drawer === 'lyrics' ? (
+                <LyricsDrawer onClose={() => onDrawerChange(null)} />
+              ) : (
+                <QueueDrawer onClose={() => onDrawerChange(null)} />
+              )}
+            </div>
           </div>
-        </div>
+        </>
       )}
 
       <footer className="relative z-50 grid h-[76px] shrink-0 grid-cols-3 items-center border-t border-subtle bg-playerbar-bg px-6 backdrop-blur-2xl">
