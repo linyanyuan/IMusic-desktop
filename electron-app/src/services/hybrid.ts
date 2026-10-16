@@ -131,24 +131,40 @@ export class HybridMusicProvider implements MusicProvider {
     return songs
   }
 
-  /** 仅 B 站歌单 */
+  /**
+   * 「B站歌单」范围。
+   *
+   * ⚠️ 有意偏离 Dart：Flutter 的 searchBilibiliPlaylists 只保留 playlist，这里按用户要求
+   * 把主查询返回的 **B站歌曲与歌单都收进来**（选「B站歌单」时也要能搜到歌）。
+   * 追加的「<query> 歌单」扩展查询仍然只收歌单，避免标题含「歌单」的歌曲混入。
+   */
   async searchBilibiliPlaylists(query: string, page = 1): Promise<RawSong[]> {
     const safePage = page < 1 ? 1 : page
     const results: RawSong[] = []
     const seenIds = new Set<string>()
 
+    const add = (item: RawSong) => {
+      const id = item['id']?.toString() ?? ''
+      if (id === '' || seenIds.has(id)) return
+      seenIds.add(id)
+      results.push(withSourceLabel(item))
+    }
+
+    /** 主查询：歌曲与歌单都收（有意偏离 Dart，见上方 doc 注释） */
+    const addSongsAndPlaylists = (items: RawSong[]) => {
+      for (const item of items) add(item)
+    }
+
+    /** 追加的「<query> 歌单」扩展：只补歌单，避免标题含「歌单」的歌曲混入 */
     const addPlaylists = (items: RawSong[]) => {
       for (const item of items) {
         if (item['resultType']?.toString() !== 'playlist') continue
-        const id = item['id']?.toString() ?? ''
-        if (id === '' || seenIds.has(id)) continue
-        seenIds.add(id)
-        results.push(withSourceLabel(item))
+        add(item)
       }
     }
 
     try {
-      addPlaylists(await this.searchPlayback(query, safePage))
+      addSongsAndPlaylists(await this.searchPlayback(query, safePage))
     } catch {
       /* ignore */
     }

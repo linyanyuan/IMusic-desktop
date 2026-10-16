@@ -1,8 +1,8 @@
 /**
  * 搜索视图 —— 空关键词显示分类浏览 + 最近搜索；有关键词显示结果 Tabs。
  * 注：我们的后端返回 resultType = song | playlist，故结果 Tab 为「单曲 / 歌单」，
- * 另加「音源范围」选择器（B站混合 / 元数据歌曲 / B站歌单 / ChKSz），对应 MusicSearchScope；
- * 选择器下方常显当前范围的说明，避免「B站歌单」被误读成「B站全部内容」。
+ * 另加「音源范围」选择器（全部音源 / 元数据歌曲 / B站歌单 / ChKSz），对应 MusicSearchScope；
+ * 选择器下方常显当前范围的说明。
  */
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
@@ -33,15 +33,13 @@ import {
 import type { Song } from '../services/models'
 
 /**
- * 音源范围 —— 对应 MusicSearchScope；label 是 chip 上的短标签，hint 是它的说明。
- * 用词对齐 Flutter 搜索栏的音源下拉（desktop_search_screen.dart 第 425-445 行）：
- * 「默认源 · B站混合 —— 歌曲、歌单、合集综合搜索」。用户反馈「B站歌单里怎么只能搜歌单」
- * 就是被旧标签误导：B站单曲其实在「B站混合」里，这里把两者说清楚。
+ * 音源范围 —— 对应 MusicSearchScope；label 是 chip 上的短标签，hint 是下方常显的说明。
+ * 「B站歌单」范围按用户要求同时返回 B站歌曲与歌单（见 hybrid.ts searchBilibiliPlaylists）。
  */
 const SCOPE_TABS: Array<{ key: Scope; label: string; hint: string }> = [
-  { key: MusicSearchScope.All, label: 'B站混合', hint: 'B站单曲 / 歌单 / 合集 + 元数据单曲（默认源，综合搜索）' },
+  { key: MusicSearchScope.All, label: '全部音源', hint: '元数据单曲 + B站单曲 / 歌单 / 合集（综合搜索）' },
   { key: MusicSearchScope.MetadataSongs, label: '元数据歌曲', hint: '仅元数据音源（GDStudio / Meting），不含 B站' },
-  { key: MusicSearchScope.BilibiliPlaylists, label: 'B站歌单', hint: '仅 B站歌单，不含单曲；单曲请用「B站混合」' },
+  { key: MusicSearchScope.BilibiliPlaylists, label: 'B站歌单', hint: 'B站歌单 + B站单曲' },
   { key: MusicSearchScope.ChkszSongs, label: 'ChKSz', hint: 'ChKSz 网易云，仅单曲；需先在设置里填 API Key' },
 ]
 
@@ -289,7 +287,7 @@ export function SearchView() {
         ))}
       </div>
 
-      {/* 当前音源范围的说明：常显，避免「B站歌单」被误读成 B站全部内容 */}
+      {/* 当前音源范围的说明：常显，让每个范围搜什么一目了然 */}
       <p className="text-[12px] text-secondary">
         {SCOPE_TABS.find((s) => s.key === search.scope)?.hint ?? ''}
       </p>
