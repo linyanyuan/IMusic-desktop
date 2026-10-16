@@ -4,13 +4,15 @@
  */
 
 import { useState } from 'react'
-import { Heart, Play, Pause, MoreHorizontal, Trash2 } from 'lucide-react'
+import { Heart, Play, Pause, MoreHorizontal, Trash2, Download, Loader2 } from 'lucide-react'
 import type { Song } from '../services/models'
 import { Cover } from './Cover'
 import { usePlayer } from '../contexts/PlayerContext'
 import { PlayingIndicator } from './PlayingIndicator'
 import { useAuth, useLibrary } from '../state/hooks'
 import { toggleLikeGuarded } from '../state/likeAction'
+import { cacheSong } from '../state/offlineCache'
+import { showNotice } from '../state/notice'
 import { durationSeconds, formatTime, songCover } from '../state/songUtils'
 
 export interface SongTableProps {
@@ -27,8 +29,10 @@ export interface SongTableProps {
   onAddToPlaylist?: (song: Song) => void
 }
 
-const GRID_WITH_ALBUM = 'grid-cols-[40px_minmax(0,2.4fr)_minmax(0,1.4fr)_minmax(0,1.6fr)_44px_64px]'
-const GRID_NO_ALBUM = 'grid-cols-[40px_minmax(0,3fr)_minmax(0,1.6fr)_44px_64px]'
+// 最后一列 28px 是「更多」按钮的独立列：不这么做时按钮会挤在时长右侧，
+// 把数值往左推、右边缘与表头的「时长」对不齐。
+const GRID_WITH_ALBUM = 'grid-cols-[40px_minmax(0,2.4fr)_minmax(0,1.4fr)_minmax(0,1.6fr)_44px_64px_28px]'
+const GRID_NO_ALBUM = 'grid-cols-[40px_minmax(0,3fr)_minmax(0,1.6fr)_44px_64px_28px]'
 
 export function SongTable({
   songs,
@@ -44,9 +48,36 @@ export function SongTable({
   const library = useLibrary()
   const auth = useAuth()
   const [menuFor, setMenuFor] = useState<string | null>(null)
+  // 单曲缓存的探测状态：只对当前展开的行有效（key 与 menuFor 同款）
+  const [cacheProbe, setCacheProbe] = useState<{ key: string; cached: boolean; busy: boolean } | null>(null)
 
   const currentId = player.currentSong?.['id']?.toString() ?? null
   const grid = showAlbum ? GRID_WITH_ALBUM : GRID_NO_ALBUM
+  const canCache = typeof window !== 'undefined' && window.imusicAPI != null
+  // 单曲缓存入口和删除/加入歌单共用一个「更多」菜单
+  const hasMenu = onRemove != null || onAddToPlaylist != null || canCache
+
+  /** 展开/收起某一行的「更多」菜单，并顺带探测该曲是否已在本地缓存 */
+  function openMenu(key: string, song: Song): void {
+    if (menuFor === key) {
+      setMenuFor(null)
+      return
+    }
+    setMenuFor(key)
+    if (!canCache) return
+    setCacheProbe({ key, cached: false, busy: true })
+    void (async () => {
+      let hit: { url: string; bytes: number } | null = null
+      try {
+        hit = (await window.imusicAPI?.cacheLookup(song.id)) ?? null
+      } catch {
+        // 探测失败按未缓存处理（点下去缓存会给出真正的错误提示）
+        hit = null
+      }
+      // 只在探测结果仍属于当前展开行时写入，避免快速切换行的竞态
+      setCacheProbe(prev => (prev?.key === key ? { key, cached: hit != null, busy: false } : prev))
+    })()
+  }
 
   if (songs.length === 0) {
     return (
@@ -68,6 +99,8 @@ export function SongTable({
           <Heart size={13} strokeWidth={1.75} className="mx-auto" />
         </div>
         <div className="text-right">{timeOf != null ? '播放时间' : '时长'}</div>
+        {/* 「更多」按钮列（始终渲染，保持列宽固定） */}
+        <div aria-hidden="true" />
       </div>
 
       {songs.map((song, index) => {
@@ -149,17 +182,19 @@ export function SongTable({
               </button>
             </div>
 
-            {/* 时长 / 相对时间 / 更多 */}
-            <div className="relative flex items-center justify-end gap-1">
-              <span className="text-[12.5px] tabular-nums text-secondary">
-                {timeOf != null ? timeOf(song) : formatTime(seconds)}
-              </span>
-              {(onRemove != null || onAddToPlaylist != null) && (
+            {/* 时长 / 相对时间 */}
+            <div className="text-right text-[12.5px] tabular-nums text-secondary">
+              {timeOf != null ? timeOf(song) : formatTime(seconds)}
+            </div>
+
+            {/* 更多按钮（独立列，右边缘与表头对齐） */}
+            <div className="relative flex items-center justify-end">
+              {hasMenu && (
                 <>
                   <button
                     type="button"
                     aria-label="更多"
-                    onClick={() => setMenuFor(menuFor === `${song.id}-${index}` ? null : `${song.id}-${index}`)}
+                    onClick={() => openMenu(`${song.id}-${index}`, song)}
                     className="rounded-md p-0.5 text-secondary opacity-0 transition-opacity hover:bg-hover group-hover:opacity-100"
                   >
                     <MoreHorizontal size={15} strokeWidth={1.75} />
@@ -184,6 +219,64 @@ export function SongTable({
                             <MoreHorizontal size={14} strokeWidth={1.75} />
                             添加到歌单
                           </button>
+                        )}
+                        {canCache && cacheProbe?.key === `${song.id}-${index}` && (
+                          <>
+                            {cacheProbe.busy ? (
+                              <div className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] text-secondary opacity-60">
+                                <Loader2 size={14} className="animate-spin" />
+                                读取缓存状态…
+                              </div>
+                            ) : cacheProbe.cached ? (
+                              <button
+                                type="button"
+                                data-testid="song-cache-remove"
+                                onClick={() => {
+                                  const key = `${song.id}-${index}`
+                                  setMenuFor(null)
+                                  setCacheProbe({ key, cached: true, busy: true })
+                                  void (async () => {
+                                    try {
+                                      await window.imusicAPI?.cacheRemove(song.id)
+                                      setCacheProbe({ key, cached: false, busy: false })
+                                      showNotice(`已删除《${song.title}》的本地缓存`)
+                                    } catch (e) {
+                                      setCacheProbe({ key, cached: true, busy: false })
+                                      showNotice(`删除缓存失败：${e instanceof Error ? e.message : String(e)}`)
+                                    }
+                                  })()
+                                }}
+                                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] text-accent hover:bg-accent/10"
+                              >
+                                <Trash2 size={14} strokeWidth={1.75} />
+                                删除缓存
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                data-testid="song-cache-add"
+                                onClick={() => {
+                                  const key = `${song.id}-${index}`
+                                  setMenuFor(null)
+                                  setCacheProbe({ key, cached: false, busy: true })
+                                  void (async () => {
+                                    try {
+                                      await cacheSong(song)
+                                      setCacheProbe({ key, cached: true, busy: false })
+                                      showNotice(`已缓存《${song.title}》`)
+                                    } catch (e) {
+                                      setCacheProbe({ key, cached: false, busy: false })
+                                      showNotice(`缓存失败：${e instanceof Error ? e.message : String(e)}`)
+                                    }
+                                  })()
+                                }}
+                                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] text-primary hover:bg-hover"
+                              >
+                                <Download size={14} strokeWidth={1.75} />
+                                缓存到本地
+                              </button>
+                            )}
+                          </>
                         )}
                         {onRemove != null && (
                           <button

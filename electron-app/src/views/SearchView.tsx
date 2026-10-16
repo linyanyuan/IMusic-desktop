@@ -4,7 +4,7 @@
  * 另加「音源范围」选择器（全部 / 元数据 / B站歌单 / ChKSz），对应 MusicSearchScope。
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Search, X, Play, Heart, Loader2, KeyRound } from 'lucide-react'
 import { Cover } from '../components/Cover'
 import { usePlayer } from '../contexts/PlayerContext'
@@ -15,6 +15,13 @@ import { MusicSearchScope, type MusicSearchScope as Scope } from '../services/mo
 import { DeskRoute, useRoute } from '../state/route'
 import { toSongs, durationSeconds, formatTime, songCover } from '../state/songUtils'
 import { GENRES } from '../state/genres'
+import {
+  runSearch,
+  resetSearch,
+  setSearchTab,
+  useSearchState,
+  type SearchRunner,
+} from '../state/searchState'
 import type { Song } from '../services/models'
 
 const RECENT_KEY = 'imusic:recentSearches'
@@ -50,77 +57,44 @@ export function SearchView() {
   const library = useLibrary()
   const auth = useAuth()
 
-  const [query, setQuery] = useState(route.searchSeed)
-  const [scope, setScope] = useState<Scope>(MusicSearchScope.All)
-  const [tab, setTab] = useState<'song' | 'playlist'>('song')
-  const [results, setResults] = useState<Song[]>([])
-  const [page, setPage] = useState(1)
-  const [loading, setLoading] = useState(false)
-  const [loadingMore, setLoadingMore] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  // 搜索结果状态走模块级 store：路由切换（前进/后退、进出专注模式）会卸载重建
+  // SearchView，状态放组件内会丢 —— 对齐 Dart 的模块级 Riverpod provider。
+  // 输入框文字不跨卸载持久化，单独用组件内 state。
+  const search = useSearchState()
+  const [input, setInput] = useState(route.searchSeed !== '' ? route.searchSeed : search.query)
   const [recent, setRecent] = useState<string[]>(() => loadRecent())
-  const requestIdRef = useRef(0)
 
-  const runSearch = useCallback(
-    async (q: string, sc: Scope, p: number, append: boolean) => {
-      const trimmed = q.trim()
-      if (trimmed === '') {
-        setResults([])
-        setError(null)
-        return
-      }
-      const reqId = ++requestIdRef.current
-      if (append) setLoadingMore(true)
-      else {
-        setLoading(true)
-        setResults([])
-      }
-      setError(null)
-      try {
-        const songs = await getServices().music.searchSongs(trimmed, p, sc)
-        if (reqId !== requestIdRef.current) return // 过期响应丢弃
-        const mapped = toSongs(songs)
-        setResults((prev) => (append ? [...prev, ...mapped] : mapped))
-        setPage(p)
-      } catch (e) {
-        if (reqId !== requestIdRef.current) return
-        const message = e instanceof Error ? e.message : String(e)
-        // ChKSz 未配置 key 时给出明确提示，而不是空列表
-        setError(
-          message.includes('ChKSz') || message.toLowerCase().includes('api key')
-            ? 'CHKSZ_KEY_MISSING'
-            : message,
-        )
-        if (!append) setResults([])
-      } finally {
-        if (reqId === requestIdRef.current) {
-          setLoading(false)
-          setLoadingMore(false)
-        }
-      }
-    },
+  const runner = useCallback<SearchRunner>(
+    async (q, p, sc) => toSongs(await getServices().music.searchSongs(q, p, sc)),
     [],
   )
 
   // 路由带来的预填关键词
   useEffect(() => {
-    if (route.searchSeed !== '') {
-      setQuery(route.searchSeed)
-      void runSearch(route.searchSeed, scope, 1, false)
-    }
+    if (route.searchSeed === '') return
+    setInput(route.searchSeed)
+    // 已有同一关键词的结果 → 直接恢复（后退/专注模式回来不重复请求）
+    if (route.searchSeed.trim() === search.query.trim()) return
+    void runSearch(runner, route.searchSeed, search.scope, 1, false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route.searchSeed])
 
   const submit = (q: string) => {
-    setQuery(q)
+    setInput(q)
     pushRecent(q)
     setRecent(loadRecent())
-    void runSearch(q, scope, 1, false)
+    void runSearch(runner, q, search.scope, 1, false)
   }
 
-  const songs = useMemo(() => results.filter((s) => s.resultType !== 'playlist'), [results])
-  const playlists = useMemo(() => results.filter((s) => s.resultType === 'playlist'), [results])
-  const visible = tab === 'song' ? songs : playlists
+  const songs = useMemo(
+    () => search.results.filter((s) => s.resultType !== 'playlist'),
+    [search.results],
+  )
+  const playlists = useMemo(
+    () => search.results.filter((s) => s.resultType === 'playlist'),
+    [search.results],
+  )
+  const visible = search.tab === 'song' ? songs : playlists
 
   const playFrom = (song: Song, index: number) => {
     const raw = songs.map((s) => s.extra)
@@ -133,7 +107,7 @@ export function SearchView() {
 
   // 结果区的分支用 if/else 先算好，避免 JSX 里的 6 级嵌套三元
   let resultsBody: ReactNode
-  if (error === 'CHKSZ_KEY_MISSING') {
+  if (search.error === 'CHKSZ_KEY_MISSING') {
     resultsBody = (
       <div className="flex flex-wrap items-center gap-3 rounded-xl border border-accent/20 bg-accent/[0.05] px-4 py-3 text-[13px] text-primary">
         <KeyRound size={16} strokeWidth={1.75} className="text-accent" />
@@ -147,13 +121,13 @@ export function SearchView() {
         </button>
       </div>
     )
-  } else if (error != null) {
+  } else if (search.error != null) {
     resultsBody = (
       <div className="rounded-xl border border-subtle px-4 py-3 text-[13px] text-secondary">
-        搜索失败：{error}
+        搜索失败：{search.error}
       </div>
     )
-  } else if (loading) {
+  } else if (search.loading) {
     resultsBody = (
       <div className="flex items-center justify-center gap-2 py-16 text-[13px] text-secondary">
         <Loader2 size={16} className="animate-spin" /> 搜索中…
@@ -162,10 +136,10 @@ export function SearchView() {
   } else if (visible.length === 0) {
     resultsBody = (
       <div className="py-16 text-center text-[13px] text-secondary">
-        没有找到匹配的{tab === 'song' ? '歌曲' : '歌单'}
+        没有找到匹配的{search.tab === 'song' ? '歌曲' : '歌单'}
       </div>
     )
-  } else if (tab === 'song') {
+  } else if (search.tab === 'song') {
     resultsBody = (
       <div className="space-y-0.5">
         {songs.map((song, i) => {
@@ -261,26 +235,22 @@ export function SearchView() {
         />
         <input
           autoFocus
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') submit(query)
+            if (e.key === 'Enter') submit(input)
           }}
           placeholder="搜索歌曲、歌手、歌单…（回车确认）"
           className="w-full rounded-xl border border-subtle bg-card py-3 pl-11 pr-10 text-[14px] outline-none transition-colors placeholder:text-secondary focus:border-accent/40"
         />
-        {query !== '' && (
+        {input !== '' && (
           <button
             type="button"
             aria-label="清空"
             onClick={() => {
-              // 让在途请求的响应失效，否则清空后旧结果仍会回填
-              requestIdRef.current += 1
-              setQuery('')
-              setResults([])
-              setError(null)
-              setLoading(false)
-              setLoadingMore(false)
+              // resetSearch 会让在途请求的响应失效，否则清空后旧结果仍会回填
+              resetSearch()
+              setInput('')
             }}
             className="absolute right-3 top-1/2 -translate-y-1/2 text-secondary hover:text-primary"
           >
@@ -296,11 +266,18 @@ export function SearchView() {
             key={s.key}
             type="button"
             onClick={() => {
-              setScope(s.key)
-              if (query.trim() !== '') void runSearch(query, s.key, 1, false)
+              // 输入框有未提交的文字就用它，否则用已提交的关键词重搜
+              // （输入框被手动清空但结果还在时，切音源范围不该把结果清掉）
+              void runSearch(
+                runner,
+                input.trim() !== '' ? input : search.query,
+                s.key,
+                1,
+                false,
+              )
             }}
             className={`rounded-full px-3.5 py-1.5 text-[12.5px] transition-colors ${
-              scope === s.key
+              search.scope === s.key
                 ? 'bg-accent/10 font-medium text-accent'
                 : 'bg-fill text-primary hover:bg-hover'
             }`}
@@ -311,7 +288,7 @@ export function SearchView() {
       </div>
 
       {/* 空状态：最近搜索 + 分类 */}
-      {query.trim() === '' && results.length === 0 && (
+      {input.trim() === '' && search.results.length === 0 && (
         <div className="space-y-8">
           {recent.length > 0 && (
             <div>
@@ -353,7 +330,7 @@ export function SearchView() {
       )}
 
       {/* 结果 */}
-      {query.trim() !== '' && (
+      {search.query.trim() !== '' && (
         <div>
           <div className="mb-4 flex items-center gap-6 border-b border-subtle">
             {(
@@ -365,9 +342,9 @@ export function SearchView() {
               <button
                 key={key}
                 type="button"
-                onClick={() => setTab(key)}
+                onClick={() => setSearchTab(key)}
                 className={`-mb-px border-b-2 pb-2 text-[13.5px] transition-colors ${
-                  tab === key
+                  search.tab === key
                     ? 'border-accent font-medium text-accent'
                     : 'border-transparent text-secondary hover:text-primary'
                 }`}
@@ -379,15 +356,17 @@ export function SearchView() {
 
           {resultsBody}
 
-          {!loading && visible.length > 0 && (
+          {!search.loading && visible.length > 0 && (
             <div className="mt-6 flex justify-center">
               <button
                 type="button"
-                disabled={loadingMore}
-                onClick={() => void runSearch(query, scope, page + 1, true)}
+                disabled={search.loadingMore}
+                onClick={() =>
+                  void runSearch(runner, search.query, search.scope, search.page + 1, true)
+                }
                 className="rounded-full bg-fill px-5 py-2 text-[13px] text-primary transition-colors hover:bg-hover disabled:opacity-50"
               >
-                {loadingMore ? '加载中…' : '加载更多'}
+                {search.loadingMore ? '加载中…' : '加载更多'}
               </button>
             </div>
           )}
