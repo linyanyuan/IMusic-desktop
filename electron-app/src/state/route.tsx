@@ -53,6 +53,12 @@ export interface RouteApi extends RouteState {
     opts?: { playlistId?: string; categoryKey?: string; searchSeed?: string },
   ) => void
   openSearch: (seed: string) => void
+  /**
+   * 就地回填当前搜索条目的 seed（不产生历史条目、不动前进/后退栈）。
+   * 搜索页提交 / 清空关键词时调用：后退或进出专注模式重挂载 SearchView 时，
+   * seed 与 store 里的 query 保持一致，才不会拿旧 seed 把新结果冲掉。
+   */
+  replaceSearchSeed: (seed: string) => void
   /** 专注模式开关：进入时记住来源，退出时回到来源（对应 Flutter toggleDeskFocusRoute） */
   toggleFocus: () => void
   /** 后退一步（无历史时无操作） */
@@ -120,6 +126,14 @@ export function RouteProvider({ children }: { children: ReactNode }) {
     )
   }, [])
 
+  const replaceSearchSeed = useCallback<RouteApi['replaceSearchSeed']>((seed) => {
+    setHistory((h) => {
+      if (h.current.route !== DeskRoute.Search) return h
+      if (h.current.searchSeed === seed) return h
+      return replaceCurrent(h, { ...h.current, searchSeed: seed })
+    })
+  }, [])
+
   const toggleFocus = useCallback(() => {
     setHistory((h) => {
       if (h.current.route === DeskRoute.Focus) {
@@ -160,13 +174,14 @@ export function RouteProvider({ children }: { children: ReactNode }) {
       ...state,
       go,
       openSearch,
+      replaceSearchSeed,
       toggleFocus,
       back,
       forward,
       canGoBack: historyCanGoBack(history),
       canGoForward: historyCanGoForward(history),
     }),
-    [state, history, go, openSearch, toggleFocus, back, forward],
+    [state, history, go, openSearch, replaceSearchSeed, toggleFocus, back, forward],
   )
   return <RouteContext.Provider value={value}>{children}</RouteContext.Provider>
 }

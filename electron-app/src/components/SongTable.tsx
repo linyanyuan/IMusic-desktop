@@ -3,7 +3,7 @@
  * 列：#序号或播放动效、封面+标题、歌手、专辑、喜欢、时长（+可选相对时间）
  */
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Heart, Play, Pause, MoreHorizontal, Trash2, Download, Loader2 } from 'lucide-react'
 import type { Song } from '../services/models'
 import { Cover } from './Cover'
@@ -64,6 +64,16 @@ export function SongTable({
       return
     }
     setMenuFor(key)
+    probeCache(key, song)
+  }
+
+  /** await 之后的探测结果统一从这里写回：期间用户已换行（key 变了）就丢弃，避免顶掉新行的状态 */
+  function applyProbe(key: string, next: { key: string; cached: boolean; busy: boolean }): void {
+    setCacheProbe(prev => (prev?.key === key ? next : prev))
+  }
+
+  /** 展开某行菜单时探测该曲是否已在本地缓存（未配置主进程 API 时跳过） */
+  function probeCache(key: string, song: Song): void {
     if (!canCache) return
     setCacheProbe({ key, cached: false, busy: true })
     void (async () => {
@@ -71,12 +81,95 @@ export function SongTable({
       try {
         hit = (await window.imusicAPI?.cacheLookup(song.id)) ?? null
       } catch {
-        // 探测失败按未缓存处理（点下去缓存会给出真正的错误提示）
+        // 探测失败按未缓存处理（真点下去缓存会给出真正的错误提示）
         hit = null
       }
-      // 只在探测结果仍属于当前展开行时写入，避免快速切换行的竞态
-      setCacheProbe(prev => (prev?.key === key ? { key, cached: hit != null, busy: false } : prev))
+      applyProbe(key, { key, cached: hit != null, busy: false })
     })()
+  }
+
+  /**
+   * 执行一次缓存动作（缓存 / 删除缓存）。
+   * `nextCached` 是成功后的目标态：true=已缓存，false=已删除。
+   * busy 与失败回滚都用 `!nextCached` 作为「之前的已知状态」。
+   * 写入一律走 applyProbe —— await 之后必须带 key 守卫。
+   */
+  function runCacheAction(
+    key: string,
+    action: () => Promise<void>,
+    nextCached: boolean,
+    successMsg: string,
+    failurePrefix: string,
+  ): void {
+    setMenuFor(null)
+    setCacheProbe({ key, cached: !nextCached, busy: true })
+    void (async () => {
+      try {
+        await action()
+        applyProbe(key, { key, cached: nextCached, busy: false })
+        showNotice(successMsg)
+      } catch (e) {
+        applyProbe(key, { key, cached: !nextCached, busy: false })
+        showNotice(`${failurePrefix}：${e instanceof Error ? e.message : String(e)}`)
+      }
+    })()
+  }
+
+  /** 菜单里的缓存项：探测中 / 已缓存（删除缓存）/ 未缓存（缓存到本地）；用 early return 代替嵌套三元 */
+  function cacheMenuItem(song: Song, key: string): ReactNode {
+    if (!canCache || cacheProbe?.key !== key) return null
+    if (cacheProbe.busy) {
+      return (
+        <div className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] text-secondary opacity-60">
+          <Loader2 size={14} className="animate-spin" />
+          读取缓存状态…
+        </div>
+      )
+    }
+    if (cacheProbe.cached) {
+      return (
+        <button
+          type="button"
+          data-testid="song-cache-remove"
+          onClick={() =>
+            runCacheAction(
+              key,
+              async () => {
+                await window.imusicAPI?.cacheRemove(song.id)
+              },
+              false,
+              `已删除《${song.title}》的本地缓存`,
+              '删除缓存失败',
+            )
+          }
+          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] text-accent hover:bg-accent/10"
+        >
+          <Trash2 size={14} strokeWidth={1.75} />
+          删除缓存
+        </button>
+      )
+    }
+    return (
+      <button
+        type="button"
+        data-testid="song-cache-add"
+        onClick={() =>
+          runCacheAction(
+            key,
+            async () => {
+              await cacheSong(song)
+            },
+            true,
+            `已缓存《${song.title}》`,
+            '缓存失败',
+          )
+        }
+        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] text-primary hover:bg-hover"
+      >
+        <Download size={14} strokeWidth={1.75} />
+        缓存到本地
+      </button>
+    )
   }
 
   if (songs.length === 0) {
@@ -220,64 +313,7 @@ export function SongTable({
                             添加到歌单
                           </button>
                         )}
-                        {canCache && cacheProbe?.key === `${song.id}-${index}` && (
-                          <>
-                            {cacheProbe.busy ? (
-                              <div className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] text-secondary opacity-60">
-                                <Loader2 size={14} className="animate-spin" />
-                                读取缓存状态…
-                              </div>
-                            ) : cacheProbe.cached ? (
-                              <button
-                                type="button"
-                                data-testid="song-cache-remove"
-                                onClick={() => {
-                                  const key = `${song.id}-${index}`
-                                  setMenuFor(null)
-                                  setCacheProbe({ key, cached: true, busy: true })
-                                  void (async () => {
-                                    try {
-                                      await window.imusicAPI?.cacheRemove(song.id)
-                                      setCacheProbe({ key, cached: false, busy: false })
-                                      showNotice(`已删除《${song.title}》的本地缓存`)
-                                    } catch (e) {
-                                      setCacheProbe({ key, cached: true, busy: false })
-                                      showNotice(`删除缓存失败：${e instanceof Error ? e.message : String(e)}`)
-                                    }
-                                  })()
-                                }}
-                                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] text-accent hover:bg-accent/10"
-                              >
-                                <Trash2 size={14} strokeWidth={1.75} />
-                                删除缓存
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                data-testid="song-cache-add"
-                                onClick={() => {
-                                  const key = `${song.id}-${index}`
-                                  setMenuFor(null)
-                                  setCacheProbe({ key, cached: false, busy: true })
-                                  void (async () => {
-                                    try {
-                                      await cacheSong(song)
-                                      setCacheProbe({ key, cached: true, busy: false })
-                                      showNotice(`已缓存《${song.title}》`)
-                                    } catch (e) {
-                                      setCacheProbe({ key, cached: false, busy: false })
-                                      showNotice(`缓存失败：${e instanceof Error ? e.message : String(e)}`)
-                                    }
-                                  })()
-                                }}
-                                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] text-primary hover:bg-hover"
-                              >
-                                <Download size={14} strokeWidth={1.75} />
-                                缓存到本地
-                              </button>
-                            )}
-                          </>
-                        )}
+                        {cacheMenuItem(song, `${song.id}-${index}`)}
                         {onRemove != null && (
                           <button
                             type="button"

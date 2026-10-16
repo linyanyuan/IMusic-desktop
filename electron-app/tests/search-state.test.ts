@@ -14,6 +14,7 @@ import test, { beforeEach } from 'node:test'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import {
+  CHKSZ_KEY_MISSING,
   getSearchState,
   resetSearch,
   runSearch,
@@ -21,6 +22,7 @@ import {
   subscribeSearch,
   useSearchState,
   type SearchRunner,
+  type SearchState,
 } from '../src/state/searchState'
 import { MusicSearchScope, type Song } from '../src/services/models'
 import type { MusicSearchScope as Scope } from '../src/services/models'
@@ -189,6 +191,64 @@ test('空关键词：不发请求、状态清空，但 scope 仍被更新', asyn
   assert.equal(state.scope, MusicSearchScope.ChkszSongs, 'scope 仍应更新')
 })
 
+test('空关键词：只发布一次，不出现 loading/loadingMore 中间态', async () => {
+  const snapshots: SearchState[] = []
+  const unsubscribe = subscribeSearch(() => snapshots.push(getSearchState()))
+
+  let calls = 0
+  await runSearch(
+    async () => {
+      calls += 1
+      return [song('9')]
+    },
+    '   ',
+    MusicSearchScope.ChkszSongs,
+    1,
+    false,
+  )
+  unsubscribe()
+
+  assert.equal(calls, 0, '空关键词不得发请求')
+  assert.equal(snapshots.length, 1, '空关键词应只发布一次（不要先发 loading 再发复位）')
+  assert.ok(
+    snapshots.every((s) => !s.loading && !s.loadingMore),
+    '不得出现 loading / loadingMore 中间态',
+  )
+
+  const last = getSearchState()
+  assert.equal(last.query, '')
+  assert.deepEqual(last.results, [])
+  assert.equal(last.page, 1)
+  assert.equal(last.error, null)
+  assert.equal(last.scope, MusicSearchScope.ChkszSongs, 'scope 仍应更新')
+})
+
+test('空关键词 + append=true：也走完整复位（清空结果、页码回 1）', async () => {
+  await runSearch(async () => [song('1'), song('2')], 'x', MusicSearchScope.All, 1, false)
+  assert.equal(getSearchState().results.length, 2)
+
+  let calls = 0
+  await runSearch(
+    async () => {
+      calls += 1
+      return [song('9')]
+    },
+    '  ',
+    MusicSearchScope.All,
+    2,
+    true,
+  )
+  assert.equal(calls, 0, '空关键词不得发请求')
+
+  const state = getSearchState()
+  assert.deepEqual(state.results, [], 'append 形式的空关键词也要清空结果，而不是保留')
+  assert.equal(state.page, 1)
+  assert.equal(state.error, null)
+  assert.equal(state.loading, false)
+  assert.equal(state.loadingMore, false)
+  assert.equal(state.query, '')
+})
+
 test('错误映射：ChKSz / api key → CHKSZ_KEY_MISSING，其余原样', async () => {
   await runSearch(
     async () => {
@@ -199,7 +259,7 @@ test('错误映射：ChKSz / api key → CHKSZ_KEY_MISSING，其余原样', asyn
     1,
     false,
   )
-  assert.equal(getSearchState().error, 'CHKSZ_KEY_MISSING')
+  assert.equal(getSearchState().error, CHKSZ_KEY_MISSING)
   assert.equal(getSearchState().loading, false)
   assert.deepEqual(getSearchState().results, [])
 
@@ -212,7 +272,7 @@ test('错误映射：ChKSz / api key → CHKSZ_KEY_MISSING，其余原样', asyn
     1,
     false,
   )
-  assert.equal(getSearchState().error, 'CHKSZ_KEY_MISSING', '大小写不敏感')
+  assert.equal(getSearchState().error, CHKSZ_KEY_MISSING, '大小写不敏感')
 
   await runSearch(
     async () => {

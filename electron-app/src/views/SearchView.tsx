@@ -16,6 +16,7 @@ import { DeskRoute, useRoute } from '../state/route'
 import { toSongs, durationSeconds, formatTime, songCover } from '../state/songUtils'
 import { GENRES } from '../state/genres'
 import {
+  CHKSZ_KEY_MISSING,
   runSearch,
   resetSearch,
   setSearchTab,
@@ -83,6 +84,10 @@ export function SearchView() {
     setInput(q)
     pushRecent(q)
     setRecent(loadRecent())
+    // 把实际提交的关键词回填到当前历史条目的 seed（不产生新历史条目）：
+    // 否则后退/进出专注模式重挂载时，路由里的旧 seed 与 store 的 query 发散，
+    // 会拿旧关键词重搜一次，把本该保留的结果冲掉。
+    route.replaceSearchSeed(q.trim())
     void runSearch(runner, q, search.scope, 1, false)
   }
 
@@ -107,7 +112,7 @@ export function SearchView() {
 
   // 结果区的分支用 if/else 先算好，避免 JSX 里的 6 级嵌套三元
   let resultsBody: ReactNode
-  if (search.error === 'CHKSZ_KEY_MISSING') {
+  if (search.error === CHKSZ_KEY_MISSING) {
     resultsBody = (
       <div className="flex flex-wrap items-center gap-3 rounded-xl border border-accent/20 bg-accent/[0.05] px-4 py-3 text-[13px] text-primary">
         <KeyRound size={16} strokeWidth={1.75} className="text-accent" />
@@ -250,6 +255,8 @@ export function SearchView() {
             onClick={() => {
               // resetSearch 会让在途请求的响应失效，否则清空后旧结果仍会回填
               resetSearch()
+              // seed 同样回填为空，与 store 对齐（后退重挂载不会拿旧关键词重搜）
+              route.replaceSearchSeed('')
               setInput('')
             }}
             className="absolute right-3 top-1/2 -translate-y-1/2 text-secondary hover:text-primary"
@@ -287,8 +294,8 @@ export function SearchView() {
         ))}
       </div>
 
-      {/* 空状态：最近搜索 + 分类 */}
-      {input.trim() === '' && search.results.length === 0 && (
+      {/* 空状态：最近搜索 + 分类（判定源与结果区一致，都用已提交的关键词 —— 对齐 Dart 的 searchQueryProvider） */}
+      {search.query.trim() === '' && (
         <div className="space-y-8">
           {recent.length > 0 && (
             <div>

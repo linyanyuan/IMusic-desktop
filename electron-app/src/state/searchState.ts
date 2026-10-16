@@ -20,9 +20,7 @@
  */
 
 import { useSyncExternalStore } from 'react'
-import { MusicSearchScope } from '../services/models'
-import type { MusicSearchScope as Scope } from '../services/models'
-import type { Song } from '../services/models'
+import { MusicSearchScope, type MusicSearchScope as Scope, type Song } from '../services/models'
 
 export type SearchTabId = 'song' | 'playlist'
 
@@ -108,10 +106,13 @@ export function resetSearch(): void {
   })
 }
 
+/** ChKSz 未配置 key 的哨兵值：SearchView 据此渲染「去设置填写密钥」提示，两边必须共用本常量 */
+export const CHKSZ_KEY_MISSING = 'CHKSZ_KEY_MISSING'
+
 /** ChKSz 未配置 key 时给出明确提示（视图据此渲染「去设置填写密钥」），而不是空列表 */
 function mapSearchError(message: string): string {
   return message.includes('ChKSz') || message.toLowerCase().includes('api key')
-    ? 'CHKSZ_KEY_MISSING'
+    ? CHKSZ_KEY_MISSING
     : message
 }
 
@@ -122,6 +123,10 @@ function mapSearchError(message: string): string {
  * - `append=false` 为新搜索：先清空结果并置 loading；
  * - 空关键词不发请求，只把状态清干净（scope 仍更新）；
  * - 过期响应（期间又发起了新搜索，或用户清了空）直接丢弃，不写状态。
+ *
+ * 本 store 只保存一份状态：提交搜索的一方负责把实际关键词回填进路由 seed
+ * （见 `route.replaceSearchSeed`），否则后退/进出专注模式重挂载时，路由里的旧 seed
+ * 会与本 store 的 query 发散，把本该保留的结果冲掉。
  */
 export async function runSearch(
   runner: SearchRunner,
@@ -132,6 +137,21 @@ export async function runSearch(
 ): Promise<void> {
   const trimmed = query.trim()
   const id = ++requestId
+
+  // 空关键词不发请求：一次发布完成 scope 更新 + 复位（不产生 loading/loadingMore 中间态）
+  if (trimmed === '') {
+    publish({
+      ...state,
+      scope,
+      query: '',
+      results: [],
+      page: 1,
+      error: null,
+      loading: false,
+      loadingMore: false,
+    })
+    return
+  }
 
   // 先发布意图：scope 永远更新；append 走 loadingMore，新搜索清空结果并走 loading
   if (append) {
@@ -146,19 +166,6 @@ export async function runSearch(
       page: 1,
       error: null,
     })
-  }
-
-  if (trimmed === '') {
-    publish({
-      ...state,
-      query: '',
-      results: [],
-      page: 1,
-      error: null,
-      loading: false,
-      loadingMore: false,
-    })
-    return
   }
 
   try {
