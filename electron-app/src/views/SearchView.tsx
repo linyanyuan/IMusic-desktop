@@ -33,7 +33,7 @@ import {
 import type { Song } from '../services/models'
 
 /**
- * 音源范围 —— 对应 MusicSearchScope；label 是 chip 上的短标签，hint 是下方常显的说明。
+ * 音源范围 —— 对应 MusicSearchScope；label 是 chip 上的短标签，hint 只作悬停提示（title/aria-label），不再常显。
  * 「B站歌单」范围按用户要求同时返回 B站歌曲与歌单（见 hybrid.ts searchBilibiliPlaylists）。
  */
 const SCOPE_TABS: Array<{ key: Scope; label: string; hint: string }> = [
@@ -286,11 +286,6 @@ export function SearchView() {
           </button>
         ))}
       </div>
-
-      {/* 当前音源范围的说明：常显，让每个范围搜什么一目了然 */}
-      <p className="text-[12px] text-secondary">
-        {SCOPE_TABS.find((s) => s.key === search.scope)?.hint ?? ''}
-      </p>
 
       {/* 空状态：最近搜索 + 分类（判定源与结果区一致，都用已提交的关键词 —— 对齐 Dart 的 searchQueryProvider） */}
       {search.query.trim() === '' && (
