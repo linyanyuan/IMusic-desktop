@@ -18,12 +18,21 @@
 import { app, BrowserWindow, ipcMain, net } from 'electron'
 import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
-import { createWriteStream, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import {
+  createReadStream,
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs'
 import { promises as fsp } from 'node:fs'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import os from 'node:os'
 import path from 'node:path'
+import { computeDiffOperations, downloadBytes, parseBlockmap } from './blockmapDiff'
+import { downloadDifferential } from './differentialDownload'
 import { ZIP_UPDATER_SCRIPT } from './zipUpdaterScript'
 
 /**
@@ -62,6 +71,10 @@ export interface UpdateManifest {
   downloadUrl: string
   sha256: string
   changelog: string | null
+  /** 差量更新：新版本安装包的 blockmap 地址；null/缺失 → 全量下载 */
+  blockmapUrl?: string | null
+  /** 差量更新：安装包明文字节数（进度条用，可选） */
+  size?: number | null
 }
 
 interface ParsedVersion {
@@ -157,7 +170,36 @@ function readString(json: Record<string, unknown>, ...keys: string[]): string {
   return ''
 }
 
-/** 兼容 snake_case（服务端两种命名都出现过） */
+/**
+ * 读一个可选的 http(s) 地址字段：不是合法的 http/https 字符串就归一化成 null。
+ *
+ * 差量更新的 blockmapUrl 来自远端 manifest，**不能**让它把请求引到 file:// 之类的协议；
+ * 域名白名单仍由 `assertAllowedUrl` 在真正发请求时把关（这里只做协议与形态过滤）。
+ */
+function readOptionalUrl(json: Record<string, unknown>, ...keys: string[]): string | null {
+  const value = readString(json, ...keys)
+  return /^https?:\/\/[^\s]+$/i.test(value) ? value : null
+}
+
+/** 读一个可选的正整数字段（兼容写成字符串的 manifest），否则 null。 */
+function readOptionalPositiveInt(json: Record<string, unknown>, ...keys: string[]): number | null {
+  for (const key of keys) {
+    const value = json[key]
+    if (typeof value === 'number' && Number.isInteger(value) && value > 0) return value
+    if (typeof value === 'string' && /^\d+$/.test(value.trim())) {
+      const parsed = Number.parseInt(value.trim(), 10)
+      if (parsed > 0) return parsed
+    }
+  }
+  return null
+}
+
+/**
+ * 兼容 snake_case（服务端两种命名都出现过）。
+ *
+ * `blockmapUrl` / `size` 是差量更新用的**可选**字段：老清单没有它们也照样合法
+ * （见 `manifestIsValid`，那里刻意不强制要求），缺失时差量逻辑自动跳过。
+ */
 export function parseManifest(raw: unknown): UpdateManifest | null {
   if (raw == null || typeof raw !== 'object') return null
   const json = raw as Record<string, unknown>
@@ -170,6 +212,8 @@ export function parseManifest(raw: unknown): UpdateManifest | null {
     downloadUrl,
     sha256,
     changelog: changelog.length > 0 ? changelog : null,
+    blockmapUrl: readOptionalUrl(json, 'blockmapUrl', 'blockmap_url'),
+    size: readOptionalPositiveInt(json, 'size'),
   }
 }
 
@@ -186,6 +230,74 @@ export function installerFileName(manifest: UpdateManifest): string {
   const version = manifest.version.split('+')[0]
   return `IMusic-Setup-${version}-${arch}.exe`
 }
+
+// ---------------------------------------------------------------------------
+// 差量更新的本地缓存
+//
+// 差量下载需要「上一个版本的安装包 + 它的 blockmap」当旧包。用户不会自己留着旧安装
+// 包，所以只能由更新器在**下载成功后**把这两份文件复制到 `update-cache/`，下次更新时
+// 拿来比对。目录清理只针对本模块写的 `installer-*`，别的文件一概不碰。
+// ---------------------------------------------------------------------------
+
+/** 更新缓存目录（与临时下载目录分开：这里存的是「下次差量要用的旧包」） */
+function updateCacheDir(): string {
+  return path.join(app.getPath('userData'), 'update-cache')
+}
+
+/**
+ * 版本号归一化：缓存文件名一律**去掉 +build 段**。
+ *
+ * 两边写法必须统一：`app.getVersion()` 取 package.json 的 version（`2.3.13`），而远端
+ * manifest 的 version 可能带 build 号（`2.3.13+5`）。不归一化就会「写入
+ * installer-2.3.13+5.exe、下次却去找 installer-2.3.13.exe」，差量永远不命中。
+ */
+function normalizeCacheVersion(version: string): string {
+  return version.split('+')[0].replace(/[^0-9A-Za-z._-]/g, '')
+}
+
+/** 某个版本在缓存目录里的两个文件：安装包本体 + 它的 blockmap */
+function cacheFilePaths(
+  version: string,
+  extension: string,
+): { installer: string; blockmap: string } {
+  const base = path.join(updateCacheDir(), `installer-${normalizeCacheVersion(version)}${extension}`)
+  return { installer: base, blockmap: `${base}.blockmap` }
+}
+
+/** 删掉缓存目录里属于**其它版本**的 installer-*（只动本模块自己写的文件） */
+async function pruneUpdateCache(keepVersion: string): Promise<void> {
+  const keepPrefix = `installer-${normalizeCacheVersion(keepVersion)}`
+  const dir = updateCacheDir()
+  let entries: string[]
+  try {
+    entries = await fsp.readdir(dir)
+  } catch {
+    return
+  }
+  for (const name of entries) {
+    if (!name.startsWith('installer-')) continue
+    if (name.startsWith(keepPrefix)) continue
+    await fsp.rm(path.join(dir, name), { force: true, recursive: true }).catch(() => undefined)
+  }
+}
+
+/** 流式算文件的 sha256（差量路径拼出来的是本地文件，不需要边下边算） */
+async function sha256OfFile(filePath: string): Promise<string> {
+  const hash = createHash('sha256')
+  for await (const chunk of createReadStream(filePath)) hash.update(chunk as Buffer)
+  return hash.digest('hex')
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+/** 「这次压根不该试差量」的内部标记（不是错误，不打 warn 日志） */
+const DIFFERENTIAL_SKIPPED = 'skip'
+
+type DifferentialAttempt =
+  | { ok: true; downloaded: number; blockmapRaw: Uint8Array | null }
+  | { ok: false; reason: string; blockmapRaw: Uint8Array | null }
 
 // ---------------------------------------------------------------------------
 // 服务本体
@@ -368,6 +480,189 @@ export class UpdateService {
     }
   }
 
+  /**
+   * 试一次差量下载（只下变化的块）。
+   *
+   * 返回 `ok:true` 时 `partialPath` 已是完整的新安装包（sha256 由调用方统一校验）；
+   * 其余情况一律返回失败原因，调用方据此回退全量。`DIFFERENTIAL_SKIPPED` 表示
+   * 「本来就不具备差量条件」（清单没有 blockmapUrl / 本地没有旧包），不算故障。
+   */
+  private async attemptDifferentialDownload(options: {
+    manifest: UpdateManifest
+    extension: string
+    downloadUrl: string
+    partialPath: string
+    controller: AbortController
+    onProgress?: ProgressListener
+    armIdleWatchdog: () => void
+  }): Promise<DifferentialAttempt> {
+    const { manifest, extension, downloadUrl, partialPath, controller, onProgress } = options
+    const { armIdleWatchdog } = options
+
+    if (manifest.blockmapUrl == null || manifest.blockmapUrl.trim() === '') {
+      return { ok: false, reason: DIFFERENTIAL_SKIPPED, blockmapRaw: null }
+    }
+
+    // 差量的前提：本地还留着「当前运行版本」的安装包与它的 blockmap（上次更新时写的）
+    const cached = cacheFilePaths(app.getVersion(), extension)
+    if (!existsSync(cached.installer) || !existsSync(cached.blockmap)) {
+      return { ok: false, reason: DIFFERENTIAL_SKIPPED, blockmapRaw: null }
+    }
+
+    // 新版本 blockmap 是小文件（约一两百 KB）；拉不到就直接回退全量
+    let newBlockmapRaw: Uint8Array
+    try {
+      const blockmapTarget = this.assertAllowedUrl(manifest.blockmapUrl, '差量清单')
+      const response = await updateHttpFetch(blockmapTarget, { signal: controller.signal })
+      if (!response.ok) {
+        return { ok: false, reason: `拉取差量清单失败：HTTP ${response.status}`, blockmapRaw: null }
+      }
+      newBlockmapRaw = new Uint8Array(await response.arrayBuffer())
+    } catch (error) {
+      return { ok: false, reason: `拉取差量清单失败：${errorText(error)}`, blockmapRaw: null }
+    }
+
+    try {
+      const oldBlockmapRaw = new Uint8Array(await fsp.readFile(cached.blockmap))
+
+      // 先算一遍收益写日志（纯计算）：不划算时 `downloadDifferential` 会直接拒绝，
+      // 这里提前把数字打出来，排查「为什么没走差量」时不用再加日志。
+      const oldMap = parseBlockmap(oldBlockmapRaw)
+      const newMap = parseBlockmap(newBlockmapRaw)
+      if (oldMap != null && newMap != null) {
+        const planned = downloadBytes(computeDiffOperations(oldMap, newMap))
+        const percent = Math.round((planned / newMap.totalSize) * 1000) / 10
+        console.log(
+          `[update] 差量下载：需下载 ${planned} 字节（${percent}%），共 ${newMap.file.sizes.length} 块`,
+        )
+      }
+
+      const outcome = await downloadDifferential({
+        oldInstallerPath: cached.installer,
+        oldBlockmapRaw,
+        newBlockmapRaw,
+        targetPath: partialPath,
+        fetchRange: async (start, end) => {
+          armIdleWatchdog()
+          const response = await updateHttpFetch(downloadUrl, {
+            headers: { Range: `bytes=${start}-${end}` },
+            signal: controller.signal,
+          })
+          // 200 意味着服务器/代理忽略了 Range（会把整个安装包返回），差量就没意义了。
+          // 直接抛错让上层降级，绝不能把整包当「一个区间的字节」写进拼接结果。
+          if (response.status !== 206) {
+            throw new Error(`服务器未返回 206（HTTP ${response.status}），无法差量下载`)
+          }
+          const buffer = Buffer.from(await response.arrayBuffer())
+          armIdleWatchdog()
+          return buffer
+        },
+        // 进度条的总量优先用清单里的明文大小（比 blockmap 算出的更权威）
+        onProgress: (received, total) => onProgress?.({ received, total: manifest.size ?? total }),
+        signal: controller.signal,
+      })
+
+      if (!outcome.ok) {
+        return { ok: false, reason: outcome.reason, blockmapRaw: newBlockmapRaw }
+      }
+      console.log(
+        `[update] 差量下载完成：下载 ${outcome.downloaded} 字节 / 共 ${outcome.total}，${outcome.operations} 段`,
+      )
+      return { ok: true, downloaded: outcome.downloaded, blockmapRaw: newBlockmapRaw }
+    } catch (error) {
+      return { ok: false, reason: errorText(error), blockmapRaw: newBlockmapRaw }
+    }
+  }
+
+  /**
+   * 全量下载：流式落盘 + 边下边算 sha256，返回摘要。
+   *
+   * 校验与改名不在这里做（差量与全量共用 `download()` 里那一段），所以本方法只负责
+   * 「把字节写进 partialPath」并给出摘要。
+   */
+  private async downloadFullPackage(options: {
+    downloadUrl: string
+    partialPath: string
+    controller: AbortController
+    onProgress?: ProgressListener
+    armIdleWatchdog: () => void
+  }): Promise<string> {
+    const { downloadUrl, partialPath, controller, onProgress, armIdleWatchdog } = options
+    const response = await updateHttpFetch(downloadUrl, { signal: controller.signal })
+    if (!response.ok) throw new Error(`下载失败：HTTP ${response.status}`)
+    const totalHeader = response.headers.get('content-length')
+    const total = totalHeader != null ? Number.parseInt(totalHeader, 10) : null
+    if (response.body == null) throw new Error('下载失败：响应体为空')
+
+    const hash = createHash('sha256')
+    let received = 0
+    let lastReported = 0
+    onProgress?.({ received: 0, total })
+
+    const source = Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0])
+    source.on('data', (chunk: Buffer) => {
+      hash.update(chunk)
+      received += chunk.length
+      armIdleWatchdog()
+      if (received - lastReported >= PROGRESS_STEP_BYTES) {
+        lastReported = received
+        onProgress?.({ received, total })
+      }
+    })
+
+    await pipeline(source, createWriteStream(partialPath))
+    onProgress?.({ received, total: total ?? received })
+    return hash.digest('hex')
+  }
+
+  /**
+   * 把「这次下好的安装包 + 新版本 blockmap」留在 `update-cache/`，供下一次差量当旧包。
+   *
+   * 全部失败只记日志：缓存写不进去最多让下次多下 88MB，**绝不能让本次更新失败**。
+   */
+  private async cacheInstallerForNextUpdate(options: {
+    manifest: UpdateManifest
+    finalPath: string
+    extension: string
+    blockmapRaw: Uint8Array | null
+  }): Promise<void> {
+    const { manifest, finalPath, extension, blockmapRaw } = options
+    try {
+      await fsp.mkdir(updateCacheDir(), { recursive: true })
+      const cached = cacheFilePaths(manifest.version, extension)
+
+      // 原子写：先 .tmp 再 rename，避免「缓存里出现半个安装包」被下次差量当成旧包
+      const installerTmp = `${cached.installer}.tmp`
+      await fsp.copyFile(finalPath, installerTmp)
+      await fsp.rm(cached.installer, { force: true })
+      await fsp.rename(installerTmp, cached.installer)
+
+      let raw = blockmapRaw
+      if (raw == null && manifest.blockmapUrl != null) {
+        // 全量路径手上没有 blockmap 字节，补下一次（失败就当没有，下次还是全量）
+        try {
+          const blockmapTarget = this.assertAllowedUrl(manifest.blockmapUrl, '差量清单')
+          const response = await updateHttpFetch(blockmapTarget, {
+            signal: AbortSignal.timeout(MANIFEST_TIMEOUT_MS),
+          })
+          if (response.ok) raw = new Uint8Array(await response.arrayBuffer())
+        } catch {
+          raw = null
+        }
+      }
+      if (raw != null) {
+        const blockmapTmp = `${cached.blockmap}.tmp`
+        await fsp.writeFile(blockmapTmp, raw)
+        await fsp.rm(cached.blockmap, { force: true })
+        await fsp.rename(blockmapTmp, cached.blockmap)
+      }
+
+      await pruneUpdateCache(manifest.version)
+    } catch (error) {
+      console.warn('[update] 写入差量缓存失败（不影响本次更新）：', errorText(error))
+    }
+  }
+
   /** 下载安装包到临时目录并校验 sha256；返回本地路径 */
   async download(manifest: UpdateManifest, onProgress?: ProgressListener): Promise<string> {
     if (!manifestIsValid(manifest)) throw new Error('更新清单无效，无法下载')
@@ -399,33 +694,41 @@ export class UpdateService {
     try {
       armIdleWatchdog()
       const downloadUrl = this.assertAllowedUrl(manifest.downloadUrl, '安装包下载')
-      const response = await updateHttpFetch(downloadUrl, { signal: controller.signal })
-      if (!response.ok) throw new Error(`下载失败：HTTP ${response.status}`)
-      const totalHeader = response.headers.get('content-length')
-      const total = totalHeader != null ? Number.parseInt(totalHeader, 10) : null
-      if (response.body == null) throw new Error('下载失败：响应体为空')
 
-      const hash = createHash('sha256')
-      let received = 0
-      let lastReported = 0
-      onProgress?.({ received: 0, total })
-
-      const source = Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0])
-      source.on('data', (chunk: Buffer) => {
-        hash.update(chunk)
-        received += chunk.length
-        armIdleWatchdog()
-        if (received - lastReported >= PROGRESS_STEP_BYTES) {
-          lastReported = received
-          onProgress?.({ received, total })
-        }
+      // ---- ① 先试差量下载：只下变化的块（任何失败都静默回退全量） ----
+      const attempt = await this.attemptDifferentialDownload({
+        manifest,
+        extension,
+        downloadUrl,
+        partialPath,
+        controller,
+        onProgress,
+        armIdleWatchdog,
       })
 
-      await pipeline(source, createWriteStream(partialPath))
+      let digest: string
+      if (attempt.ok) {
+        digest = await sha256OfFile(partialPath)
+      } else {
+        // 用户取消 / 看门狗超时已经把这个 AbortController 废了：别再回退全量，
+        // 那只会再立刻失败一次，还把取消原因搅成「下载失败」。
+        if (controller.signal.aborted) throw new Error(attempt.reason)
+        if (attempt.reason !== DIFFERENTIAL_SKIPPED) {
+          console.warn('[update] 差量下载失败，回退全量：', attempt.reason)
+        }
+        // 差量半成品必须清掉：写流用 'w' 会截断，但残留文件仍会误导排查
+        await fsp.rm(partialPath, { force: true }).catch(() => undefined)
+        digest = await this.downloadFullPackage({
+          downloadUrl,
+          partialPath,
+          controller,
+          onProgress,
+          armIdleWatchdog,
+        })
+      }
       clearIdleWatchdog()
-      onProgress?.({ received, total: total ?? received })
 
-      const digest = hash.digest('hex')
+      // ---- ② sha256 校验（差量与全量共用同一段）----
       if (digest.toLowerCase() !== manifest.sha256.toLowerCase()) {
         await fsp.rm(partialPath, { force: true })
         throw new Error('安装包校验失败（sha256 不匹配），已删除下载文件')
@@ -434,6 +737,15 @@ export class UpdateService {
       // 校验通过后才落到最终文件名：.part 不会被当成可安装的包
       await fsp.rm(finalPath, { force: true })
       await fsp.rename(partialPath, finalPath)
+
+      // ---- ③ 留作下一版差量的旧包（失败不影响本次更新）----
+      await this.cacheInstallerForNextUpdate({
+        manifest,
+        finalPath,
+        extension,
+        blockmapRaw: attempt.blockmapRaw,
+      })
+
       return finalPath
     } catch (error) {
       clearIdleWatchdog()

@@ -7,7 +7,8 @@
 # 产物：
 #   - IMusic-Setup-<version>-x64.exe   NSIS 安装版
 #   - IMusic-<version>-x64.zip          绿色免安装版
-#   - desktop-update.json               更新清单（应用内更新器读取）
+#   - desktop-update.json               更新清单（应用内更新器读取；清单里带 blockmapUrl/size，
+#                                       供应用端做差量下载，缺失时退化为全量下载）
 #   - SHA256SUMS.txt                    所有产物的 sha256
 #
 # Release 正文：取自 tag 的注释（git tag -a -m/-F）。发布脚本
@@ -184,7 +185,7 @@ jobs:
           fi
           # blockmap 只在 nsis 产物上生成，缺了不影响更新，仅提示
           if [ ! -f "${SETUP_FULL}.blockmap" ]; then
-            echo "::warning::没有 ${SETUP_FULL}.blockmap（增量更新会退化为全量下载）"
+            echo "::warning::没有 ${SETUP_FULL}.blockmap（应用端将退化为全量下载，更新仍可用）"
           fi
 
           echo "解析到安装包：${SETUP_FULL}"
@@ -193,15 +194,25 @@ jobs:
           BASE="https://github.com/${REPO}/releases/download/${REF}"
 
           SHA256="$(sha256sum "${SETUP_FULL}" | awk '{print $1}')"
+          SETUP_SIZE="$(stat -c%s "${SETUP_FULL}")"
 
           # 用 node 写 JSON，不用 heredoc 拼字符串：更新说明是多行 Markdown，
           # 带引号/换行/反斜杠时手拼必然生成非法 JSON，交给 JSON.stringify 才安全。
           # manifest.version 保留完整版本号：更新端的 parseVersion 支持 +build，
           # 且 build 号参与比较（pub_semver 语义），少了它就分不出 2.3.3+7 / 2.3.3+8。
           NOTES_FILE="${GITHUB_WORKSPACE}/release-notes.md"
-          export FULL_VERSION SETUP_FULL SHA256 BASE NOTES_FILE
+          export FULL_VERSION SETUP_FULL SHA256 SETUP_SIZE BASE NOTES_FILE
           node -e '
             const fs = require("fs");
+            // blockmap 不是一定存在（老版本 electron-builder 或产物变化都可能没有），
+            // 缺了就给 null，让应用端退化为全量下载而不是把更新卡死。
+            const hasBlockmap = (() => {
+              try {
+                return fs.statSync(`${process.env.SETUP_FULL}.blockmap`).size > 0;
+              } catch {
+                return false;
+              }
+            })();
             const notes = (() => {
               try {
                 return fs.readFileSync(process.env.NOTES_FILE, "utf8").trim();
@@ -213,6 +224,14 @@ jobs:
               version: process.env.FULL_VERSION,
               downloadUrl: `${process.env.BASE}/${process.env.SETUP_FULL}`,
               sha256: process.env.SHA256,
+              // 差量更新用：新版本安装包的 electron-builder blockmap（gzip JSON）。
+              // 应用端拿它和「本地缓存的上一个版本安装包 + 其 blockmap」比对，只下载变化的块。
+              // 缺失时为 null —— 应用会退化为全量下载，不影响更新可用性。
+              blockmapUrl: hasBlockmap
+                ? `${process.env.BASE}/${process.env.SETUP_FULL}.blockmap`
+                : null,
+              // 安装包明文字节数：应用端用于计算差量下载的进度条比例（缺失时按实际收到字节算）
+              size: Number(process.env.SETUP_SIZE) || null,
               changelog: notes !== ""
                 ? notes
                 : `见 Release notes：${process.env.BASE}`,

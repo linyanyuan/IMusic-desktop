@@ -225,8 +225,16 @@ test('更新器用 net.fetch，而不是不读系统代理的 Node fetch', async
     '必须从 electron 引入 net',
   )
   assert.match(source, /netFetch = \(net as \{ fetch\?: typeof fetch \} \| undefined\)\?\.fetch/)
+  // 数量不再写死：差量更新又多了几处（拉新 blockmap、按 Range 取分段），计数只是随实现增长。
+  // 不变的是「清单、安装包、blockmap、分段下载一律走 updateHttpFetch」—— 这些请求同样受
+  // net.fetch（读系统代理）+ host 白名单保护，所以断言改成下限。
   const calls = source.match(/await updateHttpFetch\(/g) ?? []
-  assert.equal(calls.length, 2, '清单与安装包下载都走 updateHttpFetch')
+  assert.ok(
+    calls.length >= 2,
+    `清单、安装包、差量 blockmap 与分段请求都必须走 updateHttpFetch，当前仅 ${calls.length} 处`,
+  )
+  // 差量更新的分段请求必须带 Range 头，且同样经由 updateHttpFetch
+  assert.match(source, /Range: `bytes=\$\{start\}-\$\{end\}`/, '差量分段请求要带 Range 头')
   const bareAwaits = source.match(/[^.\w]await fetch\(/g) ?? []
   assert.equal(bareAwaits.length, 0, '裸 fetch 不读系统代理，会静默解析失败')
 })

@@ -90,6 +90,10 @@ declare global {
     downloadUrl: string
     sha256: string
     changelog: string | null
+    /** 差量更新：新版本安装包的 blockmap 地址；null/缺失 → 全量下载 */
+    blockmapUrl?: string | null
+    /** 差量更新：安装包明文字节数（进度条用，可选） */
+    size?: number | null
   }
 
   /** 主窗口 → 歌词窗口的播放状态（经主进程转发） */
