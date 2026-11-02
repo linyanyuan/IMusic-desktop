@@ -1,18 +1,18 @@
 /**
  * 搜索视图 —— 空关键词显示分类浏览 + 最近搜索；有关键词显示结果 Tabs。
- * 注：我们的后端返回 resultType = song | playlist，故结果 Tab 为「单曲 / 歌单」，
- * 另加「音源范围」选择器（全部音源 / 元数据歌曲 / B站歌单 / ChKSz），对应 MusicSearchScope；
- * 选择器下方常显当前范围的说明。
+ * 注：我们的后端返回 resultType = song | playlist，故结果 Tab 为「单曲 / 歌单」。
+ * 「音源范围」选择器内嵌在搜索框右侧（SearchScopeSelector 紧凑下拉），对应 MusicSearchScope。
  */
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Search, X, Play, Heart, Loader2, KeyRound } from 'lucide-react'
 import { Cover } from '../components/Cover'
 import { usePlayer } from '../contexts/PlayerContext'
 import { useAuth, useLibrary } from '../state/hooks'
 import { toggleLikeGuarded } from '../state/likeAction'
 import { getServices } from '../services/runtime'
-import { MusicSearchScope, type MusicSearchScope as Scope } from '../services/models'
+import type { MusicSearchScope as Scope } from '../services/models'
+import { planScopeChange, SearchScopeSelector } from '../components/SearchScopeSelector'
 import { DeskRoute, useRoute } from '../state/route'
 import { toSongs, durationSeconds, formatTime, songCover } from '../state/songUtils'
 import { GENRES } from '../state/genres'
@@ -32,17 +32,6 @@ import {
 } from '../state/recentSearches'
 import type { Song } from '../services/models'
 
-/**
- * 音源范围 —— 对应 MusicSearchScope；label 是 chip 上的短标签，hint 只作悬停提示（title/aria-label），不再常显。
- * 「B站歌单」范围按用户要求同时返回 B站歌曲与歌单（见 hybrid.ts searchBilibiliPlaylists）。
- */
-const SCOPE_TABS: Array<{ key: Scope; label: string; hint: string }> = [
-  { key: MusicSearchScope.All, label: '全部音源', hint: '元数据单曲 + B站单曲 / 歌单 / 合集（综合搜索）' },
-  { key: MusicSearchScope.MetadataSongs, label: '元数据歌曲', hint: '仅元数据音源（GDStudio / Meting），不含 B站' },
-  { key: MusicSearchScope.BilibiliPlaylists, label: 'B站歌单', hint: 'B站歌单 + B站单曲' },
-  { key: MusicSearchScope.ChkszSongs, label: 'ChKSz', hint: 'ChKSz 网易云，仅单曲；需先在设置里填 API Key' },
-]
-
 export function SearchView() {
   const route = useRoute()
   const player = usePlayer()
@@ -55,6 +44,7 @@ export function SearchView() {
   const search = useSearchState()
   const [input, setInput] = useState(route.searchSeed !== '' ? route.searchSeed : search.query)
   const [recent, setRecent] = useState<string[]>(() => loadRecentSearches())
+  const inputRef = useRef<HTMLInputElement>(null)
 
   const runner = useCallback<SearchRunner>(
     async (q, p, sc) => toSongs(await getServices().music.searchSongs(q, p, sc)),
@@ -79,6 +69,16 @@ export function SearchView() {
     // 会拿旧关键词重搜一次，把本该保留的结果冲掉。
     route.replaceSearchSeed(q.trim())
     void runSearch(runner, q, search.scope, 1, false)
+  }
+
+  // 音源范围切换：语义与旧 chip 行一致（输入框有未提交文本就用它，否则用已提交关键词），
+  // 但用未提交文本发起搜索时必须同步路由 seed（不写最近搜索）—— 否则后退/进出专注模式
+  // 重挂载时会拿旧 seed 重搜，把新结果冲掉（seed↔store 不变量见 route.replaceSearchSeed）。
+  const handleScopeSelect = (next: Scope) => {
+    const plan = planScopeChange(search.scope, next, input, search.query)
+    if (plan == null) return // 重选当前范围：不重复请求
+    if (plan.usesUnsubmittedInput) route.replaceSearchSeed(plan.query)
+    void runSearch(runner, plan.query, next, 1, false)
   }
 
   const songs = useMemo(
@@ -221,14 +221,27 @@ export function SearchView() {
     <div className="space-y-7">
       <h1 className="text-3xl font-bold tracking-tight text-primary">搜索</h1>
 
-      {/* 搜索框 */}
-      <div className="relative">
-        <Search
-          size={16}
-          strokeWidth={1.75}
-          className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-secondary"
-        />
+      {/* 搜索框：音源范围选择器内嵌右侧。flex 布局让图标/输入框/清空按钮/选择器
+          天然不重叠，窄屏下输入框收缩、触发器 shrink-0 保持当前范围始终可见。
+          外框自己处理「点空白处聚焦输入框」：图标 pointer-events-none，点它或外框 padding
+          时 target === currentTarget 且就是外框 → 聚焦输入框（旧布局是整条 input，点哪儿
+          都能直接打字）；点到清空按钮 / 音源触发器 / 菜单 / 遮罩时 target 是子元素，
+          这里一律不插手，否则会抢焦点或吃掉子控件自己的 click。 */}
+      <div
+        className="flex items-center gap-2 rounded-xl border border-subtle bg-card py-3 pl-4 pr-3 transition-colors focus-within:border-accent/40"
+        onMouseDown={(e) => {
+          // 只认「左键 + 落在外框自身」：图标 pointer-events-none，点图标/padding 时 target
+          // 就是外框 → 聚焦输入框（旧布局整条都是 input，点哪儿都能直接打字）；点到清空按钮/
+          // 音源触发器/菜单/遮罩时 target 是子元素，一律不插手 —— 否则会抢它们的焦点或吃掉 click。
+          // preventDefault 是为了不让默认的「点非可聚焦元素 → 焦点丢到 body」清掉输入框光标/选区。
+          if (e.button !== 0 || e.target !== e.currentTarget) return
+          e.preventDefault()
+          inputRef.current?.focus()
+        }}
+      >
+        <Search size={16} strokeWidth={1.75} className="pointer-events-none shrink-0 text-secondary" />
         <input
+          ref={inputRef}
           autoFocus
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -236,7 +249,7 @@ export function SearchView() {
             if (e.key === 'Enter') submit(input)
           }}
           placeholder="搜索歌曲、歌手、歌单…（回车确认）"
-          className="w-full rounded-xl border border-subtle bg-card py-3 pl-11 pr-10 text-[14px] outline-none transition-colors placeholder:text-secondary focus:border-accent/40"
+          className="min-w-0 flex-1 bg-transparent text-[14px] outline-none placeholder:text-secondary"
         />
         {input !== '' && (
           <button
@@ -249,42 +262,12 @@ export function SearchView() {
               route.replaceSearchSeed('')
               setInput('')
             }}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-secondary hover:text-primary"
+            className="shrink-0 text-secondary transition-colors hover:text-primary"
           >
             <X size={15} strokeWidth={1.75} />
           </button>
         )}
-      </div>
-
-      {/* 音源范围 */}
-      <div className="flex flex-wrap gap-2">
-        {SCOPE_TABS.map((s) => (
-          <button
-            key={s.key}
-            type="button"
-            data-testid={`search-scope-${s.key}`}
-            title={s.hint}
-            aria-label={`${s.label}：${s.hint}`}
-            onClick={() => {
-              // 输入框有未提交的文字就用它，否则用已提交的关键词重搜
-              // （输入框被手动清空但结果还在时，切音源范围不该把结果清掉）
-              void runSearch(
-                runner,
-                input.trim() !== '' ? input : search.query,
-                s.key,
-                1,
-                false,
-              )
-            }}
-            className={`rounded-full px-3.5 py-1.5 text-[12.5px] transition-colors ${
-              search.scope === s.key
-                ? 'bg-accent/10 font-medium text-accent'
-                : 'bg-fill text-primary hover:bg-hover'
-            }`}
-          >
-            {s.label}
-          </button>
-        ))}
+        <SearchScopeSelector scope={search.scope} onSelect={handleScopeSelect} />
       </div>
 
       {/* 空状态：最近搜索 + 分类（判定源与结果区一致，都用已提交的关键词 —— 对齐 Dart 的 searchQueryProvider） */}

@@ -271,3 +271,25 @@ test('lightShuffle：相邻换位（不引入随机，可复现）', () => {
     ['2', '1', '3'],
   )
 })
+
+test('分类歌单列表：空结果不缓存（上游限流回 200+空列表时，下一次必须重新请求）', async () => {
+  const calls: string[] = []
+  const impl = (async (input: string | URL | Request) => {
+    calls.push(String(input))
+    // 第一次返回「限流形状」的空列表，之后恢复正常
+    const body = calls.length === 1 ? { code: 200, playlists: [] } : LIST_BODY
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })
+  }) as unknown as typeof fetch
+  const client = new NeteasePublicClient({ fetchImpl: impl, timeoutMs: 2000 })
+
+  assert.deepEqual(await client.getCategoryPlaylists('民谣', { limit: 10 }), [])
+  const rows = await client.getCategoryPlaylists('民谣', { limit: 10 })
+  assert.equal(calls.length, 2, '空结果不得进入缓存 —— 第二次调用必须重新请求，而不是继续吃空缓存')
+  assert.equal(rows.length, 2, '恢复后的真实内容要拿得到')
+
+  await client.getCategoryPlaylists('民谣', { limit: 10 })
+  assert.equal(calls.length, 2, '非空结果仍要命中缓存（TTL 内不再发请求）')
+})

@@ -285,7 +285,9 @@ export class NeteasePublicClient {
       .map((row) => NeteasePublicClient.mapPlaylistRow(row))
       .filter((row): row is RawSong => row != null)
 
-    this.writeCache(cacheKey, mapped)
+    // 空结果不缓存：上游偶发限流会回 200 + 空列表，把空数组写进 30 分钟缓存会让
+    // 首页热门歌单 / 分类页在这段时间里一直显示空态（my-music-new 移动端同口径）。
+    if (mapped.length > 0) this.writeCache(cacheKey, mapped)
     return mapped
   }
 

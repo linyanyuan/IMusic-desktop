@@ -5,7 +5,8 @@
  *   继续播放（_ContinuePlayingCard）+ 热门歌单（_HotPlaylistsGrid）+ 推荐歌曲（_RecommendedSongsTable）。
  * 另外补上真实「最近播放」（此前这块错误地展示推荐结果，等于没有历史）。
  *
- * 热门歌单是远端合集：点进去由 PlaylistDetailView 按 id 取（可看可播）。
+ * 热门歌单是远端合集：点进去由 PlaylistDetailView 按 id 取（可看可播）；
+ * 取数与「换一批」轮换由 useHotPlaylists 负责（分类 × 翻页窗口，跨批去重）。
  * 「继续播放」卡里的歌词行单独订阅播放进度（usePlayerTime），避免整页每 250ms 重渲染。
  */
 
@@ -34,10 +35,14 @@ import { getServices } from '../services/runtime'
 import { toSongs, formatTime, durationSeconds, songCover } from '../state/songUtils'
 import { activeLyricIndex, parseLyrics, plainLyricLines } from '../state/lyrics'
 import { dailyFeatured } from '../state/featured'
+import { selectHotPlaylists } from '../state/hotRotation'
+import { useHotPlaylists } from '../state/useHotPlaylists'
+import { FeaturedCarousel } from '../components/FeaturedCarousel'
 import { UserAvatar } from '../components/UserAvatar'
 import type { Song } from '../services/models'
 
-const HOT_PAGE_SIZE = 10
+/** 今日精选展示数量：日期种子分类下按热度取前 8 个歌单做轮播（对齐移动端 FEATURED_COUNT） */
+const FEATURED_COUNT = 8
 
 function SectionTitle({
   children,
@@ -118,64 +123,6 @@ function ContinuePlayingCard({ song }: { song: Song }) {
           <ChevronRight size={14} strokeWidth={2} />
         </button>
       </div>
-    </div>
-  )
-}
-
-/** 今日精选歌单大卡 —— 点击进合集详情；hover 播放键直接取曲目整单播放（取不到则进详情） */
-function FeaturedPlaylistCard({ playlist }: { playlist: Song }) {
-  const route = useRoute()
-  const cover = songCover(playlist)
-  const { resolving, playAll } = usePlayPlaylist(playlist)
-
-  const open = () => route.go(DeskRoute.PlaylistDetail, { playlistId: playlist.id })
-
-  return (
-    <div className="group relative h-[220px] overflow-hidden rounded-2xl text-left shadow-[0_8px_24px_rgba(0,0,0,0.06)]">
-      <button
-        type="button"
-        data-featured-card
-        aria-label={`查看精选歌单 ${playlist.title}`}
-        onClick={open}
-        className="absolute inset-0"
-      >
-        <div className="absolute inset-0 bg-gradient-to-br from-accent/25 via-fill to-secondary/25" />
-        {cover != null && (
-          <img
-            src={cover}
-            alt=""
-            loading="lazy"
-            decoding="async"
-            draggable={false}
-            className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-          />
-        )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
-        <div className="absolute left-5 top-5 rounded-md bg-white/20 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-white backdrop-blur-md">
-          今日精选
-        </div>
-        <div className="absolute bottom-0 left-0 right-0 p-5">
-          <div className="line-clamp-2 text-[20px] font-bold leading-snug text-white drop-shadow">
-            {playlist.title}
-          </div>
-          <div className="mt-0.5 truncate text-[13px] text-white/80">
-            {playlist.extra['subtitle']?.toString() ?? playlist.artist}
-          </div>
-        </div>
-      </button>
-      <button
-        type="button"
-        aria-label={`播放精选歌单 ${playlist.title}`}
-        disabled={resolving}
-        onClick={() => void playAll()}
-        className="pointer-events-none absolute bottom-5 right-5 flex h-11 w-11 translate-y-1 items-center justify-center rounded-full bg-white/25 text-white opacity-0 backdrop-blur-xl transition-all duration-300 group-hover:pointer-events-auto group-hover:translate-y-0 group-hover:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 disabled:opacity-100"
-      >
-        {resolving ? (
-          <Loader2 size={17} strokeWidth={2} className="animate-spin" />
-        ) : (
-          <Play size={17} strokeWidth={2} fill="currentColor" className="ml-[1px]" />
-        )}
-      </button>
     </div>
   )
 }
@@ -381,11 +328,9 @@ export function HomeView() {
   const [loading, setLoading] = useState(true)
   const [recBatch, setRecBatch] = useState(1)
   const [recRefreshing, setRecRefreshing] = useState(false)
-  const [hotPlaylists, setHotPlaylists] = useState<Song[]>([])
-  const [hotLoading, setHotLoading] = useState(true)
-  const [hotBatch, setHotBatch] = useState(0)
-  const [hotRefreshing, setHotRefreshing] = useState(false)
-  // 今日精选：以日期为种子的主题精选歌单（当天固定，次日换主题）
+  // 热门歌单：取数 / 轮换 / 跨批去重全部由 useHotPlaylists 负责（纯逻辑核在 state/hotRotation.ts）
+  const hot = useHotPlaylists(getServices().music)
+  // 今日精选：以日期为种子的分类精选歌单（当天固定，次日换分类）
   const [featured, setFeatured] = useState<Song[]>([])
   const [featuredTheme, setFeaturedTheme] = useState('')
   // 推荐歌曲请求序号：过期响应（旧口味/旧 page 后到、连点换一批）直接丢弃
@@ -449,56 +394,31 @@ export function HomeView() {
 
   useEffect(() => {
     let alive = true
-    // 今日精选：日期种子 → 主题批次 → 前 2 个合集
+    // 今日精选：日期种子 → 真实网易云分类 → 该分类按热度前 FEATURED_COUNT 个歌单。
+    // 必须按 daily.category 取（与移动端首页一致）：主题名与歌单来源分类是同一个值，
+    // 才不会出现「标题写粤语精选、卡片是韩语甜歌」的错位。
     void (async () => {
       try {
         const daily = dailyFeatured(Date.now())
-        const lists = await getServices().music.getHotPlaylists({
-          limit: HOT_PAGE_SIZE,
-          offset: daily.batch * HOT_PAGE_SIZE,
+        const lists = await getServices().music.getCategoryPlaylists(daily.category, {
+          limit: FEATURED_COUNT,
         })
         if (!alive) return
-        setFeatured(toSongs(lists).slice(0, 2))
+        // 上游列表不能直接 slice 上屏：轮播以 id 作 React key 且每张卡都能点进详情，
+        // 重复 id 会让两个卡位并成一个，空 id（`bilibili:` 这种空载荷）点进去必然失败。
+        // 复热门歌单同一套筛选口径（selectHotPlaylists）：丢空 id、丢显式非 playlist、
+        // 批内去重，再按 FEATURED_COUNT 截断。
+        setFeatured(toSongs(selectHotPlaylists(lists, { limit: FEATURED_COUNT })))
         setFeaturedTheme(daily.theme)
       } catch (e) {
         console.warn('[Home] 今日精选加载失败', e)
         if (alive) setFeatured([])
       }
     })()
-    // 热门歌单（首批）
-    void (async () => {
-      try {
-        const lists = await getServices().music.getHotPlaylists({ limit: HOT_PAGE_SIZE })
-        if (alive) setHotPlaylists(toSongs(lists))
-      } catch (e) {
-        console.warn('[Home] 热门歌单加载失败', e)
-        if (alive) setHotPlaylists([])
-      } finally {
-        if (alive) setHotLoading(false)
-      }
-    })()
     return () => {
       alive = false
     }
   }, [])
-
-  // 热门歌单换一批：批次 +1 整体替换（服务端按批次轮换搜索主题，每批都是新主题）
-  const refreshHot = async () => {
-    setHotRefreshing(true)
-    try {
-      const next = hotBatch + 1
-      const lists = await getServices().music.getHotPlaylists({
-        limit: HOT_PAGE_SIZE,
-        offset: next * HOT_PAGE_SIZE,
-      })
-      setHotBatch(next)
-      setHotPlaylists(toSongs(lists))
-    } catch (e) {
-      console.warn('[Home] 热门歌单换一批失败', e)
-    } finally {
-      setHotRefreshing(false)
-    }
-  }
 
   // 换一批：拉推荐 feed 的下一页并整体替换（对照 BiliMusic 的换一批，不追加）
   const refreshRecommended = () => {
@@ -555,9 +475,9 @@ export function HomeView() {
       {/* 继续播放（含当前歌词行） */}
       {current != null && <ContinuePlayingCard song={current} />}
 
-      {/* 今日精选 —— 以日期为种子的主题精选歌单（当天固定，次日换主题）。
-          与「热门歌单」（手动换一批的浏览网格）和「推荐歌曲」（单曲 feed）职责分开：
-          这里是编辑精选的大卡位，点击进入合集详情。 */}
+      {/* 今日精选 —— 以日期为种子的分类精选歌单轮播（当天固定，次日换分类）。
+          与「热门歌单」（换一批轮换的浏览网格）和「推荐歌曲」（单曲 feed）职责分开：
+          这里是编辑精选的大卡位，点击进入合集详情，hover 播放键整单播放。 */}
       {featured.length > 0 && (
         <div data-home-section="featured">
           <SectionTitle
@@ -567,44 +487,51 @@ export function HomeView() {
           >
             今日精选
           </SectionTitle>
-          <div className="grid grid-cols-2 gap-6">
-            {featured.map((pl) => (
-              <FeaturedPlaylistCard key={pl.id} playlist={pl} />
-            ))}
-          </div>
+          <FeaturedCarousel playlists={featured} />
         </div>
       )}
 
-      {/* 热门歌单（远端合集，可点进详情；换一批整体替换，与推荐歌曲一致） */}
+      {/* 热门歌单（远端合集，可点进详情）：取数与「换一批」轮换由 useHotPlaylists 负责 ——
+          分类 × 翻页窗口真轮换、跨批去重；来源标签写实际分类名（如「网易云 · 华语」）。 */}
       <div data-home-section="hot-playlists">
         <SectionTitle
+          aside={
+            hot.sourceLabel !== '' ? (
+              <span
+                data-testid="hot-source"
+                className="truncate text-[12px] font-normal text-secondary"
+              >
+                {hot.sourceLabel}
+              </span>
+            ) : undefined
+          }
           action={
             <button
               type="button"
               aria-label="换一批热门歌单"
-              onClick={() => void refreshHot()}
-              disabled={hotRefreshing || hotLoading}
+              onClick={() => void hot.next()}
+              disabled={hot.refreshing || hot.loading}
               className="flex items-center gap-1.5 text-[12.5px] font-medium text-accent transition-opacity hover:opacity-80 disabled:opacity-50"
             >
-              <RefreshCw size={13} strokeWidth={2} className={hotRefreshing ? 'animate-spin' : ''} />
-              {hotRefreshing ? '加载中…' : '换一批'}
+              <RefreshCw size={13} strokeWidth={2} className={hot.refreshing ? 'animate-spin' : ''} />
+              {hot.refreshing ? '加载中…' : '换一批'}
             </button>
           }
         >
           热门歌单
         </SectionTitle>
-        {hotLoading ? (
+        {hot.loading ? (
           <div className="flex items-center justify-center gap-2 py-10 text-[13px] text-secondary">
             <Loader2 size={16} className="animate-spin" /> 正在加载热门歌单
           </div>
-        ) : hotPlaylists.length === 0 ? (
+        ) : hot.playlists.length === 0 ? (
           <div className="flex items-center justify-center gap-2 py-10 text-[13px] text-secondary">
             <ListMusic size={16} strokeWidth={1.75} />
             暂无热门歌单
           </div>
         ) : (
           <div className="grid grid-cols-5 gap-5">
-            {hotPlaylists.map((pl) => (
+            {hot.playlists.map((pl: Song) => (
               <PlaylistCard key={pl.id} playlist={pl} />
             ))}
           </div>
